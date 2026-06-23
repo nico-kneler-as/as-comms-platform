@@ -3,6 +3,9 @@ import {
   auditResultValues,
   canonicalEventTypeValues,
   channelValues,
+  composerDraftChannelValues,
+  composerDraftPaneModeValues,
+  composerDraftRecipientKindValues,
   contactIdentityKindValues,
   identityResolutionReasonCodeValues,
   inboxBucketValues,
@@ -51,6 +54,18 @@ export const auditActorTypeEnum = pgEnum(
 );
 export const auditResultEnum = pgEnum("audit_result", auditResultValues);
 export const userRoleEnum = pgEnum("user_role", ["admin", "operator"]);
+export const composerDraftPaneModeEnum = pgEnum(
+  "composer_pane_mode",
+  composerDraftPaneModeValues,
+);
+export const composerDraftChannelEnum = pgEnum(
+  "composer_draft_channel",
+  composerDraftChannelValues,
+);
+export const composerDraftRecipientKindEnum = pgEnum(
+  "composer_draft_recipient_kind",
+  composerDraftRecipientKindValues,
+);
 export const pendingOutboundStatusEnum = pgEnum("pending_outbound_status", [
   "pending",
   "confirmed",

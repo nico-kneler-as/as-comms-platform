@@ -26,6 +26,7 @@ export function useAiDraftRun({
   markAiDraftReviewable,
   approveAiDraft,
   discardAiDraft,
+  editPromptAiDraft,
   markAiDraftReprompting,
   repromptAi,
   cancelReprompt,
@@ -52,6 +53,7 @@ export function useAiDraftRun({
   }) => void;
   readonly approveAiDraft: () => void;
   readonly discardAiDraft: () => void;
+  readonly editPromptAiDraft: () => void;
   readonly markAiDraftReprompting: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
@@ -67,19 +69,14 @@ export function useAiDraftRun({
     setComposerErrors([]);
   };
 
-  const runAiDraft = (requestOverride?: {
-    readonly mode: "reprompt";
-    readonly repromptDirection: string;
-  }) => {
+  const buildBaseRequest = () => {
     if (state.activeTab !== "email" && state.activeTab !== "sms") {
-      return;
+      return null;
     }
 
     if (!selectedAliasAiConfigured) {
-      return;
+      return null;
     }
-
-    clearComposerErrors();
 
     const isSms = state.activeTab === "sms";
     const contactId =
@@ -100,10 +97,10 @@ export function useAiDraftRun({
           retryable: false,
         },
       });
-      return;
+      return null;
     }
 
-    const baseRequest = {
+    return {
       contactId,
       projectId: selectedAliasRecord?.projectId ?? null,
       intent:
@@ -112,7 +109,19 @@ export function useAiDraftRun({
           : ("reply" as const),
       threadCursor: replyContext?.threadCursor ?? null,
       channel: isSms ? ("sms" as const) : ("email" as const),
-    } as const;
+    };
+  };
+
+  const runAiDraft = (requestOverride?: {
+    readonly mode: "reprompt";
+    readonly repromptDirection: string;
+  }) => {
+    clearComposerErrors();
+    const baseRequest = buildBaseRequest();
+
+    if (baseRequest === null) {
+      return;
+    }
 
     const request =
       requestOverride?.mode === "reprompt"
@@ -183,6 +192,12 @@ export function useAiDraftRun({
     dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
   };
 
+  const editPromptAi = () => {
+    clearComposerErrors();
+    editPromptAiDraft();
+    dispatch({ type: "SET_REPROMPT_TEXT", value: "" });
+  };
+
   const regenerateAi = () => {
     if (state.repromptText.trim().length === 0) {
       return;
@@ -227,6 +242,7 @@ export function useAiDraftRun({
   return {
     runAiDraft,
     discardAi,
+    editPromptAi,
     regenerateAi,
     openReprompt,
     cancelAiReprompt,

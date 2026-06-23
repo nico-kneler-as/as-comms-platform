@@ -32,6 +32,7 @@ function setup(input?: {
   readonly aiDraft?: AiDraftState;
   readonly body?: string;
   readonly smsBody?: string;
+  readonly aiDirective?: string;
   readonly activeTab?: "email" | "sms" | "note";
   readonly composerPaneMode?: "new-draft" | "replying" | "forwarding";
   readonly recipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["recipient"];
@@ -42,6 +43,7 @@ function setup(input?: {
 }) {
   const dispatch = vi.fn();
   const approveAiDraft = vi.fn();
+  const editPromptAiDraft = vi.fn();
   const startAiGeneration = input?.startAiGeneration ?? vi.fn();
   const controls = useAiDraftRun({
     state: {
@@ -49,6 +51,7 @@ function setup(input?: {
       activeTab: input?.activeTab ?? "email",
       body: input?.body ?? "",
       smsBody: input?.smsBody ?? "",
+      aiDirective: input?.aiDirective ?? "",
       recipient:
         input?.recipient ??
         ({
@@ -97,6 +100,7 @@ function setup(input?: {
     markAiDraftReviewable: vi.fn(),
     approveAiDraft,
     discardAiDraft: vi.fn(),
+    editPromptAiDraft,
     markAiDraftReprompting: vi.fn(),
     repromptAi: vi.fn(),
     cancelReprompt: vi.fn(),
@@ -112,6 +116,7 @@ function setup(input?: {
   return {
     dispatch,
     approveAiDraft,
+    editPromptAiDraft,
     startAiGeneration,
     controls,
   };
@@ -233,5 +238,17 @@ describe("useAiDraftRun", () => {
       prompt: "Draft with AI",
     });
     expect(startAiTransition).toHaveBeenCalledOnce();
+  });
+
+  it("editPromptAi resets the aiDraft to idle but does not clear the composer's aiDirective", () => {
+    const { dispatch, editPromptAiDraft, controls } = setup();
+
+    controls.editPromptAi();
+
+    expect(editPromptAiDraft).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalledWith({
+      type: "SET_AI_DIRECTIVE",
+      value: "",
+    });
   });
 });

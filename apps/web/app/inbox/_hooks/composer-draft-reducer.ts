@@ -238,9 +238,32 @@ export function reduceComposerDraft(
       )
         ? action.draft.bcc
         : [];
+      const draftChannel = action.draft.channel ?? "email";
+
+      if (draftChannel === "sms") {
+        return {
+          ...state,
+          activeTab: "sms",
+          smsBody: action.draft.bodyPlaintext,
+          inlineError: null,
+          fieldErrors: [],
+        };
+      }
+
+      if (draftChannel === "note") {
+        return {
+          ...state,
+          activeTab: "note",
+          body: action.draft.bodyPlaintext,
+          bodyHtml: action.draft.bodyHtml,
+          inlineError: null,
+          fieldErrors: [],
+        };
+      }
 
       return {
         ...state,
+        activeTab: "email",
         subject: action.draft.subject,
         body: action.draft.bodyPlaintext,
         bodyHtml: action.draft.bodyHtml,
@@ -256,18 +279,23 @@ export function reduceComposerDraft(
           contentType: attachment.contentType,
           contentBase64: null,
         })),
+        aiDirective: action.draft.aiDirective ?? state.aiDirective,
+        inlineError: null,
+        fieldErrors: [],
       };
     }
     case "SET_RECIPIENT":
       return clearErrors({
         ...state,
         recipient: action.recipient,
-        selectedAlias: action.isReplying
-          ? state.selectedAlias
-          : resolveDefaultAlias({
-              recipient: action.recipient,
-              aliases: action.aliases,
-            }),
+        selectedAlias:
+          state.selectedAlias ??
+          (action.isReplying
+            ? null
+            : resolveDefaultAlias({
+                recipient: action.recipient,
+                aliases: action.aliases,
+              })),
       });
     case "SET_CC":
       return clearErrors({ ...state, cc: action.recipients });

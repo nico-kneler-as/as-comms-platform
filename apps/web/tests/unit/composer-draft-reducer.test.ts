@@ -17,6 +17,16 @@ const aliases = [
     isAiConfigured: true,
     hasCachedContent: true,
   },
+  {
+    id: "alias-2",
+    alias: "orcas@adventuresci.org",
+    projectId: "project-2",
+    projectName: "Orcas",
+    signature: "Best,\nOrcas Team",
+    isAiReady: true,
+    isAiConfigured: true,
+    hasCachedContent: true,
+  },
 ] as const;
 
 describe("composer draft reducer", () => {
@@ -67,12 +77,33 @@ describe("composer draft reducer", () => {
     });
   });
 
-  it("recomputes the alias when a net-new recipient changes", () => {
+  it("SET_RECIPIENT preserves an explicit selectedAlias in net-new flow", () => {
     const state = reduceComposerDraft(
       {
         ...INITIAL_COMPOSER_DRAFT_STATE,
-        selectedAlias: "old@adventuresci.org",
+        selectedAlias: "orcas@adventuresci.org",
       },
+      {
+        type: "SET_RECIPIENT",
+        isReplying: false,
+        aliases,
+        recipient: {
+          kind: "contact",
+          contactId: "contact-1",
+          displayName: "Ada Lovelace",
+          primaryEmail: "ada@example.org",
+          primaryProjectName: "Forest",
+          salesforceContactId: "sf-1",
+        },
+      },
+    );
+
+    expect(state.selectedAlias).toBe("orcas@adventuresci.org");
+  });
+
+  it("SET_RECIPIENT resolves default alias when selectedAlias is null and isReplying is false", () => {
+    const state = reduceComposerDraft(
+      INITIAL_COMPOSER_DRAFT_STATE,
       {
         type: "SET_RECIPIENT",
         isReplying: false,
@@ -128,6 +159,46 @@ describe("composer draft reducer", () => {
         contentBase64: null,
       },
     ]);
+  });
+
+  it("hydrates sms drafts into the sms tab", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "HYDRATE_FROM_STORED_DRAFT",
+      draft: {
+        subject: "",
+        bodyPlaintext: "SMS draft",
+        bodyHtml: "",
+        selectedAlias: null,
+        cc: [],
+        bcc: [],
+        attachments: [],
+        updatedAt: 1,
+        channel: "sms",
+      },
+    });
+
+    expect(state.activeTab).toBe("sms");
+    expect(state.smsBody).toBe("SMS draft");
+  });
+
+  it("hydrates note drafts into the note tab", () => {
+    const state = reduceComposerDraft(INITIAL_COMPOSER_DRAFT_STATE, {
+      type: "HYDRATE_FROM_STORED_DRAFT",
+      draft: {
+        subject: "",
+        bodyPlaintext: "Note draft",
+        bodyHtml: "",
+        selectedAlias: null,
+        cc: [],
+        bcc: [],
+        attachments: [],
+        updatedAt: 1,
+        channel: "note",
+      },
+    });
+
+    expect(state.activeTab).toBe("note");
+    expect(state.body).toBe("Note draft");
   });
 
   it("seeds forwarding mode with a subject, quoted body, and editable recipient", () => {

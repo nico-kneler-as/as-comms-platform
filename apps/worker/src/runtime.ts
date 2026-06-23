@@ -25,6 +25,7 @@ import {
   createGmailCapturePort,
   createMailchimpCapturePort,
   createPostmarkClient,
+  createSalesforceApiClient,
   InlineTextFetcher,
   invokeModel,
   NotionPageFetcher,
@@ -32,6 +33,7 @@ import {
   createSimpleTextingCapturePort,
   ProviderCaptureConfigError,
   type FetchImplementation,
+  type SalesforceCaptureServiceConfig,
   WebPageFetcher,
 } from "@as-comms/integrations";
 
@@ -50,6 +52,10 @@ import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
+import {
+  reconcileSalesforceStateJobName,
+  type ReconcileSalesforceStateTaskDependencies,
+} from "./jobs/reconcile-salesforce-state.js";
 import { reconcileStrandedCampaignRunsJobName } from "./jobs/reconcile-stranded-campaign-runs.js";
 import { type SynthesizeProjectKnowledgeDependencies } from "./jobs/synthesize-project-knowledge/index.js";
 import {
@@ -77,6 +83,8 @@ import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-sta
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
 const defaultSynthesisRootPageId = "3278a912921180598688fce711ab0509";
+type ReconcileSalesforceStateMode =
+  ReconcileSalesforceStateTaskDependencies["mode"];
 
 function parseBooleanEnv(value: unknown): boolean {
   // Pass booleans through unchanged. The schema this preprocess feeds is
@@ -166,6 +174,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
+    `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
     `0 11 * * 0 ${reconcileSupersededProjectionsJobName} ?id=superseded-projections-reconcile&max=1`,
   ].join("\n");
 }
@@ -199,6 +208,51 @@ function readOptionalTrimmedEnv(
 
   const trimmed = value.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+function readRequiredEnv(env: NodeJS.ProcessEnv, key: string): string {
+  const value = env[key];
+
+  if (value === undefined || value.trim().length === 0) {
+    throw new Error(`${key} is required.`);
+  }
+
+  return value.trim();
+}
+
+function readOptionalStringEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  defaultValue: string,
+): string {
+  return readOptionalTrimmedEnv(env[key]) ?? defaultValue;
+}
+
+function readOptionalNullableStringEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+): string | null {
+  return readOptionalTrimmedEnv(env[key]);
+}
+
+function readOptionalPositiveIntegerEnv(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  defaultValue: number,
+): number {
+  const rawValue = readOptionalTrimmedEnv(env[key]);
+
+  if (rawValue === null) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${key} must be a positive integer when provided.`);
+  }
+
+  return parsed;
 }
 
 function buildCampaignSendDependencies(input: {
@@ -275,6 +329,39 @@ function buildCampaignSendDependencies(input: {
   };
 }
 
+function buildReconcileSalesforceStateDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly db: Stage1Database;
+  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+}): ReconcileSalesforceStateTaskDependencies | undefined {
+  const requiredEnvs = [
+    "SALESFORCE_CAPTURE_TOKEN",
+    "SALESFORCE_LOGIN_URL",
+    "SALESFORCE_CLIENT_ID",
+    "SALESFORCE_USERNAME",
+    "SALESFORCE_JWT_PRIVATE_KEY",
+  ];
+
+  if (requiredEnvs.some((key) => !input.env[key]?.trim())) {
+    console.warn(
+      "Skipping reconcile-salesforce-state wiring — SF env config incomplete.",
+    );
+    return undefined;
+  }
+
+  const salesforceConfig = readSalesforceCaptureConfig(input.env);
+  const apiClient = createSalesforceApiClient(salesforceConfig);
+  const mode = parseReconcileMode(input.env.RECONCILE_SF_STATE_MODE);
+
+  return {
+    db: input.db,
+    repositories: input.repositories,
+    apiClient,
+    mode,
+    salesforceConfig,
+  };
+}
+
 function buildSynthesizeProjectKnowledgeDependencies(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly fetchImplementation: FetchImplementation;
@@ -321,6 +408,127 @@ function buildSynthesizeProjectKnowledgeDependencies(input: {
     invokeModel: (payload) => invokeModel(anthropicClient, payload),
     db: input.db,
   };
+}
+
+function readSalesforceCaptureConfig(
+  env: NodeJS.ProcessEnv,
+): SalesforceCaptureServiceConfig {
+  return {
+    bearerToken: readRequiredEnv(env, "SALESFORCE_CAPTURE_TOKEN"),
+    loginUrl: readRequiredEnv(env, "SALESFORCE_LOGIN_URL"),
+    clientId: readRequiredEnv(env, "SALESFORCE_CLIENT_ID"),
+    username: readRequiredEnv(env, "SALESFORCE_USERNAME"),
+    jwtPrivateKey: readRequiredEnv(env, "SALESFORCE_JWT_PRIVATE_KEY"),
+    jwtExpirationSeconds: readOptionalPositiveIntegerEnv(
+      env,
+      "SALESFORCE_JWT_EXPIRATION_SECONDS",
+      180,
+    ),
+    apiVersion: readOptionalStringEnv(env, "SALESFORCE_API_VERSION", "61.0"),
+    contactCaptureMode: readOptionalStringEnv(
+      env,
+      "SALESFORCE_CONTACT_CAPTURE_MODE",
+      "delta_polling",
+    ) as "delta_polling" | "cdc_compatible",
+    membershipCaptureMode: readOptionalStringEnv(
+      env,
+      "SALESFORCE_MEMBERSHIP_CAPTURE_MODE",
+      "delta_polling",
+    ) as "delta_polling" | "cdc_compatible",
+    membershipObjectName: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_OBJECT",
+      "Expedition_Members__c",
+    ),
+    membershipContactField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_CONTACT_FIELD",
+      "Contact__c",
+    ),
+    membershipProjectField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_PROJECT_FIELD",
+      "Project__c",
+    ),
+    membershipProjectNameField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_PROJECT_NAME_FIELD",
+      "Project__r.Name",
+    ),
+    membershipExpeditionField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_EXPEDITION_FIELD",
+      "Expedition__c",
+    ),
+    membershipExpeditionNameField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_EXPEDITION_NAME_FIELD",
+      "Expedition__r.Name",
+    ),
+    membershipRoleField: readOptionalNullableStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_ROLE_FIELD",
+    ),
+    membershipStatusField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_EXPEDITION_MEMBER_STATUS_FIELD",
+      "Status__c",
+    ),
+    taskContactField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_TASK_CONTACT_FIELD",
+      "WhoId",
+    ),
+    taskChannelField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_TASK_CHANNEL_FIELD",
+      "TaskSubtype",
+    ),
+    taskEmailChannelValues: ["Email"],
+    taskSmsChannelValues: ["SMS", "Text"],
+    taskSnippetField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_TASK_SNIPPET_FIELD",
+      "Description",
+    ),
+    taskOccurredAtField: readOptionalStringEnv(
+      env,
+      "SALESFORCE_TASK_OCCURRED_AT_FIELD",
+      "CreatedDate",
+    ),
+    taskCrossProviderKeyField: readOptionalNullableStringEnv(
+      env,
+      "SALESFORCE_TASK_CROSS_PROVIDER_KEY_FIELD",
+    ),
+    timeoutMs: readOptionalPositiveIntegerEnv(
+      env,
+      "SALESFORCE_CAPTURE_TIMEOUT_MS",
+      15_000,
+    ),
+  };
+}
+
+function parseReconcileMode(
+  value: string | undefined,
+): ReconcileSalesforceStateMode {
+  const trimmed = value?.trim();
+
+  // Default is "enforce"; opt out only with RECONCILE_SF_STATE_MODE=dry_run.
+  if (trimmed === undefined || trimmed === "") {
+    return "enforce";
+  }
+
+  if (trimmed === "dry_run") {
+    return "dry_run";
+  }
+
+  if (trimmed === "enforce") {
+    return "enforce";
+  }
+
+  throw new Error(
+    `Invalid RECONCILE_SF_STATE_MODE value: "${trimmed}". Must be "dry_run" or "enforce".`,
+  );
 }
 
 function readMailchimpTransitionConfig(
@@ -523,6 +731,11 @@ export async function createStage1WorkerRuntimeServices(
   const postmarkSenderStatus = readPollPostmarkSenderStatusConfig(
     input?.env ?? process.env,
   );
+  const reconcileSalesforceState = buildReconcileSalesforceStateDependencies({
+    env: input?.env ?? process.env,
+    db: connection.db,
+    repositories,
+  });
   const campaignSend = buildCampaignSendDependencies({
     env: input?.env ?? process.env,
     campaigns,
@@ -671,6 +884,11 @@ export async function createStage1WorkerRuntimeServices(
         syncState,
         leaseThresholdMs,
       },
+      ...(reconcileSalesforceState === undefined
+        ? {}
+        : {
+            reconcileSalesforceState,
+          }),
       reconcileSupersededProjections: {
         db: connection.db,
         sql: connection.sql as unknown as ReconcileSupersededProjectionsTaskDependencies["sql"],

@@ -107,6 +107,7 @@ vi.mock("@/components/ui/dropdown-menu", () => {
 vi.mock("../../app/inbox/_components/icons", () => ({
   ArchiveBoxIcon: iconMock("ArchiveBoxIcon"),
   ChevronDownIcon: iconMock("ChevronDownIcon"),
+  FileEditIcon: iconMock("FileEditIcon"),
   FlagIcon: iconMock("FlagIcon"),
   FilterIcon: iconMock("FilterIcon"),
   InboxIcon: iconMock("InboxIcon"),
@@ -119,6 +120,13 @@ vi.mock("../../app/inbox/_components/icons", () => ({
   SearchXIcon: iconMock("SearchXIcon"),
   SendIcon: iconMock("SendIcon"),
   XIcon: iconMock("XIcon"),
+}));
+
+vi.mock("@/src/server/composer/drafts", () => ({
+  deleteComposerDraftAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { deletedCount: 1 },
+  }),
 }));
 
 import {
@@ -252,6 +260,7 @@ function buildList(
       { id: "unread", label: "Unread", count: 3, hint: null },
       { id: "follow-up", label: "Pending", count: 2, hint: null },
       { id: "archived", label: "Archived", count: null, hint: null },
+      { id: "drafts", label: "Drafts", count: null, hint: null },
       { id: "sent", label: "Sent", count: null, hint: null },
     ],
     totals: {
@@ -313,7 +322,11 @@ async function mountInboxList(
 
   const renderList = (nextSearchProbe?: SearchProbeState) => {
     root.render(
-      <InboxClientProvider composerAliases={[]} currentActorId="user-1">
+      <InboxClientProvider
+        composerAliases={[]}
+        initialDrafts={[]}
+        currentActorId="user-1"
+      >
         {nextSearchProbe ? <SearchStateProbe {...nextSearchProbe} /> : null}
         <InboxList initialList={initialList} />
       </InboxClientProvider>,
@@ -596,6 +609,33 @@ describe("Inbox list shell", () => {
       filterButton.querySelector("[data-filter-active-indicator='true']"),
     ).not.toBeNull();
     expect(session.container.textContent).not.toContain("All projects");
+  });
+
+  it("highlights the drafts filter when drafts is active", async () => {
+    const session = await mountInboxList();
+    const filterButton = findButtonByLabel(session.container, "Filters");
+
+    await act(async () => {
+      filterButton.click();
+      await Promise.resolve();
+    });
+
+    const draftsButton = findButtonByText(session.container, "Drafts");
+
+    await act(async () => {
+      draftsButton.click();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      filterButton.click();
+      await Promise.resolve();
+    });
+
+    expect(findButtonByText(session.container, "Drafts").getAttribute("aria-pressed")).toBe("true");
+    expect(session.container.textContent).toContain("Drafts");
+
+    await session.cleanup();
   });
 
   it("collapses the filter pane when a pointerdown fires outside it", async () => {

@@ -11,7 +11,9 @@ import {
   LinkIcon,
   ListIcon,
   ListOrderedIcon,
+  LoaderIcon,
   QuoteIcon,
+  SparklesIcon,
 } from "./icons";
 
 export type ComposerToolbarCommand =
@@ -25,6 +27,52 @@ export type ComposerToolbarCommand =
 interface ComposerToolbarProps {
   readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
   readonly onCommand: (command: ComposerToolbarCommand) => void;
+  readonly polishPhase?: "idle" | "busy" | "done";
+  readonly polishDisabled?: boolean;
+  readonly onRunPolish?: () => void;
+}
+
+function PolishToolbarButton({
+  phase,
+  disabled,
+  onRun,
+}: {
+  readonly phase: "idle" | "busy" | "done";
+  readonly disabled: boolean;
+  readonly onRun: () => void;
+}) {
+  const busy = phase === "busy";
+
+  return (
+    <button
+      type="button"
+      onClick={onRun}
+      disabled={disabled}
+      title="Polish — rewrite the whole message in clearer language"
+      className={cn(
+        "group/polish flex h-7 items-center justify-center rounded px-1.5 transition-colors disabled:cursor-default disabled:opacity-60",
+        busy
+          ? "bg-violet-100 text-violet-700"
+          : "text-violet-600 hover:bg-violet-100",
+      )}
+    >
+      {busy ? (
+        <LoaderIcon className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      ) : (
+        <SparklesIcon className="h-3.5 w-3.5 shrink-0" />
+      )}
+      <span
+        className={cn(
+          "overflow-hidden whitespace-nowrap text-[11.5px] font-medium transition-all duration-200 ease-out",
+          busy
+            ? "ml-1.5 max-w-[88px] opacity-100"
+            : "ml-0 max-w-0 opacity-0 group-hover/polish:ml-1.5 group-hover/polish:max-w-[88px] group-hover/polish:opacity-100",
+        )}
+      >
+        {busy ? "Polishing..." : "Polish"}
+      </span>
+    </button>
+  );
 }
 
 const TOOLBAR_ITEMS: readonly {
@@ -43,6 +91,9 @@ const TOOLBAR_ITEMS: readonly {
 export function ComposerToolbar({
   activeCommands,
   onCommand,
+  polishPhase = "idle",
+  polishDisabled = true,
+  onRunPolish,
 }: ComposerToolbarProps) {
   return (
     <div className="flex items-center gap-0.5 border-b border-slate-100 bg-white px-3 py-1.5">
@@ -71,6 +122,16 @@ export function ComposerToolbar({
           </button>
         );
       })}
+      {onRunPolish ? (
+        <>
+          <span className="mx-0.5 h-4 w-px bg-border" />
+          <PolishToolbarButton
+            phase={polishPhase}
+            disabled={polishDisabled}
+            onRun={onRunPolish}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

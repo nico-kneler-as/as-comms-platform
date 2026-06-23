@@ -106,6 +106,15 @@ function createFetchFromService(
   };
 }
 
+function createStubSalesforceApiClient(
+  queryAll: SalesforceApiClient["queryAll"],
+): SalesforceApiClient {
+  return {
+    queryAll,
+    queryAllIncludingDeleted: queryAll,
+  };
+}
+
 function createFakeSalesforceApiClient(): SalesforceApiClient {
   const contactRow = {
     Id: "003-stage1",
@@ -144,53 +153,47 @@ function createFakeSalesforceApiClient(): SalesforceApiClient {
     LastModifiedDate: "2026-01-05T00:03:00.000Z",
   };
 
-  return {
-    queryAll(soql) {
-      if (soql.includes(" FROM Contact ")) {
-        if (soql.includes(" WHERE Id IN ")) {
-          return Promise.resolve(
-            soql.includes("'003-stage1'") ? [contactRow] : [],
-          );
-        }
-
-        return Promise.resolve([contactRow]);
+  return createStubSalesforceApiClient((soql) => {
+    if (soql.includes(" FROM Contact ")) {
+      if (soql.includes(" WHERE Id IN ")) {
+        return Promise.resolve(
+          soql.includes("'003-stage1'") ? [contactRow] : [],
+        );
       }
 
-      if (soql.includes(" FROM Task ")) {
-        if (soql.includes(" WHERE Id IN ")) {
-          return Promise.resolve(
-            soql.includes("'00T-task-1'") ? [taskRow] : [],
-          );
-        }
+      return Promise.resolve([contactRow]);
+    }
 
-        if (soql.includes(" WHERE WhoId IN ")) {
-          return Promise.resolve(
-            soql.includes("'003-stage1'") ? [taskRow] : [],
-          );
-        }
-
-        return Promise.resolve([taskRow]);
+    if (soql.includes(" FROM Task ")) {
+      if (soql.includes(" WHERE Id IN ")) {
+        return Promise.resolve(soql.includes("'00T-task-1'") ? [taskRow] : []);
       }
 
-      if (soql.includes(" FROM Expedition_Members__c ")) {
-        if (soql.includes(" WHERE Id IN ")) {
-          return Promise.resolve(
-            soql.includes("'a01-membership-1'") ? [membershipRow] : [],
-          );
-        }
-
-        if (soql.includes(" WHERE Contact__c IN ")) {
-          return Promise.resolve(
-            soql.includes("'003-stage1'") ? [membershipRow] : [],
-          );
-        }
-
-        return Promise.resolve([membershipRow]);
+      if (soql.includes(" WHERE WhoId IN ")) {
+        return Promise.resolve(soql.includes("'003-stage1'") ? [taskRow] : []);
       }
 
-      return Promise.resolve([]);
-    },
-  };
+      return Promise.resolve([taskRow]);
+    }
+
+    if (soql.includes(" FROM Expedition_Members__c ")) {
+      if (soql.includes(" WHERE Id IN ")) {
+        return Promise.resolve(
+          soql.includes("'a01-membership-1'") ? [membershipRow] : [],
+        );
+      }
+
+      if (soql.includes(" WHERE Contact__c IN ")) {
+        return Promise.resolve(
+          soql.includes("'003-stage1'") ? [membershipRow] : [],
+        );
+      }
+
+      return Promise.resolve([membershipRow]);
+    }
+
+    return Promise.resolve([]);
+  });
 }
 
 function extractQuotedIds(soql: string): string[] {
@@ -226,12 +229,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: () => {
-            queryCount += 1;
-            return Promise.resolve([]);
-          },
-        },
+        apiClient: createStubSalesforceApiClient(() => {
+          queryCount += 1;
+          return Promise.resolve([]);
+        }),
       },
     );
 
@@ -273,11 +274,9 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: () => {
-            throw new Error("Salesforce query failed");
-          },
-        },
+        apiClient: createStubSalesforceApiClient(() => {
+          throw new Error("Salesforce query failed");
+        }),
       },
     );
 
@@ -315,54 +314,52 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll(soql) {
-            if (soql.includes(" FROM Contact ")) {
-              return Promise.resolve([
-                {
-                  Id: "003-stage1",
-                  Name: "Stage One Volunteer",
-                  Email: "volunteer@example.org",
-                  CreatedDate: "2026-01-01T00:00:00.000Z",
-                  LastModifiedDate: "2026-01-05T00:00:00.000Z"
-                }
-              ]);
-            }
+        apiClient: createStubSalesforceApiClient((soql) => {
+          if (soql.includes(" FROM Contact ")) {
+            return Promise.resolve([
+              {
+                Id: "003-stage1",
+                Name: "Stage One Volunteer",
+                Email: "volunteer@example.org",
+                CreatedDate: "2026-01-01T00:00:00.000Z",
+                LastModifiedDate: "2026-01-05T00:00:00.000Z",
+              },
+            ]);
+          }
 
-            if (soql.includes(" FROM Task ")) {
-              return Promise.resolve([
-                {
-                  Id: "00T-task-oversized-1",
-                  WhoId: "003-stage1",
-                  OwnerId: "005-nim-admin",
-                  Owner: {
-                    Name: "Nim Admin",
-                    Username: "admin+1@adventurescientists.org"
-                  },
-                  TaskSubtype: "Email",
-                  Subject: "Outbound follow-up",
-                  Description: "x".repeat(100_001),
-                  CreatedDate: "2026-01-05T00:02:00.000Z",
-                  LastModifiedDate: "2026-01-05T00:03:00.000Z"
-                }
-              ]);
-            }
+          if (soql.includes(" FROM Task ")) {
+            return Promise.resolve([
+              {
+                Id: "00T-task-oversized-1",
+                WhoId: "003-stage1",
+                OwnerId: "005-nim-admin",
+                Owner: {
+                  Name: "Nim Admin",
+                  Username: "admin+1@adventurescientists.org",
+                },
+                TaskSubtype: "Email",
+                Subject: "Outbound follow-up",
+                Description: "x".repeat(100_001),
+                CreatedDate: "2026-01-05T00:02:00.000Z",
+                LastModifiedDate: "2026-01-05T00:03:00.000Z",
+              },
+            ]);
+          }
 
-            if (soql.includes(" FROM Expedition_Members__c ")) {
-              return Promise.resolve([]);
-            }
-
+          if (soql.includes(" FROM Expedition_Members__c ")) {
             return Promise.resolve([]);
           }
-        }
-      }
+
+          return Promise.resolve([]);
+        }),
+      },
     );
 
     const response = await service.handleHttpRequest({
       method: "POST",
       path: "/live",
       headers: {
-        authorization: "Bearer salesforce-token"
+        authorization: "Bearer salesforce-token",
       },
       bodyText: JSON.stringify({
         version: 1,
@@ -381,13 +378,13 @@ describe("Salesforce capture service", () => {
         windowStart: "2026-01-01T00:00:00.000Z",
         windowEnd: "2026-01-06T00:00:00.000Z",
         recordIds: [],
-        maxRecords: 25
-      })
+        maxRecords: 25,
+      }),
     });
 
     expect(response.status).toBe(400);
     expect(JSON.parse(response.body)).toMatchObject({
-      error: "invalid_request"
+      error: "invalid_request",
     });
   });
 
@@ -397,12 +394,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -518,12 +513,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -575,12 +568,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -633,12 +624,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -726,12 +715,10 @@ describe("Salesforce capture service", () => {
         membershipRoleField: null,
       },
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -817,53 +804,51 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            if (soql.includes(" FROM Contact ")) {
-              if (soql.includes(" WHERE Id IN ")) {
-                return Promise.resolve(
-                  soql.includes("'003-auto'") ? [contactRow] : [],
-                );
-              }
-
-              return Promise.resolve([contactRow]);
+        apiClient: createStubSalesforceApiClient((soql) => {
+          if (soql.includes(" FROM Contact ")) {
+            if (soql.includes(" WHERE Id IN ")) {
+              return Promise.resolve(
+                soql.includes("'003-auto'") ? [contactRow] : [],
+              );
             }
 
-            if (soql.includes(" FROM Task ")) {
-              if (soql.includes(" WHERE Id IN ")) {
-                return Promise.resolve(
-                  soql.includes("'a01-membership-auto'") ? [] : [],
-                );
-              }
+            return Promise.resolve([contactRow]);
+          }
 
-              if (soql.includes(" WHERE WhoId IN ")) {
-                return Promise.resolve(
-                  soql.includes("'003-auto'") ? [autoEmailTaskRow] : [],
-                );
-              }
-
-              return Promise.resolve([autoEmailTaskRow]);
+          if (soql.includes(" FROM Task ")) {
+            if (soql.includes(" WHERE Id IN ")) {
+              return Promise.resolve(
+                soql.includes("'a01-membership-auto'") ? [] : [],
+              );
             }
 
-            if (soql.includes(" FROM Expedition_Members__c ")) {
-              if (soql.includes(" WHERE Id IN ")) {
-                return Promise.resolve(
-                  soql.includes("'a01-membership-auto'") ? [membershipRow] : [],
-                );
-              }
-
-              if (soql.includes(" WHERE Contact__c IN ")) {
-                return Promise.resolve(
-                  soql.includes("'003-auto'") ? [membershipRow] : [],
-                );
-              }
-
-              return Promise.resolve([membershipRow]);
+            if (soql.includes(" WHERE WhoId IN ")) {
+              return Promise.resolve(
+                soql.includes("'003-auto'") ? [autoEmailTaskRow] : [],
+              );
             }
 
-            return Promise.resolve([]);
-          },
-        },
+            return Promise.resolve([autoEmailTaskRow]);
+          }
+
+          if (soql.includes(" FROM Expedition_Members__c ")) {
+            if (soql.includes(" WHERE Id IN ")) {
+              return Promise.resolve(
+                soql.includes("'a01-membership-auto'") ? [membershipRow] : [],
+              );
+            }
+
+            if (soql.includes(" WHERE Contact__c IN ")) {
+              return Promise.resolve(
+                soql.includes("'003-auto'") ? [membershipRow] : [],
+              );
+            }
+
+            return Promise.resolve([membershipRow]);
+          }
+
+          return Promise.resolve([]);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -921,12 +906,10 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
-            return baseApiClient.queryAll(soql);
-          },
-        },
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -1057,31 +1040,29 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            queries.push(soql);
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
 
-            if (soql.includes(" FROM Contact ")) {
-              return Promise.resolve([contactRow]);
-            }
+          if (soql.includes(" FROM Contact ")) {
+            return Promise.resolve([contactRow]);
+          }
 
-            if (soql.includes(" FROM Expedition_Members__c ")) {
-              return Promise.resolve([membershipRow]);
-            }
+          if (soql.includes(" FROM Expedition_Members__c ")) {
+            return Promise.resolve([membershipRow]);
+          }
 
-            if (soql.includes(" FROM Task ")) {
-              return Promise.resolve(
-                soql.includes(
-                  "Owner.Username IN ('admin+1@adventurescientists.org')",
-                )
-                  ? []
-                  : [humanEmailTaskRow],
-              );
-            }
+          if (soql.includes(" FROM Task ")) {
+            return Promise.resolve(
+              soql.includes(
+                "Owner.Username IN ('admin+1@adventurescientists.org')",
+              )
+                ? []
+                : [humanEmailTaskRow],
+            );
+          }
 
-            return Promise.resolve([]);
-          },
-        },
+          return Promise.resolve([]);
+        }),
         now: () => new Date("2026-01-05T00:05:00.000Z"),
       },
     );
@@ -1157,48 +1138,46 @@ describe("Salesforce capture service", () => {
     const service = createSalesforceCaptureService(
       createSalesforceServiceConfig(),
       {
-        apiClient: {
-          queryAll: (soql) => {
-            if (
-              soql.includes(
-                "FROM Expedition_Members__c WHERE Contact__c != null AND ((",
-              )
-            ) {
-              return Promise.resolve(membershipRows);
-            }
+        apiClient: createStubSalesforceApiClient((soql) => {
+          if (
+            soql.includes(
+              "FROM Expedition_Members__c WHERE Contact__c != null AND ((",
+            )
+          ) {
+            return Promise.resolve(membershipRows);
+          }
 
-            if (soql.includes("FROM Task ")) {
-              return Promise.resolve([]);
-            }
-
-            if (
-              soql.includes("FROM Contact WHERE LastModifiedDate >=") &&
-              !soql.includes(" WHERE Id IN ")
-            ) {
-              return Promise.resolve([]);
-            }
-
-            if (soql.includes("FROM Contact WHERE Id IN ")) {
-              const ids = extractQuotedIds(soql);
-              contactChunkSizes.push(ids.length);
-              return Promise.resolve(
-                contactRows.filter((row) => ids.includes(row.Id)),
-              );
-            }
-
-            if (
-              soql.includes("FROM Expedition_Members__c WHERE Contact__c IN ")
-            ) {
-              const ids = extractQuotedIds(soql);
-              membershipChunkSizes.push(ids.length);
-              return Promise.resolve(
-                membershipRows.filter((row) => ids.includes(row.Contact__c)),
-              );
-            }
-
+          if (soql.includes("FROM Task ")) {
             return Promise.resolve([]);
-          },
-        },
+          }
+
+          if (
+            soql.includes("FROM Contact WHERE LastModifiedDate >=") &&
+            !soql.includes(" WHERE Id IN ")
+          ) {
+            return Promise.resolve([]);
+          }
+
+          if (soql.includes("FROM Contact WHERE Id IN ")) {
+            const ids = extractQuotedIds(soql);
+            contactChunkSizes.push(ids.length);
+            return Promise.resolve(
+              contactRows.filter((row) => ids.includes(row.Id)),
+            );
+          }
+
+          if (
+            soql.includes("FROM Expedition_Members__c WHERE Contact__c IN ")
+          ) {
+            const ids = extractQuotedIds(soql);
+            membershipChunkSizes.push(ids.length);
+            return Promise.resolve(
+              membershipRows.filter((row) => ids.includes(row.Contact__c)),
+            );
+          }
+
+          return Promise.resolve([]);
+        }),
         now: () => new Date("2026-01-20T00:00:00.000Z"),
       },
     );

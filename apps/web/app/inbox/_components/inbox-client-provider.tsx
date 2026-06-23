@@ -11,6 +11,7 @@ import {
 
 import type { AiDraftRequestPayload, AiDraftResponseVm } from "../actions";
 import type {
+  InboxDraftListItemViewModel,
   InboxComposerAliasOption,
   InboxComposerForwardContext,
   InboxComposerReplyContext,
@@ -155,6 +156,7 @@ interface InboxClientState {
   readonly composerAliases: readonly InboxComposerAliasOption[];
   readonly composerPane: ComposerPaneState;
   readonly composerView: ComposerViewState;
+  readonly drafts: readonly InboxDraftListItemViewModel[];
   readonly openNewDraft: () => void;
   readonly openReplyDraft: (
     replyContext: InboxComposerReplyContext,
@@ -164,6 +166,11 @@ interface InboxClientState {
     forwardContext: InboxComposerForwardContext,
     initialTab?: "email",
   ) => void;
+  readonly openExistingDraft: (draft: InboxDraftListItemViewModel) => void;
+  readonly upsertDraft: (draft: InboxDraftListItemViewModel) => void;
+  readonly removeDraft: (draftId: string) => void;
+  readonly pendingExistingDraft: InboxDraftListItemViewModel | null;
+  readonly clearPendingExistingDraft: () => void;
   readonly closeComposer: () => void;
   readonly minimizeComposer: () => void;
   readonly expandComposer: () => void;
@@ -201,6 +208,7 @@ interface InboxClientState {
   readonly markAiDraftEdited: () => void;
   readonly restoreAiDraft: () => void;
   readonly discardAiDraft: () => void;
+  readonly editPromptAiDraft: () => void;
   readonly markAiDraftReprompting: () => void;
   readonly repromptAi: (input: {
     readonly request: AiDraftRequestPayload;
@@ -216,11 +224,13 @@ const InboxClientContext = createContext<InboxClientState | null>(null);
 export function InboxClientProvider({
   children,
   composerAliases,
+  initialDrafts,
   currentActorId,
   operatorDisplayName = currentActorId,
 }: {
   readonly children: ReactNode;
   readonly composerAliases: readonly InboxComposerAliasOption[];
+  readonly initialDrafts: readonly InboxDraftListItemViewModel[];
   readonly currentActorId: string;
   readonly operatorDisplayName?: string;
 }) {
@@ -234,6 +244,9 @@ export function InboxClientProvider({
     mode: "closed",
   });
   const [composerView, setComposerView] = useState<ComposerViewState>("closed");
+  const [drafts, setDrafts] = useState(initialDrafts);
+  const [pendingExistingDraft, setPendingExistingDraft] =
+    useState<InboxDraftListItemViewModel | null>(null);
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>("idle");
   const [composerErrors, setComposerErrors] = useState<
     readonly ComposerValidationError[]
@@ -332,6 +345,7 @@ export function InboxClientProvider({
   }, []);
 
   const openNewDraft = useCallback(() => {
+    setPendingExistingDraft(null);
     setComposerPane((previous) =>
       reduceComposerPane(previous, {
         type: "open-new-draft",
@@ -347,6 +361,7 @@ export function InboxClientProvider({
       replyContext: InboxComposerReplyContext,
       initialTab: "email" | "note" = "email",
     ) => {
+      setPendingExistingDraft(null);
       setComposerPane((previous) =>
         reduceComposerPane(previous, {
           type: "open-reply",
@@ -366,6 +381,7 @@ export function InboxClientProvider({
       forwardContext: InboxComposerForwardContext,
       initialTab: "email" = "email",
     ) => {
+      setPendingExistingDraft(null);
       setComposerPane((previous) =>
         reduceComposerPane(previous, {
           type: "open-forward",
@@ -380,7 +396,55 @@ export function InboxClientProvider({
     [],
   );
 
+  const openExistingDraft = useCallback((draft: InboxDraftListItemViewModel) => {
+    if (draft.paneMode === "replying" && draft.replyContext !== null) {
+      setComposerPane({
+        mode: "replying",
+        replyContext: draft.replyContext,
+        initialTab: draft.channel === "note" ? "note" : "email",
+      });
+    } else if (
+      draft.paneMode === "forwarding" &&
+      draft.forwardContext !== null
+    ) {
+      setComposerPane({
+        mode: "forwarding",
+        forwardContext: draft.forwardContext,
+        initialTab: "email",
+      });
+    } else {
+      setComposerPane({
+        mode: "new-draft",
+        initialTab: "email",
+      });
+    }
+
+    setPendingExistingDraft(draft);
+    setComposerView("modal");
+    setComposerStatus("idle");
+    setComposerErrors([]);
+  }, []);
+
+  const upsertDraft = useCallback((draft: InboxDraftListItemViewModel) => {
+    setDrafts((previous) =>
+      [draft, ...previous.filter((entry) => entry.id !== draft.id)].sort(
+        (left, right) =>
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          right.id.localeCompare(left.id),
+      ),
+    );
+  }, []);
+
+  const removeDraft = useCallback((draftId: string) => {
+    setDrafts((previous) => previous.filter((draft) => draft.id !== draftId));
+  }, []);
+
+  const clearPendingExistingDraft = useCallback(() => {
+    setPendingExistingDraft(null);
+  }, []);
+
   const closeComposer = useCallback(() => {
+    setPendingExistingDraft(null);
     setComposerView("closed");
     setComposerPane((previous) =>
       reduceComposerPane(previous, {
@@ -552,6 +616,10 @@ export function InboxClientProvider({
     setAiDraft(INITIAL_AI_DRAFT);
   }, []);
 
+  const editPromptAiDraft = useCallback(() => {
+    setAiDraft(INITIAL_AI_DRAFT);
+  }, []);
+
   const markAiDraftReprompting = useCallback(() => {
     setAiDraft((previous) => ({
       ...previous,
@@ -623,9 +691,15 @@ export function InboxClientProvider({
       composerAliases,
       composerPane,
       composerView,
+      drafts,
       openNewDraft,
       openReplyDraft,
       openForwardDraft,
+      openExistingDraft,
+      upsertDraft,
+      removeDraft,
+      pendingExistingDraft,
+      clearPendingExistingDraft,
       closeComposer,
       minimizeComposer,
       expandComposer,
@@ -645,6 +719,7 @@ export function InboxClientProvider({
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      editPromptAiDraft,
       markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,
@@ -672,9 +747,15 @@ export function InboxClientProvider({
       composerAliases,
       composerPane,
       composerView,
+      drafts,
       openNewDraft,
       openReplyDraft,
       openForwardDraft,
+      openExistingDraft,
+      upsertDraft,
+      removeDraft,
+      pendingExistingDraft,
+      clearPendingExistingDraft,
       closeComposer,
       minimizeComposer,
       expandComposer,
@@ -692,6 +773,7 @@ export function InboxClientProvider({
       markAiDraftEdited,
       restoreAiDraft,
       discardAiDraft,
+      editPromptAiDraft,
       markAiDraftReprompting,
       repromptAi,
       setAiUnavailable,

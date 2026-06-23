@@ -358,7 +358,9 @@ function buildContext(input: {
       Stage1RepositoryBundle["expeditionDimensions"]["upsert"]
     >[0],
   ) => void;
-  readonly onPendingOutboundConfirmed?: (record: PendingComposerOutboundRecord) => void;
+  readonly onPendingOutboundConfirmed?: (
+    record: PendingComposerOutboundRecord,
+  ) => void;
 }): TestContext {
   interface StoredInternalNote {
     readonly id: string;
@@ -373,7 +375,9 @@ function buildContext(input: {
   const contactRecords = new Map(
     (input.contacts ?? [contact]).map((entry) => [entry.id, entry]),
   );
-  const contactIdentityRecords = [...(input.contactIdentities ?? [emailIdentity])];
+  const contactIdentityRecords = [
+    ...(input.contactIdentities ?? [emailIdentity]),
+  ];
   const contactMembershipRecords = [...(input.contactMemberships ?? [])];
   const sourceEvidenceById = new Map(
     input.events.map((event) => [
@@ -401,10 +405,9 @@ function buildContext(input: {
   const canonicalEventsById = new Map(
     input.events.map((event) => [event.id, event]),
   );
-  const timelineRowsByCanonicalEventId = new Map<
-    string,
-    TimelineProjectionRow
-  >((input.timelineRows ?? []).map((row) => [row.canonicalEventId, row]));
+  const timelineRowsByCanonicalEventId = new Map<string, TimelineProjectionRow>(
+    (input.timelineRows ?? []).map((row) => [row.canonicalEventId, row]),
+  );
   const canonicalEventAudienceRowsByKey = new Map<
     string,
     CanonicalEventAudienceRecord
@@ -443,7 +446,8 @@ function buildContext(input: {
   const inboxProjectionByContactId = new Map(
     [
       ...(input.inboxProjections ?? []),
-      ...(input.existingProjection === undefined || input.existingProjection === null
+      ...(input.existingProjection === undefined ||
+      input.existingProjection === null
         ? []
         : [input.existingProjection]),
     ].map((projection) => [projection.contactId, projection]),
@@ -451,9 +455,12 @@ function buildContext(input: {
   let inboxSaveCount = 0;
 
   const listContacts = (): ContactRecord[] =>
-    [...contactRecords.values()].sort((left, right) => left.id.localeCompare(right.id));
-  const listContactIdentities = (): ContactIdentityRecord[] =>
-    [...contactIdentityRecords];
+    [...contactRecords.values()].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    );
+  const listContactIdentities = (): ContactIdentityRecord[] => [
+    ...contactIdentityRecords,
+  ];
   const getInboxProjection = (contactId: string): InboxProjectionRow | null =>
     inboxProjectionByContactId.get(contactId) ?? null;
 
@@ -468,7 +475,8 @@ function buildContext(input: {
         const existing = sourceEvidenceByIdempotencyKey.get(
           record.idempotencyKey,
         );
-        const updated = existing === undefined ? record : { ...record, id: existing.id };
+        const updated =
+          existing === undefined ? record : { ...record, id: existing.id };
         sourceEvidenceById.set(updated.id, updated);
         sourceEvidenceByIdempotencyKey.set(updated.idempotencyKey, updated);
         return Promise.resolve(updated);
@@ -605,8 +613,9 @@ function buildContext(input: {
         ),
       findByPrimaryPhone: (phoneE164) =>
         Promise.resolve(
-          listContacts().find((contact) => contact.primaryPhone === phoneE164) ??
-            null,
+          listContacts().find(
+            (contact) => contact.primaryPhone === phoneE164,
+          ) ?? null,
         ),
       listAll: () => Promise.resolve(listContacts()),
       listByIds: (ids) =>
@@ -615,6 +624,9 @@ function buildContext(input: {
             .map((id) => contactRecords.get(id))
             .filter((entry): entry is ContactRecord => entry !== undefined),
         ),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       searchByQuery: () => Promise.resolve(listContacts()),
       searchInboxUnified: () =>
         Promise.resolve({
@@ -645,7 +657,10 @@ function buildContext(input: {
       }
 
       let timelineRowsRepointed = 0;
-      for (const [canonicalEventId, row] of timelineRowsByCanonicalEventId.entries()) {
+      for (const [
+        canonicalEventId,
+        row,
+      ] of timelineRowsByCanonicalEventId.entries()) {
         if (row.contactId !== mergeInput.emailOnlyContactId) {
           continue;
         }
@@ -698,13 +713,16 @@ function buildContext(input: {
                   ? mergeInput.anchoredContactId
                   : contactId,
               )
-              .filter((contactId) => contactId !== mergeInput.emailOnlyContactId),
+              .filter(
+                (contactId) => contactId !== mergeInput.emailOnlyContactId,
+              ),
           ),
         ];
 
         if (
           nextAnchoredContactId === identityCase.anchoredContactId &&
-          nextCandidateContactIds.length === identityCase.candidateContactIds.length &&
+          nextCandidateContactIds.length ===
+            identityCase.candidateContactIds.length &&
           nextCandidateContactIds.every(
             (contactId, index) =>
               contactId === identityCase.candidateContactIds[index],
@@ -721,10 +739,19 @@ function buildContext(input: {
         });
       }
 
-      const contactDeleted = contactRecords.delete(mergeInput.emailOnlyContactId);
+      const contactDeleted = contactRecords.delete(
+        mergeInput.emailOnlyContactId,
+      );
       inboxProjectionByContactId.delete(mergeInput.emailOnlyContactId);
-      for (let index = contactIdentityRecords.length - 1; index >= 0; index -= 1) {
-        if (contactIdentityRecords[index]?.contactId === mergeInput.emailOnlyContactId) {
+      for (
+        let index = contactIdentityRecords.length - 1;
+        index >= 0;
+        index -= 1
+      ) {
+        if (
+          contactIdentityRecords[index]?.contactId ===
+          mergeInput.emailOnlyContactId
+        ) {
           contactIdentityRecords.splice(index, 1);
         }
       }
@@ -780,6 +807,9 @@ function buildContext(input: {
             contactIds.includes(record.contactId),
           ),
         ),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       upsert: (record: ContactMembershipRecord) => {
         input.onContactMembershipUpsert?.(record);
         const existingIndex = contactMembershipRecords.findIndex(
@@ -819,6 +849,9 @@ function buildContext(input: {
       listActive: () => Promise.resolve([]),
       listAllProjectAliases: () => Promise.resolve(input.projectAliases ?? []),
       listByIds: () => Promise.resolve([]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
       findEffectiveAiKnowledge: () => Promise.resolve(null),
@@ -874,6 +907,9 @@ function buildContext(input: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record: SalesforceCommunicationDetailRecord) =>
         Promise.resolve(record),
+    },
+    salesforceReconciliationRuns: {
+      insert: () => Promise.resolve(),
     },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -1212,8 +1248,7 @@ function buildContext(input: {
         Promise.resolve(
           auditEvidenceRecords.filter(
             (record) =>
-              record.entityType === entityType &&
-              record.entityId === entityId,
+              record.entityType === entityType && record.entityId === entityId,
           ),
         ),
       listByEntities: ({ entityType, entityIds }) =>
@@ -2336,7 +2371,9 @@ describe("identity resolution hardening", () => {
     expect(context.getTimelineRow(strandedInbound.id)?.contactId).toBe(
       sfAnchoredContact.id,
     );
-    expect(context.getInboxProjectionForContact(emailOnlyContact.id)).toBeNull();
+    expect(
+      context.getInboxProjectionForContact(emailOnlyContact.id),
+    ).toBeNull();
 
     const anchoredProjection = context.getInboxProjectionForContact(
       sfAnchoredContact.id,
@@ -2345,14 +2382,16 @@ describe("identity resolution hardening", () => {
     expect(anchoredProjection?.lastInboundAt).toBe(strandedInbound.occurredAt);
 
     expect(
-      context.getAuditEvidence().find(
-        (record) =>
-          record.policyCode ===
-            "stage1.identity.auto_merge_email_only_into_salesforce_anchored" &&
-          record.entityType === "contact_merge" &&
-          record.entityId ===
-            `${emailOnlyContact.id}->${sfAnchoredContact.id}`,
-      ),
+      context
+        .getAuditEvidence()
+        .find(
+          (record) =>
+            record.policyCode ===
+              "stage1.identity.auto_merge_email_only_into_salesforce_anchored" &&
+            record.entityType === "contact_merge" &&
+            record.entityId ===
+              `${emailOnlyContact.id}->${sfAnchoredContact.id}`,
+        ),
     ).toBeDefined();
   });
 
@@ -2482,15 +2521,19 @@ describe("identity resolution hardening", () => {
       contactIdentities: [legacyIdentity],
     });
 
-    const resolved = await context.normalization.ensureCanonicalContactForEmail({
-      emailAddress: "or-rural-coordinator@example.org",
-      createdAt: "2026-05-31T12:00:00.000Z",
-      source: "gmail",
-      observedDisplayName: "Scotty Stalp",
-    });
+    const resolved = await context.normalization.ensureCanonicalContactForEmail(
+      {
+        emailAddress: "or-rural-coordinator@example.org",
+        createdAt: "2026-05-31T12:00:00.000Z",
+        source: "gmail",
+        observedDisplayName: "Scotty Stalp",
+      },
+    );
 
     expect(resolved.displayName).toBe("Scotty Stalp");
-    expect(context.getContact(legacyContact.id)?.displayName).toBe("Scotty Stalp");
+    expect(context.getContact(legacyContact.id)?.displayName).toBe(
+      "Scotty Stalp",
+    );
   });
 
   it("updates an existing contact when displayName equals the primary email", async () => {
@@ -2510,12 +2553,14 @@ describe("identity resolution hardening", () => {
       contactIdentities: [emailNamedIdentity],
     });
 
-    const resolved = await context.normalization.ensureCanonicalContactForEmail({
-      emailAddress: "or-rural-coordinator@example.org",
-      createdAt: "2026-05-31T12:00:00.000Z",
-      source: "gmail",
-      observedDisplayName: "Scotty Stalp",
-    });
+    const resolved = await context.normalization.ensureCanonicalContactForEmail(
+      {
+        emailAddress: "or-rural-coordinator@example.org",
+        createdAt: "2026-05-31T12:00:00.000Z",
+        source: "gmail",
+        observedDisplayName: "Scotty Stalp",
+      },
+    );
 
     expect(resolved.displayName).toBe("Scotty Stalp");
     expect(context.getContact(emailNamedContact.id)?.displayName).toBe(
@@ -2541,12 +2586,14 @@ describe("identity resolution hardening", () => {
       ],
     });
 
-    const resolved = await context.normalization.ensureCanonicalContactForEmail({
-      emailAddress: "or-rural-coordinator@example.org",
-      createdAt: "2026-05-31T12:00:00.000Z",
-      source: "gmail",
-      observedDisplayName: "Scotty Stalp",
-    });
+    const resolved = await context.normalization.ensureCanonicalContactForEmail(
+      {
+        emailAddress: "or-rural-coordinator@example.org",
+        createdAt: "2026-05-31T12:00:00.000Z",
+        source: "gmail",
+        observedDisplayName: "Scotty Stalp",
+      },
+    );
 
     expect(resolved.displayName).toBe("Scott Stalp");
   });
@@ -2642,7 +2689,9 @@ describe("identity resolution hardening", () => {
         identity: {
           salesforceContactId: null,
           volunteerIdPlainValues: [],
-          normalizedEmails: [...(input?.identityEmails ?? ["sender@example.org"])],
+          normalizedEmails: [
+            ...(input?.identityEmails ?? ["sender@example.org"]),
+          ],
           normalizedPhones: [],
         },
         supportingSources: [],
@@ -2902,7 +2951,9 @@ describe("pending composer outbound reconciliation", () => {
     });
 
     if (fingerprint === null) {
-      throw new Error("Expected fingerprint to be computed for pending outbound.");
+      throw new Error(
+        "Expected fingerprint to be computed for pending outbound.",
+      );
     }
 
     const context = buildContext({
@@ -2972,7 +3023,9 @@ describe("pending composer outbound reconciliation", () => {
     });
 
     if (fingerprint === null) {
-      throw new Error("Expected fingerprint to be computed for pending outbound.");
+      throw new Error(
+        "Expected fingerprint to be computed for pending outbound.",
+      );
     }
 
     const context = buildContext({
@@ -3062,12 +3115,12 @@ describe("pending composer outbound reconciliation", () => {
 
     expect(result.outcome).toBe("applied");
     expect(confirmedRows).toHaveLength(0);
-    expect(context.getPendingOutbound("pending:already-linked-rfc822")).toMatchObject(
-      {
-        status: "confirmed",
-        reconciledEventId: "event:existing-link",
-      },
-    );
+    expect(
+      context.getPendingOutbound("pending:already-linked-rfc822"),
+    ).toMatchObject({
+      status: "confirmed",
+      reconciledEventId: "event:existing-link",
+    });
 
     const matchedLog = consoleLog.mock.calls
       .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)

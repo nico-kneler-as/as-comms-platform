@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { requireSession } from "@/src/server/auth/session";
 import { readWebEnv } from "@/src/server/env";
+import { getInboxDraftList } from "@/src/server/inbox/drafts";
 
 import { InboxShell } from "./_components/inbox-shell";
 import {
@@ -49,8 +50,9 @@ export default async function InboxLayout({
   });
   const env = readWebEnv();
 
-  const [list, composerAliases, smsSenders, healthBanner] = await Promise.all([
+  const [list, drafts, composerAliases, smsSenders, healthBanner] = await Promise.all([
     getInboxList("inbox"),
+    getInboxDraftList({ limit: 50 }),
     getInboxComposerAliases(),
     env.SMS_ENABLED ? getInboxSmsSenders() : Promise.resolve([]),
     getInboxIntegrationHealthBanner(),
@@ -59,6 +61,7 @@ export default async function InboxLayout({
   return (
     <InboxShell
       initialList={list}
+      initialDrafts={drafts}
       initialFilterId="inbox"
       composerAliases={composerAliases}
       outboundRateUsdPerSegment={env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT}

@@ -1710,6 +1710,10 @@ describe("real inbox selectors", () => {
       label: "Archived",
       count: null,
     });
+    expect(filtersById.get("drafts")).toMatchObject({
+      label: "Drafts",
+      count: null,
+    });
     expect(filtersById.get("sent")).toMatchObject({
       label: "Sent",
       count: null,

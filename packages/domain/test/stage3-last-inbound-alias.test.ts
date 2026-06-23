@@ -95,6 +95,9 @@ function buildRepositoryBundle(input: {
       findByPrimaryPhone: () => Promise.resolve(contact),
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       searchByQuery: () => Promise.resolve([contact]),
       searchInboxUnified: () =>
         Promise.resolve({
@@ -112,6 +115,9 @@ function buildRepositoryBundle(input: {
     contactMemberships: {
       listByContactId: () => Promise.resolve([]),
       listByContactIds: () => Promise.resolve([]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       upsert: (record) => Promise.resolve(record),
     },
     smsMessages: {
@@ -140,6 +146,9 @@ function buildRepositoryBundle(input: {
       listActive: () => Promise.resolve([]),
       listAllProjectAliases: () => Promise.resolve([]),
       listByIds: () => Promise.resolve([]),
+      listSalesforceAnchoredIds: () => Promise.resolve([]),
+      markSalesforceDeleted: () => Promise.resolve(0),
+      markSalesforceReconciled: () => Promise.resolve(0),
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
       findEffectiveAiKnowledge: () => Promise.resolve(null),
@@ -177,6 +186,9 @@ function buildRepositoryBundle(input: {
     salesforceCommunicationDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
+    },
+    salesforceReconciliationRuns: {
+      insert: () => Promise.resolve(),
     },
     simpleTextingMessageDetails: {
       listBySourceEvidenceIds: () => Promise.resolve([]),
@@ -305,7 +317,7 @@ function buildRepositoryBundle(input: {
           total: 0,
           latestUpdatedAt: null,
           latestSortKey: null,
-      }),
+        }),
       upsert: (record) => Promise.resolve(record),
     },
     canonicalEventAudience: {

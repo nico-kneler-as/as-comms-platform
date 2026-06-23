@@ -15,6 +15,7 @@ import {
   canonicalEventAudience,
   canonicalEventLedger,
   campaignRuns,
+  composerDrafts,
   contactInboxProjection,
   contactConsent,
   contactTimelineProjection,
@@ -43,6 +44,7 @@ describe("Stage 1 DB schema", () => {
       "campaignRuns",
       "canonicalEventAudience",
       "canonicalEventLedger",
+      "composerDrafts",
       "consentRecords",
       "contactConsent",
       "contactIdentities",
@@ -95,6 +97,7 @@ describe("Stage 1 DB schema", () => {
       "source_evidence_quarantine"
     );
     expect(getTableName(campaignRuns)).toBe("campaign_runs");
+    expect(getTableName(composerDrafts)).toBe("composer_drafts");
     expect(getTableName(audienceSnapshots)).toBe("audience_snapshots");
     expect(getTableName(contactConsent)).toBe("contact_consent");
     expect(getTableName(suppressionList)).toBe("suppression_list");

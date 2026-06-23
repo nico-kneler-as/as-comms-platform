@@ -6,7 +6,11 @@ import {
   projectKnowledgeEntrySchema,
 } from "@as-comms/contracts";
 
-export const aiDraftRequestModeSchema = z.enum(["draft", "fill", "reprompt"]);
+export const aiDraftRequestModeSchema = z.enum([
+  "draft",
+  "fill",
+  "reprompt",
+]);
 export type AiDraftRequestMode = z.infer<typeof aiDraftRequestModeSchema>;
 
 export const aiDraftWarningCodeSchema = z.enum([

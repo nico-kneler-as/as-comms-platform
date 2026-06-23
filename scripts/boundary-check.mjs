@@ -161,6 +161,26 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   }
 
   if (
+    (relativeFile === "apps/web/src/server/composer/drafts.ts" ||
+      relativeFile === "apps/web/app/inbox/_lib/composer-draft-storage.ts" ||
+      relativeFile === "apps/web/app/inbox/_hooks/use-composer-draft-state.ts") &&
+    specifier === "@as-comms/db"
+  ) {
+    // PRD #553 Brick B:
+    // - drafts.ts: composer-drafts server actions need the upsert/list/delete
+    //   repository functions. Narrow exception modelled after settings/actions.ts.
+    // - composer-draft-storage.ts + use-composer-draft-state.ts: type-only
+    //   imports of `ComposerDraftPaneMode` and `ComposerDraftRecord` (the
+    //   db mapper's camelCase domain shape). The contracts schema is
+    //   snake_case for wire transport, so the client-side storage layer
+    //   reaches into the db package's type aliases. Type imports erase at
+    //   runtime and don't pull db code into the client bundle.
+    // A future cleanup can promote these through the stage1-runtime
+    // composition root + a contracts-side camelCase record schema.
+    return true;
+  }
+
+  if (
     (relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
       relativeFile === "apps/web/app/settings/actions.ts" ||
       relativeFile === "apps/web/app/broadcasts/actions.ts") &&

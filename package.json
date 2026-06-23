@@ -43,7 +43,10 @@
   },
   "pnpm": {
     "overrides": {
-      "vite": "^7.3.2"
+      "vite": "^7.3.5",
+      "form-data": "^4.0.6",
+      "undici": "^7.28.0",
+      "nodemailer": "^9.0.1"
     },
     "auditConfig": {
       "ignoreGhsas": [

@@ -23,6 +23,7 @@ import type {
   Provider,
   RoutingReviewCase,
   RoutingReviewReasonCode,
+  SalesforceReconciliationRunRecord,
   SalesforceCommunicationDetailRecord,
   SalesforceEventContextRecord,
   SimpleTextingMessageDetailRecord,
@@ -306,6 +307,36 @@ export interface ContactRepository {
   findByPrimaryPhone(phoneE164: string): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
+  /**
+   * Returns the SF Contact IDs (e.g. `003VK00000mE06CYAS`) for every
+   * SF-anchored contact in our DB that has NOT been tombstoned. Used by
+   * the weekly reconciler to ask Salesforce "are these still there?"
+   *
+   * Excludes:
+   * - Contacts with `salesforce_contact_id IS NULL` (email-only / phone-only)
+   * - Contacts with `salesforce_deleted_at IS NOT NULL` (already tombstoned)
+   */
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  /**
+   * Sets `salesforce_deleted_at = deletedAt` on every row whose
+   * `salesforce_contact_id` is in the input list AND whose
+   * `salesforce_deleted_at IS NULL` (idempotent: re-running won't
+   * overwrite an earlier tombstone timestamp). Returns rows updated.
+   */
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  /**
+   * Sets `salesforce_reconciled_at = reconciledAt` on every row whose
+   * `salesforce_contact_id` is in the input list. Does NOT clear
+   * `salesforce_deleted_at` (un-tombstone is out of scope; if needed,
+   * future ops can clear it manually). Returns rows updated.
+   */
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   searchByQuery(input: {
     readonly query: string;
     readonly limit: number;
@@ -341,12 +372,37 @@ export interface ContactIdentityRepository {
 }
 
 export interface ContactMembershipRepository {
+  /**
+   * Returns active memberships only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByContactId(
     contactId: string,
   ): Promise<readonly ContactMembershipRecord[]>;
+  /**
+   * Returns active memberships only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByContactIds(
     contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   upsert(record: ContactMembershipRecord): Promise<ContactMembershipRecord>;
 }
 
@@ -417,13 +473,46 @@ export interface EffectiveAiKnowledge {
 }
 
 export interface ProjectDimensionRepository {
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   findById(projectId: string): Promise<ProjectDimensionRecord | null>;
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listAll(): Promise<readonly ProjectDimensionRecord[]>;
   listActive(): Promise<readonly ProjectDimensionRecord[]>;
   listAllProjectAliases(): Promise<readonly string[]>;
+  /**
+   * Returns active projects only — rows with
+   * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF
+   * reconciler — PRD #544) are filtered out. If you need to see
+   * tombstoned rows for audit/ops purposes, write a separate query;
+   * do NOT add an `includeTombstoned` parameter to this method without
+   * design review.
+   */
   listByIds(
     projectIds: readonly string[],
   ): Promise<readonly ProjectDimensionRecord[]>;
+  listSalesforceAnchoredIds(): Promise<readonly string[]>;
+  markSalesforceDeleted(input: {
+    readonly salesforceIds: readonly string[];
+    readonly deletedAt: string;
+  }): Promise<number>;
+  markSalesforceReconciled(input: {
+    readonly salesforceIds: readonly string[];
+    readonly reconciledAt: string;
+  }): Promise<number>;
   /**
    * Returns active projects whose `connected_to_project_id` points at the
    * given host. Ordered by project name.
@@ -554,6 +643,15 @@ export interface SalesforceCommunicationDetailRepository {
   upsert(
     record: SalesforceCommunicationDetailRecord,
   ): Promise<SalesforceCommunicationDetailRecord>;
+}
+
+export interface SalesforceReconciliationRunRepository {
+  /**
+   * Inserts a single run-log row recording the outcome of one entity's
+   * pass of the reconciliation orchestrator. Idempotent on the
+   * caller-provided `id` (the orchestrator generates fresh UUIDs per run).
+   */
+  insert(record: SalesforceReconciliationRunRecord): Promise<void>;
 }
 
 export interface SimpleTextingMessageDetailRepository {
@@ -911,6 +1009,7 @@ export interface Stage1RepositoryBundle {
   readonly messageAttachments: MessageAttachmentRepository;
   readonly salesforceEventContext: SalesforceEventContextRepository;
   readonly salesforceCommunicationDetails: SalesforceCommunicationDetailRepository;
+  readonly salesforceReconciliationRuns: SalesforceReconciliationRunRepository;
   readonly simpleTextingMessageDetails: SimpleTextingMessageDetailRepository;
   readonly mailchimpCampaignActivityDetails: MailchimpCampaignActivityDetailRepository;
   readonly manualNoteDetails: ManualNoteDetailRepository;

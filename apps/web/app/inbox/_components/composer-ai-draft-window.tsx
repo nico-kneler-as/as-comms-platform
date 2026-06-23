@@ -12,6 +12,7 @@ import { FOCUS_RING, TRANSITION } from "@/app/_lib/design-tokens-v2";
 import { cn } from "@/lib/utils";
 
 import {
+  ArrowLeftIcon,
   CheckIcon,
   LoaderIcon,
   RotateCcwIcon,
@@ -109,12 +110,16 @@ function DraftActionTrigger({
   disabledReason,
   isGenerating,
   onRun,
+  icon,
+  label,
   accent = "violet",
 }: {
   readonly disabled: boolean;
   readonly disabledReason: string | null;
   readonly isGenerating: boolean;
   readonly onRun: () => void;
+  readonly icon: ReactNode;
+  readonly label: string;
   readonly accent?: AiDraftAccent;
 }) {
   const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
@@ -131,12 +136,12 @@ function DraftActionTrigger({
       {isGenerating ? (
         <>
           <LoaderIcon className="size-3.5 animate-spin" />
-          Drafting...
+          {label === "Polish" ? "Polishing..." : "Drafting..."}
         </>
       ) : (
         <>
-          <SparkleIcon className="size-3.5" />
-          Draft with AI
+          {icon}
+          {label}
         </>
       )}
     </Button>
@@ -173,6 +178,7 @@ export function ComposerAiDraftWindow({
   onOpenReprompt,
   onSubmitReprompt,
   onCancelReprompt,
+  onEditPrompt,
   onDiscard,
   onApprove,
 }: {
@@ -190,6 +196,7 @@ export function ComposerAiDraftWindow({
   readonly onOpenReprompt: () => void;
   readonly onSubmitReprompt: () => void;
   readonly onCancelReprompt: () => void;
+  readonly onEditPrompt: () => void;
   readonly onDiscard: () => void;
   readonly onApprove: () => void;
 }) {
@@ -255,13 +262,17 @@ export function ComposerAiDraftWindow({
                 accentClasses.textareaFocus,
               )}
             />
-            <DraftActionTrigger
-              disabled={runDraftDisabled}
-              disabledReason={runDraftDisabledReason}
-              isGenerating={isGeneratingAi}
-              onRun={onRunDraft}
-              accent={accent}
-            />
+            <div className="flex shrink-0">
+              <DraftActionTrigger
+                disabled={runDraftDisabled}
+                disabledReason={runDraftDisabledReason}
+                isGenerating={isGeneratingAi}
+                onRun={onRunDraft}
+                icon={<SparkleIcon className="size-3.5" />}
+                label="Draft with AI"
+                accent={accent}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -331,6 +342,15 @@ export function ComposerAiDraftWindow({
           )}
         >
           <div className="ml-auto flex items-center gap-1">
+            {!isReprompting ? (
+              <AiDraftActionButton
+                onClick={onEditPrompt}
+                disabled={!canUseDraftActions}
+              >
+                <ArrowLeftIcon className="size-3.5" />
+                Edit prompt
+              </AiDraftActionButton>
+            ) : null}
             <AiDraftActionButton
               onClick={isReprompting ? onCancelReprompt : onOpenReprompt}
               disabled={!canUseDraftActions}

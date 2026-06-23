@@ -52,6 +52,7 @@ vi.mock("lucide-react", () => ({
   CornerUpLeft: iconMock("CornerUpLeft"),
   Database: iconMock("Database"),
   Eye: iconMock("Eye"),
+  FilePen: iconMock("FilePen"),
   FileIcon: iconMock("FileIcon"),
   FileText: iconMock("FileText"),
   Flag: iconMock("Flag"),
@@ -178,6 +179,46 @@ vi.mock("../../app/inbox/actions", () => ({
   searchContactsAction: vi.fn(),
   sendComposerAction: vi.fn(),
   sendSmsAction: vi.fn(),
+}));
+
+vi.mock("@/src/server/composer/polish", () => ({
+  polishTextAction: vi.fn(),
+}));
+
+vi.mock("@/src/server/composer/drafts", () => ({
+  deleteComposerDraftAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { deletedCount: 1 },
+  }),
+  listComposerDraftsAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { drafts: [], nextCursor: null },
+  }),
+  upsertComposerDraftAction: vi.fn().mockResolvedValue({
+    ok: true,
+    data: {
+      id: "draft-1",
+      actorId: "user:test",
+      paneMode: "replying",
+      channel: "email",
+      recipientAnchorKind: "contact",
+      recipientContactId: "contact-1",
+      recipientEmail: null,
+      recipientPhone: null,
+      subject: "",
+      bodyPlaintext: "",
+      bodyHtml: "",
+      selectedAlias: null,
+      cc: [],
+      bcc: [],
+      attachments: [],
+      aiDirective: "",
+      replyContextThreadCursor: null,
+      forwardContext: null,
+      createdAt: "2026-06-19T10:00:00.000Z",
+      updatedAt: "2026-06-19T10:00:00.000Z",
+    },
+  }),
 }));
 
 vi.mock("../../app/inbox/_components/composer-shared", async () => {
@@ -351,13 +392,17 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
           : null,
         showAiDraftAffordances !== false
           ? createElement(
-              "button",
-              {
-                type: "button",
-                disabled: runAiDraftDisabled,
-                title: runAiDraftDisabledReason ?? undefined,
-              },
-              "Draft with AI",
+              React.Fragment,
+              null,
+              createElement(
+                "button",
+                {
+                  type: "button",
+                  disabled: runAiDraftDisabled,
+                  title: runAiDraftDisabledReason ?? undefined,
+                },
+                "Draft with AI",
+              ),
             )
           : null,
         !showCc
@@ -727,6 +772,7 @@ function TestApp() {
   return (
     <InboxClientProvider
       composerAliases={composerAliases}
+      initialDrafts={[]}
       currentActorId="user:operator"
     >
       <InboxKeyboardProvider>
@@ -1007,7 +1053,6 @@ describe("composer canonical modal", () => {
 
     expect(getTextarea("AI directive").value).toBe("");
     expect(getByText("Draft with AI")).not.toBeNull();
-
     await click(getByText("Show Cc"));
     await changeValue(getInput("Cc"), "partner@example.org");
     await click(getByText("Show Bcc"));
