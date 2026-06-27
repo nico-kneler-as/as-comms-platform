@@ -41,6 +41,7 @@ describe("Stage 1 DB schema", () => {
       "aiKnowledgeEntries",
       "audienceSnapshots",
       "auditPolicyEvidence",
+      "broadcastMediaAssets",
       "campaignRuns",
       "canonicalEventAudience",
       "canonicalEventLedger",

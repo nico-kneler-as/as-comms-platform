@@ -2,6 +2,7 @@ import {
   aiKnowledgeSourcesSchema,
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
+  createMediaAssetInputSchema,
   canonicalEventSchema,
   canonicalEventAudienceSchema,
   composerDraftAttachmentSchema,
@@ -19,6 +20,7 @@ import {
   mailchimpCampaignActivityDetailSchema,
   messageAttachmentSchema,
   manualNoteDetailSchema,
+  mediaAssetRecordSchema,
   projectKnowledgeEntrySchema,
   projectDimensionSchema,
   routingReviewSchema,
@@ -49,6 +51,7 @@ import {
   type MailchimpCampaignActivityDetailRecord,
   type MessageAttachmentRecord,
   type ManualNoteDetailRecord,
+  type MediaAssetRecord as MediaAssetContractRecord,
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
@@ -78,6 +81,7 @@ import type {
   auditPolicyEvidence,
   canonicalEventLedger,
   canonicalEventAudience,
+  broadcastMediaAssets,
   composerDrafts,
   consentRecords,
   contactIdentities,
@@ -149,6 +153,7 @@ type SalesforceReconciliationRunRow =
   typeof salesforceReconciliationRuns.$inferSelect;
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
+type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
 
 type ContactRowInput = Omit<
   ContactRow,
@@ -259,6 +264,24 @@ export type ComposerDraftInsert = Omit<
   pane_mode: ComposerDraftPaneMode;
 };
 
+export type MediaAssetRow = Readonly<{
+  id: string;
+  uploader_id: string | null;
+  storage_key: string;
+  public_url: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: Date;
+  deleted_at: Date | null;
+}>;
+
+export type MediaAssetRowInsert = BroadcastMediaAssetRowInsert;
+
+export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
+
+export type MediaAssetRecord = MediaAssetContractRecord;
+
 export type ComposerDraftRecord = Readonly<{
   id: string;
   actorId: string;
@@ -333,6 +356,33 @@ export function mapComposerDraftInsert(
     aiDirective: parsed.ai_directive,
     replyContextThreadCursor: parsed.reply_context_thread_cursor,
     forwardContext: parsed.forward_context ?? undefined,
+  };
+}
+
+export function mapMediaAssetRow(row: MediaAssetRow): MediaAssetRecord {
+  return mediaAssetRecordSchema.parse({
+    id: row.id,
+    uploaderId: row.uploader_id,
+    storageKey: row.storage_key,
+    publicUrl: row.public_url,
+    filename: row.filename,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    createdAt: row.created_at.toISOString(),
+    deletedAt: row.deleted_at?.toISOString() ?? null,
+  });
+}
+
+export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInsert {
+  const parsed = createMediaAssetInputSchema.parse(record);
+
+  return {
+    uploaderId: parsed.uploaderId,
+    storageKey: parsed.storageKey,
+    publicUrl: parsed.publicUrl,
+    filename: parsed.filename,
+    contentType: parsed.contentType,
+    sizeBytes: parsed.sizeBytes,
   };
 }
 

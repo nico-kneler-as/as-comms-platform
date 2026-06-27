@@ -1149,6 +1149,27 @@ export const composerDrafts = pgTable(
   ],
 );
 
+export const broadcastMediaAssets = pgTable(
+  "broadcast_media_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    uploaderId: text("uploader_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    storageKey: text("storage_key").notNull(),
+    publicUrl: text("public_url").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: createdAtColumn,
+    deletedAt: timestamp("deleted_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+  },
+  (table) => [index("broadcast_media_assets_created_at_idx").on(table.createdAt.desc())],
+);
+
 export const accounts = pgTable(
   "accounts",
   {
