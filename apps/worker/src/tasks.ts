@@ -58,6 +58,11 @@ import {
   type ReconcileCaptureGapsTaskDependencies,
 } from "./jobs/reconcile-capture-gaps.js";
 import {
+  createPollInboxReadStateTask,
+  pollInboxReadStateJobName,
+  type PollInboxReadStateTaskDependencies,
+} from "./jobs/poll-inbox-read-state.js";
+import {
   createNotionKnowledgeSyncTask,
   notionKnowledgeSyncJobName,
   type NotionKnowledgeSyncDependencies,
@@ -92,6 +97,7 @@ export function createTaskList(
     readonly aiKnowledgeAutoSync?: PollAiKnowledgeAutoSyncTaskDependencies;
     readonly notionKnowledgeSync?: NotionKnowledgeSyncDependencies;
     readonly pendingOutboundSweep?: PendingOutboundSweepTaskDependencies;
+    readonly pollInboxReadState?: PollInboxReadStateTaskDependencies;
     readonly reconcileIdentityQueue?: ReconcileIdentityQueueTaskDependencies;
     readonly reconcileRoutingReviewQueue?: ReconcileRoutingReviewQueueTaskDependencies;
     readonly reconcileCaptureGaps?: ReconcileCaptureGapsTaskDependencies;
@@ -123,6 +129,13 @@ export function createTaskList(
       : {
           [sweepPendingOutboundsJobName]: createSweepPendingOutboundsTask(
             input.pendingOutboundSweep,
+          ),
+        }),
+    ...(input?.pollInboxReadState === undefined
+      ? {}
+      : {
+          [pollInboxReadStateJobName]: createPollInboxReadStateTask(
+            input.pollInboxReadState,
           ),
         }),
     ...(input?.dedupHistoricalLedger === undefined

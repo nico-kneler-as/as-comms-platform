@@ -50,6 +50,7 @@ import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js
 import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
+import { pollInboxReadStateJobName } from "./jobs/poll-inbox-read-state.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
 import { reconcileRoutingReviewQueueJobName } from "./jobs/reconcile-routing-review-queue.js";
 import {
@@ -171,6 +172,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `* * * * * ${reconcileStaleRunningJobName} ?id=stale-running-sweep&max=1`,
     `*/5 * * * * ${reconcileStrandedCampaignRunsJobName} ?id=stranded-campaign-run-reconcile&max=1`,
     `*/15 * * * * ${reconcileIdentityQueueJobName} ?id=identity-queue-reconcile&max=1`,
+    `*/10 * * * * ${pollInboxReadStateJobName} ?id=inbox-read-state-poll&max=1`,
     `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
@@ -856,6 +858,10 @@ export async function createStage1WorkerRuntimeServices(
           }),
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds,
+      },
+      pollInboxReadState: {
+        db: connection.db,
+        persistence,
       },
       dedupHistoricalLedger: {
         db: connection.db,
