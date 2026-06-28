@@ -34,6 +34,7 @@ export * from "./providers/mailchimp.js";
 export * from "./providers/anthropic.js";
 export * from "./providers/notion.js";
 export * from "./notion-markdown-page.js";
+export * from "./providers/object-store.js";
 export * from "./providers/salesforce.js";
 export * from "./providers/simpletexting.js";
 export * from "./providers/twilio.js";
