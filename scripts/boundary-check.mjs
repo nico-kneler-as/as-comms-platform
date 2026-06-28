@@ -143,11 +143,12 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
 
   if (
     (relativeFile === "apps/web/src/server/composer/gmail-send.ts" ||
-      relativeFile === "apps/web/src/server/composer/twilio-send.ts") &&
+      relativeFile === "apps/web/src/server/composer/twilio-send.ts" ||
+      relativeFile === "apps/web/src/server/broadcasts/object-store-runtime.ts") &&
     specifier === "@as-comms/integrations"
   ) {
-    // Composition root for Composer provider sends. Reads env-based
-    // transport config and forwards to the integrations send client.
+    // Composition roots for provider-backed server sends/uploads. They read
+    // env-based transport/storage config and forward to integrations clients.
     // No other apps/web file may import from @as-comms/integrations.
     return true;
   }

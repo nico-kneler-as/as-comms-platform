@@ -1,5 +1,6 @@
 import {
   accounts,
+  createMediaAsset,
   createDatabaseConnection,
   createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
@@ -148,6 +149,17 @@ export async function withStage1WebTransaction<T>(
 export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {
   const runtime = await getStage1WebRuntime();
   return runtime.settings;
+}
+
+export async function createBroadcastMediaAssetRecord(
+  input: Parameters<typeof createMediaAsset>[1],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return createMediaAsset(runtime.connection.db, input);
 }
 
 export function setStage1WebRuntimeForTests(
