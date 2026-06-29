@@ -17,6 +17,10 @@
     "./sms-segments": {
       "types": "./src/sms-segments.ts",
       "default": "./dist/sms-segments.js"
+    },
+    "./html-import": {
+      "types": "./src/html-import.ts",
+      "default": "./dist/html-import.js"
     }
   },
   "files": [
