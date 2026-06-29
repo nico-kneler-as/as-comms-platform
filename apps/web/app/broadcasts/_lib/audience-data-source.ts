@@ -786,6 +786,7 @@ export async function previewAudienceAction(input: {
 }
 
 export async function loadComposePreviewAction(input: {
+  readonly launchType: LaunchType;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
     readonly initialFilter?: "project_status" | "specific" | "all_approved";
@@ -852,6 +853,7 @@ export async function loadComposePreviewAction(input: {
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
             ?.signature ?? null);
     const composed = renderBroadcastEmail({
+      launchType: input.launchType,
       kind: input.kind,
       projectName: sample?.frozenProjectName ?? null,
       projectAlias,

@@ -593,6 +593,7 @@ export async function testSend(
       unsubscribeToken: `preview-${run.kind}`,
     });
     const composed = renderBroadcastEmail({
+      launchType: run.launchType,
       kind: run.kind,
       projectName: sample.frozenProjectName,
       projectAlias,

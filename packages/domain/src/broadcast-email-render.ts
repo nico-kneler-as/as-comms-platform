@@ -1,5 +1,6 @@
 import type {
   CampaignKind,
+  LaunchType,
   OrgSettingsRecord,
 } from "@as-comms/contracts";
 
@@ -132,6 +133,7 @@ export function buildBroadcastUnsubscribeFooter(input: {
 }
 
 export interface BroadcastEmailRenderInput {
+  readonly launchType: LaunchType;
   readonly kind: CampaignKind;
   readonly projectName: string | null;
   readonly projectAlias: string | null;
@@ -175,7 +177,10 @@ export function renderBroadcastEmail(
     input.projectAlias,
   );
   const preheaderHtml = buildBroadcastPreheaderHtml(input.preheader);
-  const signatureBlock = buildBroadcastSignatureBlock(input.signature);
+  const signatureBlock =
+    input.launchType === "html_email"
+      ? { text: "", html: "" }
+      : buildBroadcastSignatureBlock(input.signature);
   const footer = buildBroadcastUnsubscribeFooter({
     kind: input.kind,
     projectName: input.projectName,

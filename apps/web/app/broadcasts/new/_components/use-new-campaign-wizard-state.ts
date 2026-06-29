@@ -776,6 +776,7 @@ export function useNewCampaignWizardState({
     const timer = setTimeout(() => {
       startComposePreviewTransition(async () => {
         const result = await loadComposePreviewAction({
+          launchType,
           kind,
           criteria: toActionCriteria(criteria),
           fromEmail,

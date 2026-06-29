@@ -107,6 +107,7 @@ describe("buildBroadcastSignatureBlock", () => {
 
 describe("renderBroadcastEmail", () => {
   const baseInput: BroadcastEmailRenderInput = {
+    launchType: "normal_email",
     kind: "project",
     projectName: "PNW Biodiversity",
     projectAlias: "PNW Biodiversity",
@@ -155,6 +156,19 @@ describe("renderBroadcastEmail", () => {
         "Unsubscribe from PNW Biodiversity emails · Unsubscribe from all Adventure Scientists emails\nUnsubscribe from PNW Biodiversity emails: https://app.example.com/u/abc\nUnsubscribe from all Adventure Scientists emails: https://app.example.com/u/abc/all\n123 Main St • Bozeman, MT 59715",
       ].join("\n\n"),
     );
+  });
+
+  it("keeps signatures for normal emails and suppresses them for html emails", () => {
+    const normalEmail = renderBroadcastEmail(baseInput);
+    const htmlEmail = renderBroadcastEmail({
+      ...baseInput,
+      launchType: "html_email",
+    });
+
+    expect(normalEmail.bodyHtml).toContain('<p style="margin-top:16px;">');
+    expect(normalEmail.bodyText).toContain("Cheers,\nThe AS Team");
+    expect(htmlEmail.bodyHtml).not.toContain('<p style="margin-top:16px;">');
+    expect(htmlEmail.bodyText).not.toContain("Cheers,\nThe AS Team");
   });
 
   it("includes the hidden Postmark unsubscribe placeholder exactly once", () => {

@@ -454,5 +454,13 @@ describe("ComposeStep HTML upload mode", () => {
       bodyPlaintext: "Uploaded from file",
       bodyHtml: "<html><body><p>Uploaded from file</p></body></html>",
     });
+    const textarea = document.querySelector("textarea#campaign-html-paste");
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error("HTML paste textarea not found after file upload");
+    }
+
+    expect(textarea.value).toBe(
+      "<html><body><p>Uploaded from file</p></body></html>",
+    );
   });
 });
