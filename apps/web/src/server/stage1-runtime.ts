@@ -2,6 +2,7 @@ import {
   accounts,
   createMediaAsset,
   createDatabaseConnection,
+  listMediaAssets,
   createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundle,
@@ -9,6 +10,7 @@ import {
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   sessions,
+  softDeleteMediaAsset,
   users,
   verificationTokens,
   type DatabaseConnection,
@@ -160,6 +162,26 @@ export async function createBroadcastMediaAssetRecord(
   }
 
   return createMediaAsset(runtime.connection.db, input);
+}
+
+export async function listBroadcastMediaAssets(
+  input: Parameters<typeof listMediaAssets>[1],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return listMediaAssets(runtime.connection.db, input);
+}
+
+export async function softDeleteBroadcastMediaAsset(id: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return softDeleteMediaAsset(runtime.connection.db, id);
 }
 
 export function setStage1WebRuntimeForTests(

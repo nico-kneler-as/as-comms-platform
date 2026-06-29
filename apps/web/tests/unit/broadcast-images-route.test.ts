@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const requireApiSession = vi.hoisted(() => vi.fn());
 const uploadBroadcastImageToObjectStore = vi.hoisted(() => vi.fn());
 const createBroadcastMediaAssetRecord = vi.hoisted(() => vi.fn());
+const listBroadcastMediaAssets = vi.hoisted(() => vi.fn());
 
 vi.mock("@/src/server/auth/api", () => ({
   requireApiSession,
@@ -14,9 +15,10 @@ vi.mock("@/src/server/broadcasts/object-store-runtime", () => ({
 
 vi.mock("@/src/server/stage1-runtime", () => ({
   createBroadcastMediaAssetRecord,
+  listBroadcastMediaAssets,
 }));
 
-import { POST } from "../../app/api/broadcasts/images/route";
+import { GET, POST } from "../../app/api/broadcasts/images/route";
 
 function buildMultipartRequest(file: File) {
   const formData = new FormData();
@@ -157,5 +159,83 @@ describe("broadcast images upload route", () => {
     expect(createCall?.storageKey).toMatch(
       /^images\/[0-9a-f-]+-Hero-Banner\.png$/i,
     );
+  });
+
+  it("returns 401 from the list endpoint without a session", async () => {
+    requireApiSession.mockResolvedValue({
+      ok: false,
+      response: Response.json({ ok: false, code: "unauthorized" }, { status: 401 }),
+    });
+
+    const response = await GET(
+      new Request("http://localhost/api/broadcasts/images"),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      code: "unauthorized",
+    });
+  });
+
+  it("returns listed media assets newest first", async () => {
+    requireApiSession.mockResolvedValue({
+      ok: true,
+      user: { id: "user:operator", role: "operator" },
+    });
+    listBroadcastMediaAssets.mockResolvedValue({
+      items: [
+        {
+          id: "0d34633d-aee7-4f17-8c3f-6e5551f58a11",
+          publicUrl: "https://cdn.example.org/images/newer.png",
+          filename: "newer.png",
+          contentType: "image/png",
+          sizeBytes: 24576,
+          createdAt: "2026-06-27T18:00:00.000Z",
+        },
+        {
+          id: "2b8beef8-c630-4f2b-97eb-770dc4e5aa89",
+          publicUrl: "https://cdn.example.org/images/older.png",
+          filename: "older.png",
+          contentType: "image/png",
+          sizeBytes: 1024,
+          createdAt: "2026-06-26T10:30:00.000Z",
+        },
+      ],
+      nextCursor: "cursor:next",
+    });
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/broadcasts/images?limit=25&cursor=cursor%3Astart",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(listBroadcastMediaAssets).toHaveBeenCalledWith({
+      limit: 25,
+      cursor: "cursor:start",
+    });
+    await expect(response.json()).resolves.toEqual({
+      items: [
+        {
+          id: "0d34633d-aee7-4f17-8c3f-6e5551f58a11",
+          url: "https://cdn.example.org/images/newer.png",
+          filename: "newer.png",
+          contentType: "image/png",
+          sizeBytes: 24576,
+          createdAt: "2026-06-27T18:00:00.000Z",
+        },
+        {
+          id: "2b8beef8-c630-4f2b-97eb-770dc4e5aa89",
+          url: "https://cdn.example.org/images/older.png",
+          filename: "older.png",
+          contentType: "image/png",
+          sizeBytes: 1024,
+          createdAt: "2026-06-26T10:30:00.000Z",
+        },
+      ],
+      nextCursor: "cursor:next",
+    });
   });
 });
