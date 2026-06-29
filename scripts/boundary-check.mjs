@@ -13,6 +13,7 @@ const workspaceRules = {
       // Browser-safe subpath exports avoid transitive node:crypto pull from
       // outbound-email-dedup. Any new subpath needs another entry — check is exact-string.
       "@as-comms/domain/phone",
+      "@as-comms/domain/html-import",
       "@as-comms/domain/sms-segments",
       "@as-comms/db/parse-source-url",
       "@as-comms/ui"
