@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { requireApiSession } from "@/src/server/auth/api";
 import { uploadBroadcastImageToObjectStore } from "@/src/server/broadcasts/object-store-runtime";
-import { createBroadcastMediaAssetRecord } from "@/src/server/stage1-runtime";
+import {
+  createBroadcastMediaAssetRecord,
+  listBroadcastMediaAssets,
+} from "@/src/server/stage1-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +37,44 @@ function sanitizeFilename(filename: string): string {
     .replaceAll(/[^A-Za-z0-9._-]/g, "");
 
   return sanitized.length > 0 ? sanitized : "image";
+}
+
+function parseLimit(raw: string | null): number {
+  if (raw === null) {
+    return 50;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return 50;
+  }
+
+  return Math.min(100, Math.max(1, parsed));
+}
+
+export async function GET(request: Request) {
+  const session = await requireApiSession();
+  if (!session.ok) {
+    return session.response;
+  }
+
+  const { searchParams } = new URL(request.url);
+  const result = await listBroadcastMediaAssets({
+    limit: parseLimit(searchParams.get("limit")),
+    cursor: searchParams.get("cursor"),
+  });
+
+  return Response.json({
+    items: result.items.map((asset) => ({
+      id: asset.id,
+      url: asset.publicUrl,
+      filename: asset.filename,
+      contentType: asset.contentType,
+      sizeBytes: asset.sizeBytes,
+      createdAt: asset.createdAt,
+    })),
+    nextCursor: result.nextCursor,
+  });
 }
 
 export async function POST(request: Request) {
