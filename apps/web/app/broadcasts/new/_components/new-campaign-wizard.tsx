@@ -784,6 +784,7 @@ export function NewCampaignWizard({
                 subject={subject}
                 preheader={preheader}
                 bodyPlaintext={bodyPlaintext}
+                bodyHtml={bodyHtml}
                 savedDesign={bodyDesignJson}
                 selectedAliasSignature={selectedAliasSignature}
                 frozen={frozen}

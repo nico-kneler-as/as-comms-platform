@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import {
   useEffect,
   useRef,
@@ -22,6 +23,7 @@ import { RichTextComposerEditor } from "@/app/inbox/_components/composer-editor-
 import { ComposerToolbar } from "@/app/inbox/_components/composer-toolbar";
 
 import type { LaunchType } from "@as-comms/contracts";
+import { prepareUploadedHtml } from "@as-comms/domain/html-import";
 
 import type {
   UnlayerHostHandle,
@@ -53,6 +55,7 @@ interface ComposeStepProps {
   readonly subject: string;
   readonly preheader: string;
   readonly bodyPlaintext: string;
+  readonly bodyHtml: string;
   readonly savedDesign: unknown;
   readonly selectedAliasSignature: string;
   readonly frozen: boolean;
@@ -71,6 +74,37 @@ interface ComposeStepProps {
   }) => void;
   readonly onBack: () => void;
   readonly onContinue: () => void;
+}
+
+type HtmlComposeMode = "editor" | "upload";
+
+function readInitialHtmlComposeMode(input: {
+  readonly launchType: LaunchType;
+  readonly bodyHtml: string;
+  readonly savedDesign: unknown;
+}): HtmlComposeMode {
+  if (input.launchType !== "html_email") {
+    return "editor";
+  }
+
+  const looksLikeFullDocument =
+    /<(?:!doctype|html\b)/iu.test(input.bodyHtml);
+
+  return input.savedDesign === null &&
+    input.bodyHtml.trim().length > 0 &&
+    looksLikeFullDocument
+    ? "upload"
+    : "editor";
+}
+
+function htmlToPlaintext(html: string): string {
+  const fromDom =
+    typeof DOMParser === "undefined"
+      ? html
+      : (new DOMParser().parseFromString(html, "text/html").body.textContent ||
+        "");
+
+  return fromDom.replace(/\s+/gu, " ").trim();
 }
 
 function EditorLoadingSkeleton() {
@@ -116,6 +150,7 @@ export function ComposeStep({
   subject,
   preheader,
   bodyPlaintext,
+  bodyHtml,
   savedDesign,
   selectedAliasSignature,
   frozen,
@@ -127,9 +162,14 @@ export function ComposeStep({
   onContinue,
 }: ComposeStepProps) {
   const unlayerHostRef = useRef<UnlayerHostHandle | null>(null);
+  const [htmlComposeMode, setHtmlComposeMode] = useState<HtmlComposeMode>(() =>
+    readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }),
+  );
   const [htmlEditorReady, setHtmlEditorReady] = useState(
     launchType !== "html_email",
   );
+  const [uploadedHtmlValue, setUploadedHtmlValue] = useState("");
+  const [uploadWarnings, setUploadWarnings] = useState<readonly string[]>([]);
   const subjectLen = subject.length;
   const subjectOverLimit = subjectLen > 70;
   const wordCount = bodyPlaintext.trim()
@@ -137,12 +177,31 @@ export function ComposeStep({
     : 0;
   const canContinue =
     subject.trim().length > 0 &&
-    bodyPlaintext.trim().length > 0 &&
-    (launchType === "normal_email" || htmlEditorReady);
+    (launchType === "normal_email"
+      ? bodyPlaintext.trim().length > 0
+      : htmlComposeMode === "upload"
+        ? bodyHtml.trim().length > 0
+        : bodyPlaintext.trim().length > 0 && htmlEditorReady);
 
   useEffect(() => {
-    setHtmlEditorReady(launchType !== "html_email");
-  }, [launchType]);
+    setHtmlComposeMode(readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }));
+  }, [bodyHtml, launchType, savedDesign]);
+
+  useEffect(() => {
+    setHtmlEditorReady(
+      launchType !== "html_email" || htmlComposeMode === "upload",
+    );
+  }, [htmlComposeMode, launchType]);
+
+  function applyUploadedHtml(rawHtml: string) {
+    const result = prepareUploadedHtml(rawHtml);
+    setUploadWarnings(result.warnings);
+    onBodyChange({
+      bodyDesignJson: null,
+      bodyPlaintext: htmlToPlaintext(result.html),
+      bodyHtml: result.html,
+    });
+  }
 
   return (
     <section className="flex h-full flex-col">
@@ -154,7 +213,9 @@ export function ComposeStep({
         }
         description={
           launchType === "html_email"
-            ? "Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step."
+            ? htmlComposeMode === "upload"
+              ? "Upload or paste a full HTML document. We store the translated HTML directly, surface import warnings, and append the platform footer during preview and send."
+              : "Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step."
             : "Draft the subject, preheader, and body. The rendered email preview comes next."
         }
       />
@@ -210,12 +271,141 @@ export function ComposeStep({
         </div>
 
         {launchType === "html_email" ? (
-          <UnlayerHost
-            ref={unlayerHostRef}
-            savedDesign={savedDesign}
-            onSave={onBodyChange}
-            onReadyChange={setHtmlEditorReady}
-          />
+          <>
+            <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+              <div
+                aria-label="HTML compose mode"
+                className="inline-flex rounded-lg border border-slate-200 bg-white p-1"
+                role="tablist"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={htmlComposeMode === "editor"}
+                  disabled={frozen}
+                  onClick={() => {
+                    setHtmlComposeMode("editor");
+                  }}
+                  className={
+                    htmlComposeMode === "editor"
+                      ? "rounded-md bg-slate-900 px-3 py-1.5 text-[12px] font-medium text-white"
+                      : "rounded-md px-3 py-1.5 text-[12px] font-medium text-slate-600"
+                  }
+                >
+                  Design in editor
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={htmlComposeMode === "upload"}
+                  disabled={frozen}
+                  onClick={() => {
+                    setHtmlComposeMode("upload");
+                  }}
+                  className={
+                    htmlComposeMode === "upload"
+                      ? "rounded-md bg-slate-900 px-3 py-1.5 text-[12px] font-medium text-white"
+                      : "rounded-md px-3 py-1.5 text-[12px] font-medium text-slate-600"
+                  }
+                >
+                  Upload HTML
+                </button>
+              </div>
+            </div>
+
+            {htmlComposeMode === "upload" ? (
+              <div className="space-y-4 border-t border-slate-200 px-4 py-4">
+                {uploadWarnings.length > 0 ? (
+                  <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-amber-900">
+                      Import warnings
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-amber-900">
+                      {uploadWarnings.map((warning) => (
+                        <li key={warning}>{warning}</li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="campaign-html-file"
+                    className="text-[12px] font-medium text-slate-700"
+                  >
+                    Upload an HTML file
+                  </label>
+                  <input
+                    id="campaign-html-file"
+                    type="file"
+                    accept=".html,text/html"
+                    disabled={frozen}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0] ?? null;
+                      if (file === null) {
+                        return;
+                      }
+
+                      void (async () => {
+                        try {
+                          applyUploadedHtml(await file.text());
+                        } catch {
+                          setUploadWarnings(["Unable to read the uploaded HTML file."]);
+                        }
+                      })();
+                    }}
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-[12.5px] text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="campaign-html-paste"
+                    className="text-[12px] font-medium text-slate-700"
+                  >
+                    Paste complete HTML
+                  </label>
+                  <textarea
+                    id="campaign-html-paste"
+                    value={uploadedHtmlValue}
+                    disabled={frozen}
+                    onChange={(event) => {
+                      const nextValue = event.currentTarget.value;
+                      setUploadedHtmlValue(nextValue);
+                      if (nextValue.trim().length === 0) {
+                        setUploadWarnings([]);
+                        return;
+                      }
+
+                      applyUploadedHtml(nextValue);
+                    }}
+                    placeholder="Paste a full exported HTML document here."
+                    className="min-h-[320px] w-full rounded-lg border border-slate-200 px-3 py-3 font-mono text-[12px] leading-6 text-slate-800 shadow-sm focus:border-slate-400 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Info className="size-3" aria-hidden="true" />
+                    AS footer and unsubscribe links are appended automatically.
+                  </span>
+                  <Link
+                    href="/broadcasts/media"
+                    className="font-medium text-slate-700 underline underline-offset-4"
+                  >
+                    Need image URLs? Open the media library -&gt;
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <UnlayerHost
+                ref={unlayerHostRef}
+                savedDesign={savedDesign}
+                onSave={onBodyChange}
+                onReadyChange={setHtmlEditorReady}
+              />
+            )}
+          </>
         ) : (
           <RichTextComposerEditor
             bodyPlaintext={bodyPlaintext}
@@ -299,7 +489,7 @@ export function ComposeStep({
         primaryLabel={continuePending ? "Saving…" : "Continue"}
         primaryAction={() => {
           void (async () => {
-            if (launchType === "html_email") {
+            if (launchType === "html_email" && htmlComposeMode === "editor") {
               const saved = await unlayerHostRef.current?.flushExport();
               if (saved === false) {
                 return;
