@@ -193,8 +193,14 @@ export function ComposeStep({
     );
   }, [htmlComposeMode, launchType]);
 
-  function applyUploadedHtml(rawHtml: string) {
+  function applyUploadedHtml(
+    rawHtml: string,
+    options?: { readonly syncTextareaValue?: boolean },
+  ) {
     const result = prepareUploadedHtml(rawHtml);
+    if (options?.syncTextareaValue ?? false) {
+      setUploadedHtmlValue(result.html);
+    }
     setUploadWarnings(result.warnings);
     onBodyChange({
       bodyDesignJson: null,
@@ -328,10 +334,10 @@ export function ComposeStep({
                   </section>
                 ) : null}
 
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2.5">
                   <label
                     htmlFor="campaign-html-file"
-                    className="text-[12px] font-medium text-slate-700"
+                    className="block text-[12px] font-medium leading-none text-slate-700"
                   >
                     Upload an HTML file
                   </label>
@@ -348,13 +354,15 @@ export function ComposeStep({
 
                       void (async () => {
                         try {
-                          applyUploadedHtml(await file.text());
+                          applyUploadedHtml(await file.text(), {
+                            syncTextareaValue: true,
+                          });
                         } catch {
                           setUploadWarnings(["Unable to read the uploaded HTML file."]);
                         }
                       })();
                     }}
-                    className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-[12.5px] text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-white"
+                    className="block w-full rounded-lg border border-slate-200 px-3 py-3 text-[12px] leading-5 text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-white"
                   />
                 </div>
 

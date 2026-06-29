@@ -426,6 +426,7 @@ export function createCampaignSendOrchestrator(deps: {
             unsubscribeToken: snapshot.unsubscribeToken,
           });
           const composed = renderBroadcastEmail({
+            launchType: run.launchType,
             kind: run.kind,
             projectName: snapshot.frozenProjectName,
             projectAlias,
