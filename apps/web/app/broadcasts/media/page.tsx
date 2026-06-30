@@ -2,9 +2,13 @@ import Link from "next/link";
 import { ImageIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { listBroadcastMediaAssets } from "@/src/server/stage1-runtime";
+import {
+  countBroadcastMediaAssets,
+  listBroadcastMediaAssets,
+} from "@/src/server/stage1-runtime";
 
 import { BroadcastMediaLibrary } from "./_components/broadcast-media-library";
+import { toMediaLibraryItem } from "./_lib/media-library-item";
 
 export const metadata = {
   title: "Broadcast media library",
@@ -13,7 +17,10 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function BroadcastMediaLibraryPage() {
-  const { items } = await listBroadcastMediaAssets({ limit: 50, cursor: null });
+  const [{ items, nextCursor }, totalAssets] = await Promise.all([
+    listBroadcastMediaAssets({ limit: 100, cursor: null }),
+    countBroadcastMediaAssets(),
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-slate-100">
@@ -26,7 +33,7 @@ export default async function BroadcastMediaLibraryPage() {
                   Media library
                 </h1>
                 <span className="text-sm tabular-nums text-slate-500">
-                  {items.length.toLocaleString()}
+                  {totalAssets.toLocaleString()}
                 </span>
               </div>
               <p className="mt-0.5 text-sm text-pretty text-slate-500">
@@ -44,14 +51,8 @@ export default async function BroadcastMediaLibraryPage() {
       <div className="flex min-h-0 flex-1 px-6 pb-6">
         <div className="mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 flex-col">
           <BroadcastMediaLibrary
-            assets={items.map((asset) => ({
-              id: asset.id,
-              url: asset.publicUrl,
-              filename: asset.filename,
-              contentType: asset.contentType,
-              sizeBytes: asset.sizeBytes,
-              createdAt: asset.createdAt,
-            }))}
+            initialAssets={items.map(toMediaLibraryItem)}
+            initialNextCursor={nextCursor}
             emptyStateIcon={<ImageIcon className="size-7 text-slate-500" />}
           />
         </div>
