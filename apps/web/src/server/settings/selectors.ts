@@ -5,6 +5,7 @@ import type {
   AiKnowledgeSource,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
+  OrgSenderRecord,
   PostmarkSenderStatus,
   Provider
 } from "@as-comms/contracts";
@@ -14,7 +15,7 @@ import { getCurrentUser } from "../auth/session";
 import { readWebEnv } from "../env";
 import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import { recordSensitiveReadForCurrentUserDetached } from "../security/audit";
-import { getStage1WebRuntime } from "../stage1-runtime";
+import { getStage1WebRuntime, listAllOrgSenders } from "../stage1-runtime";
 
 export interface ProjectRowViewModel {
   readonly projectId: string;
@@ -125,6 +126,11 @@ export interface AccessSettingsViewModel {
   readonly currentUserId: string | null;
   readonly admins: readonly UserRowViewModel[];
   readonly internalUsers: readonly UserRowViewModel[];
+}
+
+export interface OrgSendersSettingsViewModel {
+  readonly isAdmin: boolean;
+  readonly orgSenders: readonly OrgSenderRecord[];
 }
 
 export interface IntegrationHealthViewModel {
@@ -848,6 +854,14 @@ async function readAccessSettings() {
   };
 }
 
+async function readOrgSendersSettings(): Promise<
+  Pick<OrgSendersSettingsViewModel, "orgSenders">
+> {
+  return {
+    orgSenders: await listAllOrgSenders()
+  };
+}
+
 async function readIntegrationHealth(): Promise<
   Pick<IntegrationsSettingsViewModel, "integrations" | "twilioCard">
 > {
@@ -1105,6 +1119,20 @@ function loadAccessSettingsCacheData() {
   })();
 }
 
+function loadOrgSendersSettingsCacheData() {
+  if (process.env.NODE_ENV !== "production") {
+    return readOrgSendersSettings();
+  }
+
+  return unstable_cache(
+    () => readOrgSendersSettings(),
+    ["settings:newsletter"],
+    {
+      tags: ["settings:newsletter"]
+    }
+  )();
+}
+
 function loadIntegrationHealthCacheData(): Promise<
   Pick<IntegrationsSettingsViewModel, "integrations" | "twilioCard">
 > {
@@ -1260,6 +1288,27 @@ export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewM
     isAdmin: currentUser?.role === "admin",
     integrations: cachedData.integrations,
     twilioCard: cachedData.twilioCard,
+  };
+}
+
+export async function loadOrgSendersSettings(): Promise<OrgSendersSettingsViewModel> {
+  const [currentUser, cachedData] = await Promise.all([
+    getCurrentUser(),
+    loadOrgSendersSettingsCacheData()
+  ]);
+
+  recordSensitiveReadForCurrentUserDetached({
+    action: "settings.org_senders.read",
+    entityType: "settings_page",
+    entityId: "newsletter",
+    metadataJson: {
+      visibleOrgSenderCount: cachedData.orgSenders.length
+    }
+  });
+
+  return {
+    isAdmin: currentUser?.role === "admin",
+    orgSenders: cachedData.orgSenders
   };
 }
 

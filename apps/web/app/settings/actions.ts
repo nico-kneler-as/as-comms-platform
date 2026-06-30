@@ -7,10 +7,14 @@ import { z } from "zod";
 import {
   createProjectAliasSchema,
   type AiKnowledgeSource,
+  createOrgSenderInputSchema,
   deactivateUserSchema,
   demoteUserSchema,
+  orgSenderIdSchema,
   pollPostmarkSenderStatusJobName,
   pollPostmarkSenderStatusPayloadSchema,
+  type CreateOrgSenderInput,
+  type OrgSenderRecord,
   type PostmarkSenderStatus,
   promoteUserSchema,
   reactivateUserSchema,
@@ -45,11 +49,16 @@ import {
 import {
   revalidateAccessSettings,
   revalidateIntegrationHealth,
+  revalidateNewsletterSettings,
   revalidateProjectSettings
 } from "@/src/server/settings/revalidate";
 import {
+  createOrgSenderRecord,
+  getOrgSenderByEmailRecord,
   getSettingsRepositories,
-  getStage1WebRuntime
+  getStage1WebRuntime,
+  listAllOrgSenders,
+  setOrgSenderEnabledState
 } from "@/src/server/stage1-runtime";
 import type { UiError, UiResult } from "@/src/server/ui-result";
 
@@ -59,6 +68,7 @@ import {
 } from "./_lib/project-alias-signature";
 
 type SettingsRepositories = Awaited<ReturnType<typeof getSettingsRepositories>>;
+const VERIFIED_SENDER_DOMAIN = "adventurescientists.org";
 
 const projectKnowledgeUpdateSchema = z.object({
   id: z.string().min(1),
@@ -186,6 +196,11 @@ export type WizardAiKnowledgeSourceDraft = z.infer<
 const addAiKnowledgeSourceSchema = z.object({
   url: z.string().trim().min(1, "Source URL is required."),
   label: z.string().trim().max(160, "Label must be 160 characters or fewer.").nullable().optional()
+});
+
+const setOrgSenderEnabledSchema = z.object({
+  id: orgSenderIdSchema,
+  enabled: z.boolean()
 });
 
 const updateAiKnowledgeSourceSchema = z
@@ -2866,6 +2881,11 @@ export interface UserIdResult {
   readonly user: UserMutationData;
 }
 
+export interface OrgSenderEnabledMutationData {
+  readonly id: string;
+  readonly enabled: boolean;
+}
+
 export async function promoteUserAction(
   formData: FormData
 ): Promise<UiResult<UserIdResult>> {
@@ -3135,6 +3155,146 @@ export async function reactivateUserAction(
     ok: true,
     data: {
       user: serializeUserMutationData(updatedUser)
+    },
+    requestId: newRequestId()
+  };
+}
+
+export async function createOrgSenderAction(
+  input: CreateOrgSenderInput
+): Promise<UiResult<OrgSenderRecord>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to add an org sender.",
+    forbiddenMessage: "Only admins can add org senders."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const normalizedInput = {
+    email: normalizeIncomingEmail(input.email),
+    label: input.label.trim()
+  };
+  const parsed = createOrgSenderInputSchema.safeParse(normalizedInput);
+  if (!parsed.success) {
+    return errorResult("validation_error", "Enter a valid sender email and label.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  // Postmark only verifies the shared adventurescientists.org domain today.
+  // Any sender outside that domain would not be deliverable.
+  if (!parsed.data.email.endsWith(`@${VERIFIED_SENDER_DOMAIN}`)) {
+    return errorResult(
+      "invalid_email_domain",
+      "Use an @adventurescientists.org sender address.",
+      {
+        fieldErrors: {
+          email: "Use an @adventurescientists.org sender address."
+        }
+      }
+    );
+  }
+
+  const existingSender = await getOrgSenderByEmailRecord(parsed.data.email);
+  if (existingSender !== null) {
+    return errorResult(
+      "already_exists",
+      "That sender address is already configured.",
+      {
+        fieldErrors: {
+          email: "That sender address is already configured."
+        }
+      }
+    );
+  }
+
+  try {
+    const sender = await createOrgSenderRecord(parsed.data);
+
+    await appendSettingsAudit({
+      actorId: admin.userId,
+      action: "settings.org_sender.created",
+      entityType: "org_sender",
+      entityId: sender.id,
+      metadataJson: {
+        email: sender.email,
+        label: sender.label,
+        enabled: sender.enabled
+      }
+    });
+
+    revalidateNewsletterSettings();
+
+    return {
+      ok: true,
+      data: sender,
+      requestId: newRequestId()
+    };
+  } catch (error) {
+    if (isUniqueEmailViolation(error)) {
+      return errorResult(
+        "already_exists",
+        "That sender address is already configured.",
+        {
+          fieldErrors: {
+            email: "That sender address is already configured."
+          }
+        }
+      );
+    }
+
+    throw error;
+  }
+}
+
+export async function setOrgSenderEnabledAction(
+  id: string,
+  enabled: boolean
+): Promise<UiResult<OrgSenderEnabledMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update an org sender.",
+    forbiddenMessage: "Only admins can update org senders."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = setOrgSenderEnabledSchema.safeParse({ id, enabled });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Choose a valid sender to update.");
+  }
+
+  const existingSender =
+    (await listAllOrgSenders()).find((sender) => sender.id === parsed.data.id) ?? null;
+  if (existingSender === null) {
+    return errorResult("not_found", "That sender no longer exists.");
+  }
+
+  await setOrgSenderEnabledState(parsed.data.id, parsed.data.enabled);
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.org_sender.enabled_changed",
+    entityType: "org_sender",
+    entityId: parsed.data.id,
+    metadataJson: {
+      before: {
+        enabled: existingSender.enabled
+      },
+      after: {
+        enabled: parsed.data.enabled
+      }
+    }
+  });
+
+  revalidateNewsletterSettings();
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id,
+      enabled: parsed.data.enabled
     },
     requestId: newRequestId()
   };
