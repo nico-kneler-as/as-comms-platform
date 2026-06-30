@@ -4,6 +4,7 @@ export * from "./composer-drafts-repository.js";
 export * from "./media-assets-repository.js";
 export * from "./mappers.js";
 export * from "./migrator.js";
+export * from "./org-senders-repository.js";
 export * from "./parse-source-url.js";
 export * from "./repositories.js";
 export * from "./schema/index.js";

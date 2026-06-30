@@ -1505,6 +1505,22 @@ export const orgSettings = pgTable(
   ],
 );
 
+export const orgSenders = pgTable(
+  "org_senders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    label: text("label").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("org_senders_email_unique").on(table.email),
+    index("org_senders_created_at_idx").on(table.createdAt),
+  ],
+);
+
 export const pendingComposerOutbounds = pgTable(
   "pending_composer_outbounds",
   {
