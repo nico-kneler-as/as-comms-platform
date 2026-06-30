@@ -22,6 +22,8 @@ import {
   databaseSchema,
   internalNotes,
   messageAttachments,
+  newsletterSubscribers,
+  newsletterSuppressions,
   opsAlertState,
   orgSenders,
   orgSettings,
@@ -64,6 +66,8 @@ describe("Stage 1 DB schema", () => {
       "mailchimpCampaignTailState",
       "manualNoteDetails",
       "messageAttachments",
+      "newsletterSubscribers",
+      "newsletterSuppressions",
       "opsAlertState",
       "orgSenders",
       "orgSettings",
@@ -94,6 +98,10 @@ describe("Stage 1 DB schema", () => {
       "project_knowledge_entries"
     );
     expect(getTableName(messageAttachments)).toBe("message_attachments");
+    expect(getTableName(newsletterSubscribers)).toBe("newsletter_subscribers");
+    expect(getTableName(newsletterSuppressions)).toBe(
+      "newsletter_suppressions"
+    );
     expect(getTableName(opsAlertState)).toBe("ops_alert_state");
     expect(getTableName(orgSenders)).toBe("org_senders");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
