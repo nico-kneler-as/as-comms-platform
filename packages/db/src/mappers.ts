@@ -21,6 +21,10 @@ import {
   messageAttachmentSchema,
   manualNoteDetailSchema,
   mediaAssetRecordSchema,
+  newsletterSubscriberRecordSchema,
+  newsletterSuppressionRecordSchema,
+  upsertNewsletterSubscriberInputSchema,
+  upsertNewsletterSuppressionInputSchema,
   createOrgSenderInputSchema,
   orgSenderRecordSchema,
   projectKnowledgeEntrySchema,
@@ -54,6 +58,8 @@ import {
   type MessageAttachmentRecord,
   type ManualNoteDetailRecord,
   type MediaAssetRecord as MediaAssetContractRecord,
+  type NewsletterSubscriberRecord,
+  type NewsletterSuppressionRecord,
   type OrgSenderRecord,
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
@@ -100,6 +106,8 @@ import type {
   mailchimpCampaignActivityDetails,
   messageAttachments,
   manualNoteDetails,
+  newsletterSubscribers,
+  newsletterSuppressions,
   orgSenders,
   pendingComposerOutbounds,
   projectAliases,
@@ -158,6 +166,10 @@ type SalesforceReconciliationRunRow =
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
+type NewsletterSubscriberTableRowInsert =
+  typeof newsletterSubscribers.$inferInsert;
+type NewsletterSuppressionTableRowInsert =
+  typeof newsletterSuppressions.$inferInsert;
 type OrgSenderTableRowInsert = typeof orgSenders.$inferInsert;
 
 type ContactRowInput = Omit<
@@ -287,6 +299,47 @@ export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
 
 export type MediaAssetRecord = MediaAssetContractRecord;
 
+export type NewsletterSubscriberRow = Readonly<{
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  status: string;
+  member_rating: number | null;
+  optin_time: Date | null;
+  optin_ip: string | null;
+  confirm_time: Date | null;
+  confirm_ip: string | null;
+  last_changed_at: Date | null;
+  interests: string | null;
+  tags: string | null;
+  source: string;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type NewsletterSubscriberInsert = z.input<
+  typeof upsertNewsletterSubscriberInputSchema
+>;
+
+export type NewsletterSubscriberRowInsert = NewsletterSubscriberTableRowInsert;
+
+export type NewsletterSuppressionRow = Readonly<{
+  id: string;
+  email: string;
+  reason: string;
+  source: string;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type NewsletterSuppressionInsert = z.input<
+  typeof upsertNewsletterSuppressionInputSchema
+>;
+
+export type NewsletterSuppressionRowInsert =
+  NewsletterSuppressionTableRowInsert;
+
 export type OrgSenderRow = Readonly<{
   id: string;
   email: string;
@@ -401,6 +454,91 @@ export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInse
     filename: parsed.filename,
     contentType: parsed.contentType,
     sizeBytes: parsed.sizeBytes,
+  };
+}
+
+export function mapNewsletterSubscriberRow(
+  row: NewsletterSubscriberRow,
+): NewsletterSubscriberRecord {
+  return newsletterSubscriberRecordSchema.parse({
+    id: row.id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    status: row.status,
+    memberRating: row.member_rating,
+    optinTime: fromDate(row.optin_time),
+    optinIp: row.optin_ip,
+    confirmTime: fromDate(row.confirm_time),
+    confirmIp: row.confirm_ip,
+    lastChangedAt: fromDate(row.last_changed_at),
+    interests: row.interests,
+    tags: row.tags,
+    source: row.source,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapNewsletterSubscriberInsert(
+  record: NewsletterSubscriberInsert,
+): NewsletterSubscriberRowInsert {
+  const parsed = upsertNewsletterSubscriberInputSchema.parse(record);
+
+  return {
+    email: parsed.email,
+    firstName: parsed.firstName,
+    lastName: parsed.lastName,
+    status: parsed.status,
+    memberRating: parsed.memberRating,
+    optinTime:
+      parsed.optinTime === undefined
+        ? undefined
+        : parsed.optinTime === null
+          ? null
+          : toDate(parsed.optinTime),
+    optinIp: parsed.optinIp,
+    confirmTime:
+      parsed.confirmTime === undefined
+        ? undefined
+        : parsed.confirmTime === null
+          ? null
+          : toDate(parsed.confirmTime),
+    confirmIp: parsed.confirmIp,
+    lastChangedAt:
+      parsed.lastChangedAt === undefined
+        ? undefined
+        : parsed.lastChangedAt === null
+          ? null
+          : toDate(parsed.lastChangedAt),
+    interests: parsed.interests,
+    tags: parsed.tags,
+    source: parsed.source,
+  };
+}
+
+export function mapNewsletterSuppressionRow(
+  row: NewsletterSuppressionRow,
+): NewsletterSuppressionRecord {
+  return newsletterSuppressionRecordSchema.parse({
+    id: row.id,
+    email: row.email,
+    reason: row.reason,
+    source: row.source,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapNewsletterSuppressionInsert(
+  record: NewsletterSuppressionInsert,
+): NewsletterSuppressionRowInsert {
+  const parsed = upsertNewsletterSuppressionInputSchema.parse(record);
+
+  return {
+    email: parsed.email,
+    reason: parsed.reason,
+    source: parsed.source,
   };
 }
 

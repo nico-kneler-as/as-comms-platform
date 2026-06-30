@@ -1521,6 +1521,61 @@ export const orgSenders = pgTable(
   ],
 );
 
+export const newsletterSubscribers = pgTable(
+  "newsletter_subscribers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    status: text("status").notNull().default("subscribed"),
+    memberRating: integer("member_rating"),
+    optinTime: timestamp("optin_time", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    optinIp: text("optin_ip"),
+    confirmTime: timestamp("confirm_time", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    confirmIp: text("confirm_ip"),
+    lastChangedAt: timestamp("last_changed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    interests: text("interests"),
+    tags: text("tags"),
+    source: text("source").notNull().default("mailchimp_import"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("newsletter_subscribers_email_unique").on(table.email),
+    index("newsletter_subscribers_member_rating_idx").on(table.memberRating),
+    index("newsletter_subscribers_last_changed_at_idx").on(table.lastChangedAt),
+  ],
+);
+
+export const newsletterSuppressions = pgTable(
+  "newsletter_suppressions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    reason: text("reason").notNull(),
+    source: text("source").notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "newsletter_suppressions_reason_check",
+      sql`${table.reason} IN ('unsubscribed', 'cleaned', 'platform_optout')`,
+    ),
+    uniqueIndex("newsletter_suppressions_email_unique").on(table.email),
+  ],
+);
+
 export const pendingComposerOutbounds = pgTable(
   "pending_composer_outbounds",
   {
