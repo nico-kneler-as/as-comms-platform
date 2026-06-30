@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const requireApiSession = vi.hoisted(() => vi.fn());
+const optimizeBroadcastImage = vi.hoisted(() => vi.fn());
 const uploadBroadcastImageToObjectStore = vi.hoisted(() => vi.fn());
 const createBroadcastMediaAssetRecord = vi.hoisted(() => vi.fn());
 const listBroadcastMediaAssets = vi.hoisted(() => vi.fn());
 
 vi.mock("@/src/server/auth/api", () => ({
   requireApiSession,
+}));
+
+vi.mock("@/src/server/broadcasts/optimize-broadcast-image", () => ({
+  optimizeBroadcastImage,
 }));
 
 vi.mock("@/src/server/broadcasts/object-store-runtime", () => ({
@@ -108,6 +113,10 @@ describe("broadcast images upload route", () => {
       ok: true,
       user: { id: "user:operator", role: "operator" },
     });
+    optimizeBroadcastImage.mockResolvedValue({
+      bytes: Buffer.from("tiny"),
+      contentType: "image/png",
+    });
     uploadBroadcastImageToObjectStore.mockResolvedValue({
       url: "https://cdn.example.org/images/uploaded-hero.png",
     });
@@ -129,14 +138,17 @@ describe("broadcast images upload route", () => {
       id: "asset-123",
       url: "https://cdn.example.org/images/uploaded-hero.png",
     });
+    expect(optimizeBroadcastImage).toHaveBeenCalledTimes(1);
     expect(uploadBroadcastImageToObjectStore).toHaveBeenCalledTimes(1);
     const uploadCall = uploadBroadcastImageToObjectStore.mock.calls.at(0)?.[0] as
       | {
           readonly key: string;
+          readonly bytes: Uint8Array;
           readonly contentType: string;
         }
       | undefined;
     expect(uploadCall?.key).toMatch(/^images\/[0-9a-f-]+-Hero-Banner\.png$/i);
+    expect(Buffer.from(uploadCall?.bytes ?? []).toString("utf8")).toBe("tiny");
     expect(uploadCall?.contentType).toBe("image/png");
     expect(createBroadcastMediaAssetRecord).toHaveBeenCalledTimes(1);
     const createCall = createBroadcastMediaAssetRecord.mock.calls.at(0)?.[0] as
@@ -154,7 +166,7 @@ describe("broadcast images upload route", () => {
       publicUrl: "https://cdn.example.org/images/uploaded-hero.png",
       filename: "Hero Banner.png",
       contentType: "image/png",
-      sizeBytes: 11,
+      sizeBytes: 4,
     });
     expect(createCall?.storageKey).toMatch(
       /^images\/[0-9a-f-]+-Hero-Banner\.png$/i,
