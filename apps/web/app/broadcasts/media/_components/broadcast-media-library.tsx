@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent, ReactNode } from "react";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Copy, ExternalLink, ImagePlus, Trash2 } from "lucide-react";
 
@@ -70,6 +70,15 @@ export function BroadcastMediaLibrary({
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  // Re-sync the grid when the server re-renders with fresh data (e.g. after
+  // router.refresh() following an upload or delete). Without this, the client
+  // state seeded once from the initial props would shadow the refreshed list,
+  // so new images would not appear and deleted ones would not disappear.
+  useEffect(() => {
+    setAssets(initialAssets);
+    setNextCursor(initialNextCursor);
+  }, [initialAssets, initialNextCursor]);
 
   function triggerFilePicker() {
     inputRef.current?.click();
