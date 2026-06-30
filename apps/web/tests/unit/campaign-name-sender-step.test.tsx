@@ -48,6 +48,7 @@ const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
       email: "forests@adventurescientists.org",
       connectedToProjectId: null,
       status: "verified",
+      senderType: "project",
     },
     {
       projectId: "project-2",
@@ -56,6 +57,16 @@ const baseProps: React.ComponentProps<typeof NameAndSenderStep> = {
       email: "kelp@adventurescientists.org",
       connectedToProjectId: null,
       status: "unverified",
+      senderType: "project",
+    },
+    {
+      projectId: null,
+      projectName: "Adventure Scientists",
+      projectAliasLabel: "Adventure Scientists",
+      email: "info@adventurescientists.org",
+      connectedToProjectId: null,
+      status: "verified",
+      senderType: "org",
     },
   ],
   frozen: false,
@@ -72,7 +83,10 @@ describe("NameAndSenderStep", () => {
     expect(markup).toContain("May forests volunteer update");
     expect(markup).toContain("forests@adventurescientists.org");
     expect(markup).toContain("Whitebark Pine");
+    expect(markup).toContain("Project aliases");
+    expect(markup).toContain("Organization");
     expect(markup).toContain("kelp@adventurescientists.org");
+    expect(markup).toContain("info@adventurescientists.org");
     expect(markup).toContain("Unverified");
     expect(markup).toContain('aria-disabled="true"');
     expect(markup).toContain("This alias hasn&#x27;t been verified in Postmark yet.");

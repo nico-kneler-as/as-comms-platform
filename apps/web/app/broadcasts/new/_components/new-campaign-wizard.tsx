@@ -4,13 +4,13 @@ import type {
   AudienceCriteria,
   CampaignKind,
   ExpeditionMemberStatus,
-  LaunchType,
 } from "@as-comms/contracts";
 
 import type {
   AudienceBuilderBootstrap,
   CampaignProjectOption,
   CampaignSenderOption,
+  CampaignSenderType,
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
@@ -82,18 +82,10 @@ function readProjectIds(criteria: CampaignAudienceCriteria): string[] {
   ]);
 }
 
-export function defaultAudienceModeForLaunchType(
-  launchType: LaunchType,
+export function defaultAudienceModeForSenderType(
+  senderType: CampaignSenderType | null,
 ): AudienceInitialFilter {
-  return launchType === "html_email" ? "all_approved" : "project_status";
-}
-
-function readAudienceModesForLaunchType(
-  launchType: LaunchType,
-): readonly AudienceInitialFilter[] {
-  return launchType === "html_email"
-    ? ["all_approved", "specific", "project_status"]
-    : ["project_status", "specific"];
+  return senderType === "org" ? "specific" : "project_status";
 }
 
 export function hasAppliedAudienceFilters(
@@ -114,11 +106,11 @@ export function hasAppliedAudienceFilters(
 export function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
-  if (draft.kind === "newsletter") {
-    return "all_approved";
+  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+    return "specific";
   }
 
-  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+  if (draft.kind === "newsletter") {
     return "specific";
   }
 
@@ -133,8 +125,19 @@ export function deriveInitialFilter(
   return undefined;
 }
 
-export function kindForAudienceMode(mode: AudienceInitialFilter): CampaignKind {
-  return mode === "all_approved" ? "newsletter" : "project";
+export function kindForSenderType(
+  senderType: CampaignSenderType | null,
+  fallback: CampaignKind,
+): CampaignKind {
+  if (senderType === "org") {
+    return "newsletter";
+  }
+
+  if (senderType === "project") {
+    return "project";
+  }
+
+  return fallback;
 }
 
 function readTimeZoneParts(
@@ -244,7 +247,11 @@ export function readAliasProjectsForSender(
   bootstrap: AudienceBuilderBootstrap,
   senderOption: CampaignSenderOption | null,
 ): readonly CampaignProjectOption[] {
-  if (senderOption === null) {
+  if (
+    senderOption === null ||
+    senderOption.senderType === "org" ||
+    senderOption.projectId === null
+  ) {
     return [];
   }
 
@@ -336,7 +343,9 @@ function readProjectChipLabel(
   bootstrap: AudienceBuilderBootstrap,
 ): string {
   if (kind === "newsletter") {
-    return "All AS";
+    return (criteria.contactIds?.length ?? 0) > 0
+      ? "Specific individuals"
+      : "Newsletter";
   }
 
   const byId = new Map(
@@ -449,6 +458,7 @@ export function NewCampaignWizard({
     autosavePersistDraftRef,
     frozen,
     kind,
+    availableAudienceModes,
     dirty,
     selectedSenderVerified,
     aliasProjects,
@@ -746,7 +756,7 @@ export function NewCampaignWizard({
 
             {currentStep === 2 ? (
               <AudienceBuilderStep
-                availableModes={readAudienceModesForLaunchType(launchType)}
+                availableModes={availableAudienceModes}
                 hasPickedMode={hasPickedAudienceMode}
                 criteria={criteria}
                 countState={countState}
@@ -845,7 +855,6 @@ export function NewCampaignWizard({
 
             {currentStep === 5 ? (
               <ReviewStep
-                kind={kind}
                 projectChipLabel={readProjectChipLabel(
                   kind,
                   criteria,

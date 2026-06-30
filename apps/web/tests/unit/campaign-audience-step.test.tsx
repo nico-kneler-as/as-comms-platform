@@ -151,23 +151,25 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("Audience preview");
   });
 
-  it("renders the all-approved branch copy for html mode", () => {
+  it("renders the org-sender specific-individuals surface when only that mode is allowed", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
         {...baseProps}
         hasPickedMode={true}
-        availableModes={["all_approved", "project_status"]}
+        availableModes={["specific"]}
         criteria={{
           ...baseProps.criteria,
-          initialFilter: "all_approved",
+          initialFilter: "specific",
         }}
       />,
     );
 
-    expect(markup).toContain("All approved contacts");
+    expect(markup).toContain("Individual volunteers");
     expect(markup).toContain(
-      "This broadcast goes to every approved contact across all projects, minus auto-exclusions.",
+      "No sender-scoped projects are available for volunteer search.",
     );
+    expect(markup).not.toContain("Project / status");
+    expect(markup).not.toContain("All approved contacts");
   });
 
   it("renders only the project and status surface in project mode", () => {
@@ -544,6 +546,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
           email: "forests@adventurescientists.org",
           connectedToProjectId: null,
           status: "verified",
+          senderType: "project",
         },
       ],
     };
@@ -787,6 +790,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
           email: "pnwbio@adventurescientists.org",
           connectedToProjectId: null,
           status: "verified",
+          senderType: "project",
         },
       ],
     };
@@ -1029,6 +1033,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
           email: "forests@adventurescientists.org",
           connectedToProjectId: null,
           status: "verified",
+          senderType: "project",
         },
       ],
     };

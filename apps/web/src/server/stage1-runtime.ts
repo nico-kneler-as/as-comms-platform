@@ -3,6 +3,7 @@ import {
   createMediaAsset,
   createDatabaseConnection,
   listMediaAssets,
+  listOrgSenders,
   createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundle,
@@ -173,6 +174,15 @@ export async function listBroadcastMediaAssets(
   }
 
   return listMediaAssets(runtime.connection.db, input);
+}
+
+export async function listEnabledOrgSenders() {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return listOrgSenders(runtime.connection.db, { enabledOnly: true });
 }
 
 export async function softDeleteBroadcastMediaAsset(id: string) {

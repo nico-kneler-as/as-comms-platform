@@ -28,7 +28,10 @@ import {
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
-import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+import {
+  getStage1WebRuntime,
+  listEnabledOrgSenders,
+} from "@/src/server/stage1-runtime";
 
 import { deriveInitials } from "./campaign-preview";
 
@@ -81,13 +84,16 @@ export type AudienceStatusCounts = Partial<
   Record<ExpeditionMemberStatus, number>
 >;
 
+export type CampaignSenderType = "project" | "org";
+
 export interface CampaignSenderOption {
-  readonly projectId: string;
+  readonly projectId: string | null;
   readonly projectName: string;
   readonly projectAliasLabel: string;
   readonly email: string;
   readonly connectedToProjectId: string | null;
   readonly status: PostmarkSenderStatus;
+  readonly senderType: CampaignSenderType;
 }
 
 export interface AudienceVolunteerSearchRow {
@@ -414,6 +420,76 @@ function buildAllProjectsCriteria(
   });
 }
 
+function buildWindowStart(
+  window: AudienceCriteria["lastActivityWindow"],
+  at: Date,
+): Date | null {
+  switch (window) {
+    case "all_time":
+      return null;
+    case "last_year":
+      return new Date(at.getTime() - 365 * 24 * 60 * 60 * 1000);
+    case "last_90_days":
+      return new Date(at.getTime() - 90 * 24 * 60 * 60 * 1000);
+    case "last_30_days":
+      return new Date(at.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+}
+
+function passesActivityWindow(
+  occurredAtValues: readonly string[],
+  windowStart: Date | null,
+): boolean {
+  if (windowStart === null) {
+    return true;
+  }
+
+  return occurredAtValues.some(
+    (occurredAt) => occurredAt >= windowStart.toISOString(),
+  );
+}
+
+function passesHasReplied(
+  eventTypes: readonly string[],
+  hasReplied: AudienceCriteria["hasReplied"],
+): boolean {
+  if (hasReplied === "either") {
+    return true;
+  }
+
+  const replied = eventTypes.includes("communication.email.inbound");
+  return hasReplied === "yes" ? replied : !replied;
+}
+
+function passesHasClicked(
+  eventTypes: readonly string[],
+  hasClicked: AudienceCriteria["hasClicked"],
+): boolean {
+  if (hasClicked === "either") {
+    return true;
+  }
+
+  const clicked = eventTypes.includes("campaign.email.clicked");
+  return hasClicked === "yes" ? clicked : !clicked;
+}
+
+function compareMembershipsByProject(
+  leftProjectName: string | null,
+  leftProjectId: string | null,
+  leftId: string,
+  rightProjectName: string | null,
+  rightProjectId: string | null,
+  rightId: string,
+): number {
+  const leftProjectSortKey = leftProjectName ?? leftProjectId ?? "\uffff";
+  const rightProjectSortKey = rightProjectName ?? rightProjectId ?? "\uffff";
+  if (leftProjectSortKey !== rightProjectSortKey) {
+    return leftProjectSortKey.localeCompare(rightProjectSortKey);
+  }
+
+  return leftId.localeCompare(rightId);
+}
+
 async function loadApprovedContactsAudience(
   at: Date,
 ): Promise<readonly AudienceMember[]> {
@@ -497,6 +573,155 @@ async function loadApprovedContactsAudience(
   }));
 }
 
+async function loadSpecificContactsAudience(
+  criteria: AudienceCriteria,
+  at: Date,
+): Promise<readonly AudienceMember[]> {
+  const selectedContactIds = [...new Set(criteria.contactIds ?? [])].filter(
+    (contactId) => contactId.trim().length > 0,
+  );
+  if (selectedContactIds.length === 0) {
+    return [];
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const contacts = (await runtime.repositories.contacts.listAll())
+    .filter((contact) => selectedContactIds.includes(contact.id))
+    .sort((left, right) => {
+      const leftKey =
+        left.displayName.trim().length > 0
+          ? left.displayName
+          : (left.primaryEmail ?? left.id);
+      const rightKey =
+        right.displayName.trim().length > 0
+          ? right.displayName
+          : (right.primaryEmail ?? right.id);
+      return leftKey.localeCompare(rightKey);
+    });
+  if (contacts.length === 0) {
+    return [];
+  }
+
+  const contactIds = contacts.map((contact) => contact.id);
+  const memberships =
+    await runtime.repositories.contactMemberships.listByContactIds(contactIds);
+  const membershipsByContact = new Map<string, (typeof memberships)[number][]>(
+    contactIds.map((contactId) => [contactId, []]),
+  );
+  for (const membership of memberships) {
+    const existing = membershipsByContact.get(membership.contactId) ?? [];
+    existing.push(membership);
+    membershipsByContact.set(membership.contactId, existing);
+  }
+
+  const projectIds = [
+    ...new Set(
+      memberships
+        .map((membership) => membership.projectId)
+        .filter((projectId): projectId is string => projectId !== null),
+    ),
+  ];
+  const projects = await runtime.repositories.projectDimensions.listByIds(
+    projectIds,
+  );
+  const projectsById = new Map(
+    projects.map((project) => [project.projectId, project] as const),
+  );
+
+  const events = await runtime.repositories.canonicalEvents.listByContactIds(
+    contactIds,
+  );
+  const eventTypesByContact = new Map<string, string[]>(
+    contactIds.map((contactId) => [contactId, []]),
+  );
+  const occurredAtValuesByContact = new Map<string, string[]>(
+    contactIds.map((contactId) => [contactId, []]),
+  );
+  for (const event of events) {
+    eventTypesByContact.set(event.contactId, [
+      ...(eventTypesByContact.get(event.contactId) ?? []),
+      event.eventType,
+    ]);
+    occurredAtValuesByContact.set(event.contactId, [
+      ...(occurredAtValuesByContact.get(event.contactId) ?? []),
+      event.occurredAt,
+    ]);
+  }
+
+  const aliasCache = new Map<string, Promise<string | null>>();
+  const windowStart = buildWindowStart(criteria.lastActivityWindow, at);
+
+  const audience: AudienceMember[] = [];
+  for (const contact of contacts) {
+    const frozenEmail = contact.primaryEmail?.trim().toLowerCase() ?? "";
+    if (frozenEmail.length === 0) {
+      continue;
+    }
+
+    const occurredAtValues = occurredAtValuesByContact.get(contact.id) ?? [];
+    if (!passesActivityWindow(occurredAtValues, windowStart)) {
+      continue;
+    }
+
+    const eventTypes = eventTypesByContact.get(contact.id) ?? [];
+    if (!passesHasReplied(eventTypes, criteria.hasReplied)) {
+      continue;
+    }
+    if (!passesHasClicked(eventTypes, criteria.hasClicked)) {
+      continue;
+    }
+
+    const primaryMembership = [...(membershipsByContact.get(contact.id) ?? [])]
+      .filter((membership) => membership.projectId !== null)
+      .sort((left, right) =>
+        compareMembershipsByProject(
+          projectsById.get(left.projectId ?? "")?.projectName ?? null,
+          left.projectId,
+          left.id,
+          projectsById.get(right.projectId ?? "")?.projectName ?? null,
+          right.projectId,
+          right.id,
+        ),
+      )
+      .at(0);
+    const project =
+      primaryMembership?.projectId == null
+        ? null
+        : (projectsById.get(primaryMembership.projectId) ?? null);
+
+    audience.push({
+      contactId: contact.id,
+      frozenEmail,
+      frozenFirstName: readFirstName(contact.displayName),
+      frozenProjectName: project?.projectName ?? null,
+      frozenProjectId: primaryMembership?.projectId ?? null,
+      frozenAliasEmail: await resolvePrimaryAliasEmail(
+        runtime,
+        primaryMembership?.projectId ?? null,
+        aliasCache,
+      ),
+    });
+  }
+
+  return audience;
+}
+
+export async function resolveStoredCampaignAudience(input: {
+  readonly kind: CampaignKind;
+  readonly criteria: AudienceCriteria;
+  readonly at: Date;
+}): Promise<readonly AudienceMember[]> {
+  if (input.kind === "newsletter") {
+    return loadSpecificContactsAudience(input.criteria, input.at);
+  }
+
+  const resolver = await createResolver();
+  return filterAudienceMembersBySelection(
+    await resolver.resolveAudience(input.criteria, input.at),
+    input.criteria,
+  );
+}
+
 async function resolveWizardAudience(
   kind: CampaignKind,
   criteria: AudienceCriteria & {
@@ -511,11 +736,15 @@ async function resolveWizardAudience(
     return loadApprovedContactsAudience(at);
   }
 
-  const resolver = await createResolver();
-  return filterAudienceMembersBySelection(
-    await resolver.resolveAudience(parsedCriteria, at),
-    criteria,
-  );
+  if (mode === "specific" && kind === "newsletter") {
+    return loadSpecificContactsAudience(parsedCriteria, at);
+  }
+
+  return resolveStoredCampaignAudience({
+    kind,
+    criteria: parsedCriteria,
+    at,
+  });
 }
 
 export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftData> {
@@ -616,24 +845,38 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       (project) => project.connectedToProjectId === host.id,
     ),
   }));
-  const senderOptions = activeProjects
-    .map((project) => {
+  const projectSenderOptions: CampaignSenderOption[] = activeProjects
+    .flatMap((project) => {
       const email = readPrimaryEmail(project);
       if (email === null) {
-        return null;
+        return [];
       }
 
-      return {
-        projectId: project.projectId,
-        projectName: project.projectName,
-        projectAliasLabel: project.projectAlias ?? project.projectName,
-        email,
-        connectedToProjectId: project.connectedToProjectId,
-        status: project.postmarkSenderStatus,
-      } satisfies CampaignSenderOption;
+      return [
+        {
+          projectId: project.projectId,
+          projectName: project.projectName,
+          projectAliasLabel: project.projectAlias ?? project.projectName,
+          email,
+          connectedToProjectId: project.connectedToProjectId,
+          status: project.postmarkSenderStatus,
+          senderType: "project",
+        } satisfies CampaignSenderOption,
+      ];
     })
-    .filter((project): project is CampaignSenderOption => project !== null)
     .sort((left, right) => left.projectName.localeCompare(right.projectName));
+  const orgSenderOptions = (await listEnabledOrgSenders())
+    .map((sender) => ({
+      projectId: null,
+      projectName: sender.label,
+      projectAliasLabel: sender.label,
+      email: sender.email,
+      connectedToProjectId: null,
+      status: "verified",
+      senderType: "org",
+    }) satisfies CampaignSenderOption)
+    .sort((left, right) => left.projectName.localeCompare(right.projectName));
+  const senderOptions = [...projectSenderOptions, ...orgSenderOptions];
 
   if (runtime.connection === null) {
     return {
@@ -936,7 +1179,7 @@ export async function searchProjectVolunteersAction(input: {
       return projectId.length > 0 && values.indexOf(projectId) === index;
     });
   const query = input.query.trim();
-  if (aliasProjectIds.length === 0 || query.length < 2) {
+  if (query.length < 2) {
     return successResult([]);
   }
 
@@ -950,7 +1193,7 @@ export async function searchProjectVolunteersAction(input: {
     const contacts = await runtime.repositories.contacts.searchByQuery({
       query,
       limit: 25,
-      projectIds: aliasProjectIds,
+      ...(aliasProjectIds.length === 0 ? {} : { projectIds: aliasProjectIds }),
     });
     if (contacts.length === 0) {
       return successResult([]);
@@ -979,7 +1222,8 @@ export async function searchProjectVolunteersAction(input: {
         contacts
           .filter(
             (contact) =>
-              (membershipsByContact.get(contact.id)?.length ?? 0) > 0 &&
+              (aliasProjectIds.length === 0 ||
+                (membershipsByContact.get(contact.id)?.length ?? 0) > 0) &&
               (contact.primaryEmail?.trim().length ?? 0) > 0,
           )
           .map(async (contact) => {
@@ -1028,7 +1272,7 @@ export async function searchProjectVolunteersAction(input: {
       "campaign_volunteer_search_failed",
       error instanceof Error
         ? error.message
-        : "Unable to search volunteers for the selected projects.",
+        : "Unable to search contacts for the selected sender.",
       true,
     );
   }
