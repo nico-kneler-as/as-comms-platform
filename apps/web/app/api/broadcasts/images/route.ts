@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { requireApiSession } from "@/src/server/auth/api";
+import { optimizeBroadcastImage } from "@/src/server/broadcasts/optimize-broadcast-image";
 import { uploadBroadcastImageToObjectStore } from "@/src/server/broadcasts/object-store-runtime";
 import {
   createBroadcastMediaAssetRecord,
@@ -112,19 +113,20 @@ export async function POST(request: Request) {
   }
 
   const storageKey = `images/${randomUUID()}-${sanitizeFilename(file.name)}`;
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const optimized = await optimizeBroadcastImage(bytes, file.type);
   const uploaded = await uploadBroadcastImageToObjectStore({
     key: storageKey,
-    bytes,
-    contentType: file.type,
+    bytes: optimized.bytes,
+    contentType: optimized.contentType,
   });
   const record = await createBroadcastMediaAssetRecord({
     uploaderId: session.user.id,
     storageKey,
     publicUrl: uploaded.url,
     filename: file.name,
-    contentType: file.type,
-    sizeBytes: file.size,
+    contentType: optimized.contentType,
+    sizeBytes: optimized.bytes.byteLength,
   });
 
   return Response.json({
