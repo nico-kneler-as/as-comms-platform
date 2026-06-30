@@ -16,12 +16,11 @@ import { Input } from "@/components/ui/input";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { cn } from "@/lib/utils";
 
-import type { CampaignKind, CampaignRunRecord } from "@as-comms/contracts";
+import type { CampaignRunRecord } from "@as-comms/contracts";
 
 import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface ReviewStepProps {
-  readonly kind: CampaignKind;
   readonly projectChipLabel: string;
   readonly runName: string | null;
   readonly fromEmail: string | null;
@@ -74,7 +73,6 @@ function SummaryRow({
 }
 
 export function ReviewStep({
-  kind,
   projectChipLabel,
   runName,
   fromEmail,
@@ -133,9 +131,7 @@ export function ReviewStep({
                     {(audienceSize ?? 0).toLocaleString()}
                   </span>{" "}
                   recipients in{" "}
-                  <span className="text-slate-900">
-                    {kind === "newsletter" ? "All AS" : projectChipLabel}
-                  </span>
+                  <span className="text-slate-900">{projectChipLabel}</span>
                 </span>
               }
             />

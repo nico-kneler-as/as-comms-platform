@@ -16,12 +16,17 @@ import {
   createStage1InternalNoteService,
   createStage1TimelinePresentationService,
 } from "@as-comms/domain";
+import type { OrgSenderRecord } from "@as-comms/contracts";
 
 import {
   setStage1WebRuntimeForTests,
   type Stage1WebRuntime,
 } from "./stage1-runtime";
-import { createStage5RepositoryBundle } from "@as-comms/db";
+import {
+  createOrgSender,
+  createStage5RepositoryBundle,
+  setOrgSenderEnabled,
+} from "@as-comms/db";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
 
@@ -62,4 +67,22 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
       await context.client.close();
     },
   };
+}
+
+export async function createOrgSenderForTests(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly email: string;
+    readonly label: string;
+  },
+): Promise<OrgSenderRecord> {
+  return createOrgSender(runtime.context.db, input);
+}
+
+export async function setOrgSenderEnabledForTests(
+  runtime: Stage1WebTestRuntime,
+  id: string,
+  enabled: boolean,
+): Promise<void> {
+  await setOrgSenderEnabled(runtime.context.db, id, enabled);
 }

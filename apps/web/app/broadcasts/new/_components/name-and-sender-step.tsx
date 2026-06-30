@@ -82,12 +82,115 @@ export function NameAndSenderStep({
 }: NameAndSenderStepProps) {
   const canContinue =
     (fromEmail?.trim().length ?? 0) > 0 && name.trim().length > 0;
+  const groupedSenderOptions = [
+    {
+      id: "project",
+      label: "Project aliases",
+      options: senderOptions.filter((option) => option.senderType === "project"),
+    },
+    {
+      id: "org",
+      label: "Organization",
+      options: senderOptions.filter((option) => option.senderType === "org"),
+    },
+  ].filter((group) => group.options.length > 0);
+
+  function renderSenderOption(option: CampaignSenderOption) {
+    const meta = SENDER_STATUS_META[option.status];
+    const selected = fromEmail === option.email;
+    const card = (
+      <div
+        className={cn(
+          "flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
+          selected
+            ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
+            : "border-slate-200 bg-white",
+          meta.selectable
+            ? "hover:border-slate-300 hover:bg-slate-50"
+            : "text-slate-500",
+        )}
+      >
+        <span
+          className={cn(
+            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
+            selected ? "border-slate-900" : "border-slate-300",
+          )}
+          aria-hidden="true"
+        >
+          {selected ? (
+            <span className="size-2 rounded-full bg-slate-900" />
+          ) : null}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-[12.5px] font-medium text-slate-900">
+            {option.email}
+          </p>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+            {option.projectAliasLabel}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            meta.chipClassName,
+          )}
+        >
+          <span
+            className={cn(
+              "size-1 rounded-full",
+              option.status === "verified"
+                ? "bg-emerald-500"
+                : option.status === "pending"
+                  ? "bg-amber-500"
+                  : "bg-slate-400",
+            )}
+          />
+          {meta.chipLabel}
+        </span>
+      </div>
+    );
+
+    if (!meta.selectable) {
+      return (
+        <Tooltip key={`${option.projectId ?? option.email}:${option.email}`}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="block w-full cursor-not-allowed text-left"
+            >
+              {card}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-72 text-pretty">
+            {meta.tooltip}
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <button
+        key={`${option.projectId ?? option.email}:${option.email}`}
+        type="button"
+        aria-pressed={selected}
+        disabled={frozen}
+        onClick={() => {
+          onFromEmailChange(option.email);
+        }}
+        className="block w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed"
+      >
+        {card}
+      </button>
+    );
+  }
 
   return (
     <section className="flex h-full flex-col">
       <StepHeader
         title="Name and sender"
-        description="Set the internal broadcast name and choose the verified alias that recipients will see in their inbox."
+        description="Set the internal broadcast name and choose the sender that recipients will see in their inbox."
       />
 
       <div className="space-y-4">
@@ -113,96 +216,14 @@ export function NameAndSenderStep({
         <SectionPanel label="Sending account" bodyClassName="p-4">
           <TooltipProvider delayDuration={200}>
             <div className="space-y-2">
-              {senderOptions.map((option) => {
-                const meta = SENDER_STATUS_META[option.status];
-                const selected = fromEmail === option.email;
-                const card = (
-                  <div
-                    className={cn(
-                      "flex items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
-                      selected
-                        ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
-                        : "border-slate-200 bg-white",
-                      meta.selectable
-                        ? "hover:border-slate-300 hover:bg-slate-50"
-                        : "text-slate-500",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border",
-                        selected ? "border-slate-900" : "border-slate-300",
-                      )}
-                      aria-hidden="true"
-                    >
-                      {selected ? (
-                        <span className="size-2 rounded-full bg-slate-900" />
-                      ) : null}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-mono text-[12.5px] font-medium text-slate-900">
-                        {option.email}
-                      </p>
-                      <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                        {option.projectAliasLabel}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                        meta.chipClassName,
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "size-1 rounded-full",
-                          option.status === "verified"
-                            ? "bg-emerald-500"
-                            : option.status === "pending"
-                              ? "bg-amber-500"
-                              : "bg-slate-400",
-                        )}
-                      />
-                      {meta.chipLabel}
-                    </span>
-                  </div>
-                );
-
-                if (!meta.selectable) {
-                  return (
-                    <Tooltip key={`${option.projectId}:${option.email}`}>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          disabled
-                          aria-disabled="true"
-                          className="block w-full cursor-not-allowed text-left"
-                        >
-                          {card}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right" className="max-w-72 text-pretty">
-                        {meta.tooltip}
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                }
-
-                return (
-                  <button
-                    key={`${option.projectId}:${option.email}`}
-                    type="button"
-                    aria-pressed={selected}
-                    disabled={frozen}
-                    onClick={() => {
-                      onFromEmailChange(option.email);
-                    }}
-                    className="block w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1 disabled:cursor-not-allowed"
-                  >
-                    {card}
-                  </button>
-                );
-              })}
+              {groupedSenderOptions.map((group) => (
+                <div key={group.id} className="space-y-2">
+                  <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                    {group.label}
+                  </p>
+                  {group.options.map((option) => renderSenderOption(option))}
+                </div>
+              ))}
             </div>
           </TooltipProvider>
         </SectionPanel>
