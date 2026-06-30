@@ -10,6 +10,7 @@ import {
   campaignSendJobName,
   campaignSendJobMaxAttempts,
   campaignSendPayloadSchema,
+  type CampaignRunRecord,
   scheduleSendInputSchema,
   sendNowInputSchema,
 } from "@as-comms/contracts";
@@ -32,7 +33,9 @@ import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import { readWebEnv } from "@/src/server/env";
 import {
   getStage1WebRuntime,
+  listEnabledOrgSenders,
   withStage1WebTransaction,
+  type Stage1WebTransaction,
   type Stage1WebRuntime,
 } from "@/src/server/stage1-runtime";
 
@@ -41,6 +44,7 @@ import {
   type RecipientFilter,
   type RecipientQueryResult,
 } from "./_lib/run-recipients";
+import { resolveStoredCampaignAudience } from "./_lib/audience-data-source";
 
 interface CampaignActionData {
   readonly runId: string;
@@ -313,10 +317,167 @@ async function validateVerifiedSender(input: {
       project.postmarkSenderStatus === "verified",
   );
   if (!hasVerifiedSender) {
+    const hasEnabledOrgSender = (await listEnabledOrgSenders()).some(
+      (sender) => sender.email.trim().toLowerCase() === normalizedEmail,
+    );
+    if (hasEnabledOrgSender) {
+      return null;
+    }
+
     return errorResult("campaign_sender_unverified", input.failureMessage);
   }
 
   return null;
+}
+
+async function resolveSenderFieldsForRun(
+  transaction: Stage1WebTransaction,
+  run: CampaignRunRecord,
+): Promise<Pick<CampaignRunRecord, "fromEmail" | "fromName" | "replyToEmail">> {
+  if (run.projectId === null) {
+    return {
+      fromEmail: run.fromEmail,
+      fromName: run.fromName ?? "Adventure Scientists",
+      replyToEmail: run.replyToEmail ?? run.fromEmail,
+    };
+  }
+
+  const project = await transaction.settings.projects.findById(run.projectId);
+  const primary =
+    project?.emails.find((email) => email.isPrimary) ?? project?.emails[0];
+  const primaryAddress = primary?.address.trim().toLowerCase() ?? null;
+
+  return {
+    fromEmail: primaryAddress ?? run.fromEmail,
+    fromName: run.fromName ?? "Adventure Scientists",
+    replyToEmail: primaryAddress ?? run.replyToEmail,
+  };
+}
+
+function buildAudienceSnapshot(
+  member: Awaited<ReturnType<typeof resolveStoredCampaignAudience>>[number],
+) {
+  return {
+    id: randomUUID(),
+    contactId: member.contactId,
+    frozenEmail: member.frozenEmail,
+    frozenFirstName: member.frozenFirstName,
+    frozenProjectName: member.frozenProjectName,
+    frozenProjectId: member.frozenProjectId,
+    frozenAliasEmail: member.frozenAliasEmail,
+    unsubscribeToken: randomUUID(),
+    deliveryStatus: "pending" as const,
+    providerMessageId: null,
+    sentAt: null,
+    deliveredAt: null,
+    bouncedAt: null,
+    openedAt: null,
+    clickedAt: null,
+    complainedAt: null,
+    unsubscribedAt: null,
+    lastEventAt: null,
+  };
+}
+
+async function readFrozenAudienceResult(
+  transaction: Stage1WebTransaction,
+  runId: string,
+  audienceSize: number | null,
+): Promise<{ readonly audienceSize: number; readonly excludedCount: number }> {
+  const snapshots = await transaction.campaigns.audienceSnapshots.listForRun(
+    runId,
+  );
+  return {
+    audienceSize: audienceSize ?? snapshots.length,
+    excludedCount: 0,
+  };
+}
+
+async function freezeNewsletterAudienceForSend(input: {
+  readonly transaction: Stage1WebTransaction;
+  readonly runId: string;
+  readonly at: Date;
+}): Promise<{ readonly audienceSize: number; readonly excludedCount: number }> {
+  const run = await input.transaction.campaigns.campaignRuns.findById(
+    input.runId,
+  );
+  if (run === null) {
+    throw new Error(`Campaign run ${input.runId} was not found.`);
+  }
+
+  if (run.state === "sending") {
+    return readFrozenAudienceResult(
+      input.transaction,
+      input.runId,
+      run.audienceSize,
+    );
+  }
+
+  if (run.state === "scheduled") {
+    const snapshots = await input.transaction.campaigns.audienceSnapshots.listForRun(
+      input.runId,
+    );
+    if (snapshots.length > 0) {
+      return {
+        audienceSize: run.audienceSize ?? snapshots.length,
+        excludedCount: 0,
+      };
+    }
+  }
+
+  if (run.state !== "draft" && run.state !== "scheduled") {
+    throw new Error(
+      `Campaign run ${input.runId} cannot be frozen from ${run.state}.`,
+    );
+  }
+
+  const members = await resolveStoredCampaignAudience({
+    kind: run.kind,
+    criteria: run.audienceCriteria,
+    at: input.at,
+  });
+  const exclusionFilter = createExclusionFilter({
+    repositories: {
+      campaignRuns: input.transaction.campaigns.campaignRuns,
+      contactConsent: input.transaction.campaigns.contactConsent,
+      suppressionList: input.transaction.campaigns.suppressionList,
+    },
+  });
+  const exclusions = await exclusionFilter.applyExclusions(
+    members,
+    input.runId,
+    input.at,
+  );
+
+  await input.transaction.campaigns.audienceSnapshots.bulkInsert(
+    input.runId,
+    exclusions.eligible.map(buildAudienceSnapshot),
+  );
+
+  const senderFields = await resolveSenderFieldsForRun(input.transaction, run);
+
+  if (run.state === "draft") {
+    await input.transaction.campaigns.campaignRuns.transitionState(
+      input.runId,
+      "draft",
+      "scheduled",
+      {
+        audienceSize: exclusions.eligible.length,
+        scheduledAt: run.scheduledAt ?? input.at.toISOString(),
+        ...senderFields,
+      },
+    );
+  } else {
+    await input.transaction.campaigns.campaignRuns.update(input.runId, {
+      audienceSize: exclusions.eligible.length,
+      ...senderFields,
+    });
+  }
+
+  return {
+    audienceSize: exclusions.eligible.length,
+    excludedCount: exclusions.excluded.length,
+  };
 }
 
 async function readRequestOrigin(): Promise<string> {
@@ -367,8 +528,7 @@ export async function sendNow(
     const senderError = await validateVerifiedSender({
       runtime,
       email: run.fromEmail,
-      failureMessage:
-        "Choose a verified sender alias before sending this broadcast.",
+      failureMessage: "Choose a verified sender before sending this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -378,10 +538,14 @@ export async function sendNow(
     const frozen = await withStage1WebTransaction(async (transaction) => {
       const transactionalOrchestrator =
         createCampaignSendOrchestratorForRepositories(transaction);
-      const frozenResult = await transactionalOrchestrator.freeze(
-        parsed.runId,
-        scheduledAt,
-      );
+      const frozenResult =
+        run.kind === "newsletter"
+          ? await freezeNewsletterAudienceForSend({
+              transaction,
+              runId: parsed.runId,
+              at: scheduledAt,
+            })
+          : await transactionalOrchestrator.freeze(parsed.runId, scheduledAt);
       await transaction.campaigns.campaignRuns.update(parsed.runId, {
         scheduledAt: scheduledAt.toISOString(),
         lastEditedByUserId: admin.userId,
@@ -449,7 +613,7 @@ export async function schedule(
       runtime,
       email: run.fromEmail,
       failureMessage:
-        "Choose a verified sender alias before scheduling this broadcast.",
+        "Choose a verified sender before scheduling this broadcast.",
     });
     if (senderError !== null) {
       return senderError;
@@ -459,10 +623,14 @@ export async function schedule(
     const frozen = await withStage1WebTransaction(async (transaction) => {
       const transactionalOrchestrator =
         createCampaignSendOrchestratorForRepositories(transaction);
-      const frozenResult = await transactionalOrchestrator.freeze(
-        parsed.runId,
-        scheduledAt,
-      );
+      const frozenResult =
+        run.kind === "newsletter"
+          ? await freezeNewsletterAudienceForSend({
+              transaction,
+              runId: parsed.runId,
+              at: scheduledAt,
+            })
+          : await transactionalOrchestrator.freeze(parsed.runId, scheduledAt);
       await transaction.campaigns.campaignRuns.update(parsed.runId, {
         scheduledAt: parsed.scheduledAt,
         lastEditedByUserId: admin.userId,
@@ -536,17 +704,12 @@ export async function testSend(
       return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
 
-    const resolver = createAudienceResolver({
-      repositories: {
-        contacts: runtime.repositories.contacts,
-        contactMemberships: runtime.repositories.contactMemberships,
-        canonicalEvents: runtime.repositories.canonicalEvents,
-        projectDimensions: runtime.repositories.projectDimensions,
-        settingsProjects: runtime.settings.projects,
-      },
-    });
     const audience = filterAudienceMembersBySelectedContacts(
-      await resolver.resolveAudience(run.audienceCriteria, new Date()),
+      await resolveStoredCampaignAudience({
+        kind: run.kind,
+        criteria: run.audienceCriteria,
+        at: new Date(),
+      }),
       run.audienceCriteria.contactIds,
     );
     const sample = audience[0];
@@ -561,7 +724,7 @@ export async function testSend(
     const senderError = await validateVerifiedSender({
       runtime,
       email: fromEmail,
-      failureMessage: "Choose a verified sender alias before sending a test.",
+      failureMessage: "Choose a verified sender before sending a test.",
     });
     if (senderError !== null) {
       return senderError;
@@ -569,7 +732,7 @@ export async function testSend(
     if (fromEmail === null) {
       return errorResult(
         "campaign_test_send_missing_sender",
-        "Choose a verified sender alias before sending a test.",
+        "Choose a verified sender before sending a test.",
       );
     }
 

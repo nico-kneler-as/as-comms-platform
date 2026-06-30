@@ -50,7 +50,6 @@ vi.mock("@/components/ui/dialog", () => ({
 import { ReviewStep } from "../../app/broadcasts/new/_components/review-step";
 
 const baseProps: React.ComponentProps<typeof ReviewStep> = {
-  kind: "project",
   projectChipLabel: "Forests",
   runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",

@@ -125,6 +125,7 @@ vi.mock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
 
 vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
   AudienceBuilderStep: ({
+    availableModes,
     criteria,
     onBack,
     onContinue,
@@ -134,6 +135,11 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     volunteerSearchQuery,
     volunteerSearchRows,
   }: {
+    readonly availableModes: readonly (
+      | "project_status"
+      | "specific"
+      | "all_approved"
+    )[];
     readonly criteria: {
       readonly initialFilter?: "project_status" | "specific" | "all_approved";
     };
@@ -156,6 +162,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     <section data-testid="audience-step">
       <div>AudienceBuilderStep</div>
       <div data-testid="audience-mode">{criteria.initialFilter ?? "unset"}</div>
+      <div data-testid="audience-available-modes">{availableModes.join(",")}</div>
       <input
         aria-label="volunteer-search"
         value={volunteerSearchQuery}
@@ -163,33 +170,39 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
           onVolunteerSearchQueryChange(event.currentTarget.value);
         }}
       />
-      <button
-        type="button"
-        aria-label="mode-specific"
-        onClick={() => {
-          onInitialFilterChange("specific");
-        }}
-      >
-        Specific
-      </button>
-      <button
-        type="button"
-        aria-label="mode-project-status"
-        onClick={() => {
-          onInitialFilterChange("project_status");
-        }}
-      >
-        Project status
-      </button>
-      <button
-        type="button"
-        aria-label="mode-all-approved"
-        onClick={() => {
-          onInitialFilterChange("all_approved");
-        }}
-      >
-        All approved
-      </button>
+      {availableModes.includes("specific") ? (
+        <button
+          type="button"
+          aria-label="mode-specific"
+          onClick={() => {
+            onInitialFilterChange("specific");
+          }}
+        >
+          Specific
+        </button>
+      ) : null}
+      {availableModes.includes("project_status") ? (
+        <button
+          type="button"
+          aria-label="mode-project-status"
+          onClick={() => {
+            onInitialFilterChange("project_status");
+          }}
+        >
+          Project status
+        </button>
+      ) : null}
+      {availableModes.includes("all_approved") ? (
+        <button
+          type="button"
+          aria-label="mode-all-approved"
+          onClick={() => {
+            onInitialFilterChange("all_approved");
+          }}
+        >
+          All approved
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label="search-alice"
@@ -283,11 +296,13 @@ vi.mock("../../app/broadcasts/new/_components/review-step", () => ({
     fromEmail,
     frozen,
     frozenState,
+    projectChipLabel,
     subject,
   }: {
     readonly fromEmail: string | null;
     readonly frozen: boolean;
     readonly frozenState: string;
+    readonly projectChipLabel: string;
     readonly subject: string;
   }) => (
     <section data-testid="review-step">
@@ -295,6 +310,7 @@ vi.mock("../../app/broadcasts/new/_components/review-step", () => ({
       <div data-testid="review-from-email">{fromEmail ?? "none"}</div>
       <div data-testid="review-frozen">{String(frozen)}</div>
       <div data-testid="review-state">{frozenState}</div>
+      <div data-testid="review-scope">{projectChipLabel}</div>
       <div data-testid="review-subject">{subject}</div>
     </section>
   ),
@@ -395,6 +411,7 @@ function buildBootstrap(
         email: "forests@example.org",
         connectedToProjectId: "host-1",
         status: "verified",
+        senderType: "project",
       },
     ],
     statuses: ["Waitlist", "Applied"] as readonly ExpeditionMemberStatus[],
@@ -856,5 +873,52 @@ describe("NewCampaignWizard", () => {
         replyToEmail: "forests@example.org",
       }),
     );
+  });
+
+  it("treats an org sender as newsletter-kind and gates the audience step to specific individuals", async () => {
+    await renderWizard({
+      bootstrap: buildBootstrap({
+        senderOptions: [
+          {
+            projectId: "project-1",
+            projectName: "Beech Leaf Disease",
+            projectAliasLabel: "Forests",
+            email: "forests@example.org",
+            connectedToProjectId: "host-1",
+            status: "verified",
+            senderType: "project",
+          },
+          {
+            projectId: null,
+            projectName: "Adventure Scientists",
+            projectAliasLabel: "Adventure Scientists",
+            email: "info@adventurescientists.org",
+            connectedToProjectId: null,
+            status: "verified",
+            senderType: "org",
+          },
+        ],
+      }),
+      draft: buildDraft({
+        fromEmail: "forests@example.org",
+        replyToEmail: "forests@example.org",
+      }),
+    });
+
+    await click("launch-continue");
+    await click("sender-info@adventurescientists.org");
+    await click("name-continue");
+
+    expect(saveCampaignWizardDraftActionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromEmail: "info@adventurescientists.org",
+        replyToEmail: "info@adventurescientists.org",
+        kind: "newsletter",
+      }),
+    );
+    expect(getByTestId("audience-available-modes").textContent).toBe("specific");
+    expect(
+      document.querySelector('[aria-label="mode-project-status"]'),
+    ).toBeNull();
   });
 });

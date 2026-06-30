@@ -14,6 +14,7 @@ import type {
   AudienceVolunteerSearchRow,
   CampaignProjectOption,
   CampaignSenderOption,
+  CampaignSenderType,
   CampaignWizardDraftData,
   ComposePreviewData,
 } from "../../_lib/audience-data-source";
@@ -46,10 +47,18 @@ function readProjectIds(criteria: CampaignAudienceCriteria): string[] {
   ]);
 }
 
-function defaultAudienceModeForLaunchType(
-  launchType: LaunchType,
+function defaultAudienceModeForSenderType(
+  senderType: CampaignSenderType | null,
 ): AudienceInitialFilter {
-  return launchType === "html_email" ? "all_approved" : "project_status";
+  return senderType === "org" ? "specific" : "project_status";
+}
+
+function readAllowedAudienceModesForSenderType(
+  senderType: CampaignSenderType | null,
+): readonly AudienceInitialFilter[] {
+  return senderType === "org"
+    ? ["specific"]
+    : ["project_status", "specific"];
 }
 
 function hasAppliedAudienceFilters(
@@ -70,11 +79,11 @@ function hasAppliedAudienceFilters(
 function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
-  if (draft.kind === "newsletter") {
-    return "all_approved";
+  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+    return "specific";
   }
 
-  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+  if (draft.kind === "newsletter") {
     return "specific";
   }
 
@@ -89,8 +98,19 @@ function deriveInitialFilter(
   return undefined;
 }
 
-function kindForAudienceMode(mode: AudienceInitialFilter): CampaignKind {
-  return mode === "all_approved" ? "newsletter" : "project";
+function kindForSenderType(
+  senderType: CampaignSenderType | null,
+  fallback: CampaignKind,
+): CampaignKind {
+  if (senderType === "org") {
+    return "newsletter";
+  }
+
+  if (senderType === "project") {
+    return "project";
+  }
+
+  return fallback;
 }
 
 function readTimeZoneParts(
@@ -172,7 +192,11 @@ function readAliasProjectsForSender(
   bootstrap: AudienceBuilderBootstrap,
   senderOption: CampaignSenderOption | null,
 ): readonly CampaignProjectOption[] {
-  if (senderOption === null) {
+  if (
+    senderOption === null ||
+    senderOption.senderType === "org" ||
+    senderOption.projectId === null
+  ) {
     return [];
   }
 
@@ -399,14 +423,16 @@ export function useNewCampaignWizardState({
     () => readAliasProjectsForSender(bootstrap, selectedSenderOption),
     [bootstrap, selectedSenderOption],
   );
+  const selectedSenderType = selectedSenderOption?.senderType ?? null;
   const aliasProjectIds = useMemo(
     () => normalizeProjectIds(aliasProjects.map((project) => project.id)),
     [aliasProjects],
   );
-  const kind =
-    criteria.initialFilter === undefined
-      ? draft.kind
-      : kindForAudienceMode(criteria.initialFilter);
+  const availableAudienceModes = useMemo(
+    () => readAllowedAudienceModesForSenderType(selectedSenderType),
+    [selectedSenderType],
+  );
+  const kind = kindForSenderType(selectedSenderType, draft.kind);
   const fingerprint = useMemo(
     () =>
       JSON.stringify({
@@ -454,6 +480,10 @@ export function useNewCampaignWizardState({
     warningDismissFingerprint === previewFingerprint;
 
   useEffect(() => {
+    const initialSenderType =
+      bootstrap.senderOptions.find(
+        (option) => option.email === draft.fromEmail,
+      )?.senderType ?? null;
     const initialCriteria = {
       ...draft.audienceCriteria,
       projectId:
@@ -465,10 +495,7 @@ export function useNewCampaignWizardState({
     };
     savedFingerprintRef.current = JSON.stringify({
       launchType: draft.launchType,
-      kind:
-        initialCriteria.initialFilter === undefined
-          ? draft.kind
-          : kindForAudienceMode(initialCriteria.initialFilter),
+      kind: kindForSenderType(initialSenderType, draft.kind),
       name: draft.name,
       fromEmail: draft.fromEmail,
       replyToEmail: draft.replyToEmail,
@@ -480,7 +507,7 @@ export function useNewCampaignWizardState({
       criteria: initialCriteria,
       audienceSize: draft.audienceSize,
     });
-  }, [draft, initialAudienceMode]);
+  }, [bootstrap.senderOptions, draft, initialAudienceMode]);
 
   useEffect(() => {
     if (fromEmail === null && suggestedSenderEmail !== null) {
@@ -495,7 +522,7 @@ export function useNewCampaignWizardState({
       !hasPickedAudienceMode ||
       selectedSenderOption === null ||
       currentMode === undefined ||
-      currentMode === "all_approved" ||
+      selectedSenderType !== "project" ||
       aliasProjects.length === 0
     ) {
       return;
@@ -519,6 +546,7 @@ export function useNewCampaignWizardState({
     criteria.initialFilter,
     hasPickedAudienceMode,
     selectedSenderOption,
+    selectedSenderType,
   ]);
 
   useEffect(() => {
@@ -527,21 +555,10 @@ export function useNewCampaignWizardState({
     }
 
     previousLaunchTypeRef.current = launchType;
-    setCriteria((current) => {
-      if (!hasPickedAudienceMode) {
-        return clearAudienceCriteria(current);
-      }
-
-      return buildCriteriaForMode({
-        current,
-        mode: defaultAudienceModeForLaunchType(launchType),
-        aliasProjects,
-      });
-    });
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
-  }, [aliasProjects, hasPickedAudienceMode, launchType]);
+  }, [launchType]);
 
   useEffect(() => {
     if (previousFromEmailRef.current === fromEmail) {
@@ -554,16 +571,26 @@ export function useNewCampaignWizardState({
         return clearAudienceCriteria(current);
       }
 
+      const nextMode = availableAudienceModes.includes(current.initialFilter)
+        ? current.initialFilter
+        : defaultAudienceModeForSenderType(selectedSenderType);
+
       return buildCriteriaForMode({
         current,
-        mode: current.initialFilter,
+        mode: nextMode,
         aliasProjects,
       });
     });
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
-  }, [aliasProjects, criteria.initialFilter, fromEmail, hasPickedAudienceMode]);
+  }, [
+    aliasProjects,
+    availableAudienceModes,
+    fromEmail,
+    hasPickedAudienceMode,
+    selectedSenderType,
+  ]);
 
   useEffect(() => {
     setReplyToEmail(fromEmail);
@@ -726,10 +753,7 @@ export function useNewCampaignWizardState({
       return;
     }
 
-    if (
-      aliasProjectIds.length === 0 ||
-      volunteerSearchQuery.trim().length < 2
-    ) {
+    if (volunteerSearchQuery.trim().length < 2) {
       setVolunteerSearchRows([]);
       setVolunteerSearchErrorMessage(null);
       return;
@@ -955,6 +979,7 @@ export function useNewCampaignWizardState({
     autosavePersistDraftRef,
     frozen,
     kind,
+    availableAudienceModes,
     dirty,
     selectedSenderVerified,
     aliasProjects,
