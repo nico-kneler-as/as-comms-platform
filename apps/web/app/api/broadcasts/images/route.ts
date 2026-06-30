@@ -7,6 +7,8 @@ import {
   listBroadcastMediaAssets,
 } from "@/src/server/stage1-runtime";
 
+import { toMediaLibraryItem } from "../../../broadcasts/media/_lib/media-library-item";
+
 export const dynamic = "force-dynamic";
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -65,14 +67,7 @@ export async function GET(request: Request) {
   });
 
   return Response.json({
-    items: result.items.map((asset) => ({
-      id: asset.id,
-      url: asset.publicUrl,
-      filename: asset.filename,
-      contentType: asset.contentType,
-      sizeBytes: asset.sizeBytes,
-      createdAt: asset.createdAt,
-    })),
+    items: result.items.map(toMediaLibraryItem),
     nextCursor: result.nextCursor,
   });
 }
