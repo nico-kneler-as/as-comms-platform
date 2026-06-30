@@ -1,8 +1,10 @@
 import {
   accounts,
   countMediaAssets,
+  createOrgSender,
   createMediaAsset,
   createDatabaseConnection,
+  getOrgSenderByEmail,
   listMediaAssets,
   listOrgSenders,
   createStage1RepositoryBundle,
@@ -11,6 +13,7 @@ import {
   createStage5RepositoryBundle,
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
+  setOrgSenderEnabled,
   sessions,
   softDeleteMediaAsset,
   users,
@@ -18,6 +21,7 @@ import {
   type DatabaseConnection,
   type Stage5RepositoryBundle,
 } from "@as-comms/db";
+import type { CreateOrgSenderInput } from "@as-comms/contracts";
 import {
   createStage1InternalNoteService,
   createStage1NormalizationService,
@@ -193,6 +197,42 @@ export async function listEnabledOrgSenders() {
   }
 
   return listOrgSenders(runtime.connection.db, { enabledOnly: true });
+}
+
+export async function listAllOrgSenders() {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return listOrgSenders(runtime.connection.db, { enabledOnly: false });
+}
+
+export async function createOrgSenderRecord(input: CreateOrgSenderInput) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return createOrgSender(runtime.connection.db, input);
+}
+
+export async function setOrgSenderEnabledState(id: string, enabled: boolean) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return setOrgSenderEnabled(runtime.connection.db, id, enabled);
+}
+
+export async function getOrgSenderByEmailRecord(email: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return getOrgSenderByEmail(runtime.connection.db, email);
 }
 
 export async function softDeleteBroadcastMediaAsset(id: string) {

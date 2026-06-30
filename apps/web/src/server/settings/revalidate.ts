@@ -17,6 +17,11 @@ export function revalidateAccessSettings(): void {
   revalidatePath("/settings/team");
 }
 
+export function revalidateNewsletterSettings(): void {
+  revalidateTag("settings:newsletter");
+  revalidatePath("/settings/newsletter");
+}
+
 export function revalidateIntegrationHealth(): void {
   revalidateTag("settings:integrations");
   revalidatePath("/settings/integrations");
