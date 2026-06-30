@@ -23,6 +23,7 @@ import {
   internalNotes,
   messageAttachments,
   opsAlertState,
+  orgSenders,
   orgSettings,
   projectKnowledgeEntries,
   suppressionList,
@@ -64,6 +65,7 @@ describe("Stage 1 DB schema", () => {
       "manualNoteDetails",
       "messageAttachments",
       "opsAlertState",
+      "orgSenders",
       "orgSettings",
       "pendingComposerOutbounds",
       "postmarkWebhookDeadLetter",
@@ -93,6 +95,7 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(messageAttachments)).toBe("message_attachments");
     expect(getTableName(opsAlertState)).toBe("ops_alert_state");
+    expect(getTableName(orgSenders)).toBe("org_senders");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(sourceEvidenceQuarantine)).toBe(
       "source_evidence_quarantine"

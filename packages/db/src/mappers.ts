@@ -21,6 +21,8 @@ import {
   messageAttachmentSchema,
   manualNoteDetailSchema,
   mediaAssetRecordSchema,
+  createOrgSenderInputSchema,
+  orgSenderRecordSchema,
   projectKnowledgeEntrySchema,
   projectDimensionSchema,
   routingReviewSchema,
@@ -52,6 +54,7 @@ import {
   type MessageAttachmentRecord,
   type ManualNoteDetailRecord,
   type MediaAssetRecord as MediaAssetContractRecord,
+  type OrgSenderRecord,
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
   type RoutingReviewCase,
@@ -97,6 +100,7 @@ import type {
   mailchimpCampaignActivityDetails,
   messageAttachments,
   manualNoteDetails,
+  orgSenders,
   pendingComposerOutbounds,
   projectAliases,
   projectKnowledgeEntries,
@@ -154,6 +158,7 @@ type SalesforceReconciliationRunRow =
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
+type OrgSenderTableRowInsert = typeof orgSenders.$inferInsert;
 
 type ContactRowInput = Omit<
   ContactRow,
@@ -282,6 +287,19 @@ export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
 
 export type MediaAssetRecord = MediaAssetContractRecord;
 
+export type OrgSenderRow = Readonly<{
+  id: string;
+  email: string;
+  label: string;
+  enabled: boolean;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type OrgSenderInsert = z.input<typeof createOrgSenderInputSchema>;
+
+export type OrgSenderRowInsert = OrgSenderTableRowInsert;
+
 export type ComposerDraftRecord = Readonly<{
   id: string;
   actorId: string;
@@ -383,6 +401,26 @@ export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInse
     filename: parsed.filename,
     contentType: parsed.contentType,
     sizeBytes: parsed.sizeBytes,
+  };
+}
+
+export function mapOrgSenderRow(row: OrgSenderRow): OrgSenderRecord {
+  return orgSenderRecordSchema.parse({
+    id: row.id,
+    email: row.email,
+    label: row.label,
+    enabled: row.enabled,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapOrgSenderInsert(record: OrgSenderInsert): OrgSenderRowInsert {
+  const parsed = createOrgSenderInputSchema.parse(record);
+
+  return {
+    email: parsed.email,
+    label: parsed.label,
   };
 }
 
