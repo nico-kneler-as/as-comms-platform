@@ -265,4 +265,27 @@ describe("broadcast media library", () => {
     expect(container.textContent).toContain("third.webp");
     expect(container.textContent).not.toContain("Load more");
   });
+
+  it("re-syncs the grid when the server provides refreshed assets", () => {
+    const container = setupDom();
+    renderLibrary(container, { assets: [makeAsset()] });
+    expect(container.textContent).toContain("hero.png");
+
+    // Simulate router.refresh() delivering fresh server props (e.g. after an
+    // upload or delete): a new initialAssets array with different contents.
+    // Without the prop->state re-sync, the grid would keep showing the stale
+    // seeded list.
+    renderLibrary(container, {
+      assets: [
+        makeAsset({
+          id: "9f1c2d3e-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
+          url: "https://cdn.example.org/images/fresh.png",
+          filename: "fresh.png",
+        }),
+      ],
+    });
+
+    expect(container.textContent).toContain("fresh.png");
+    expect(container.textContent).not.toContain("hero.png");
+  });
 });
