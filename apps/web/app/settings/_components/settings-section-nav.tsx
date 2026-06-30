@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { FolderOpen, Plug, ScrollText, Users } from "lucide-react";
+import { FolderOpen, Mail, Plug, ScrollText, Users } from "lucide-react";
 
 import {
   FOCUS_RING,
@@ -37,6 +37,13 @@ const ITEMS: readonly SectionItem[] = [
     description: "Teammates, roles, and deactivated accounts.",
     href: "/settings/team",
     Icon: Users
+  },
+  {
+    id: "newsletter",
+    label: "Newsletter",
+    description: "Organization-wide broadcast sender addresses.",
+    href: "/settings/newsletter",
+    Icon: Mail
   },
   {
     id: "integrations",
