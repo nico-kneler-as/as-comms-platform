@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, or } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type { MediaAssetRecord } from "@as-comms/contracts";
@@ -142,6 +142,17 @@ export async function listMediaAssets(
           })
         : null,
   };
+}
+
+export async function countMediaAssets(
+  db: MediaAssetsDatabase,
+): Promise<number> {
+  const result = await db
+    .select({ value: count() })
+    .from(broadcastMediaAssets)
+    .where(isNull(broadcastMediaAssets.deletedAt));
+
+  return result[0]?.value ?? 0;
 }
 
 export async function getMediaAssetById(

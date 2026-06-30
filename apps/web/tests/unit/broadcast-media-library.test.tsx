@@ -11,6 +11,9 @@ const routerRefreshMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const fetchMock = vi.hoisted(() => vi.fn());
+
+Object.assign(globalThis, { fetch: fetchMock });
 
 vi.mock("next/link", () => ({
   default: ({
@@ -101,12 +104,16 @@ function setupDom() {
 
 function renderLibrary(
   container: HTMLElement,
-  assets: readonly BroadcastMediaLibraryAsset[],
+  props: {
+    readonly assets: readonly BroadcastMediaLibraryAsset[];
+    readonly nextCursor?: string | null;
+  },
 ) {
   act(() => {
     root?.render(
       <BroadcastMediaLibrary
-        assets={assets}
+        initialAssets={props.assets}
+        initialNextCursor={props.nextCursor ?? null}
         emptyStateIcon={<svg aria-hidden="true" />}
       />,
     );
@@ -132,6 +139,7 @@ beforeEach(() => {
   routerPushMock.mockReset();
   routerReplaceMock.mockReset();
   clipboardWriteTextMock.mockReset();
+  fetchMock.mockReset();
 });
 
 afterEach(() => {
@@ -147,7 +155,7 @@ afterEach(() => {
 describe("broadcast media library", () => {
   it("renders the empty state and uploaded assets", () => {
     const emptyContainer = setupDom();
-    renderLibrary(emptyContainer, []);
+    renderLibrary(emptyContainer, { assets: [] });
     expect(emptyContainer.textContent).toContain("No images yet");
     expect(emptyContainer.textContent).toContain("Upload one to get started.");
 
@@ -159,16 +167,18 @@ describe("broadcast media library", () => {
     domWindow?.close();
 
     const assetsContainer = setupDom();
-    renderLibrary(assetsContainer, [
-      makeAsset(),
-      makeAsset({
-        id: "2b8beef8-c630-4f2b-97eb-770dc4e5aa89",
-        url: "https://cdn.example.org/images/secondary.webp",
-        filename: "secondary.webp",
-        contentType: "image/webp",
-        sizeBytes: 24576,
-      }),
-    ]);
+    renderLibrary(assetsContainer, {
+      assets: [
+        makeAsset(),
+        makeAsset({
+          id: "2b8beef8-c630-4f2b-97eb-770dc4e5aa89",
+          url: "https://cdn.example.org/images/secondary.webp",
+          filename: "secondary.webp",
+          contentType: "image/webp",
+          sizeBytes: 24576,
+        }),
+      ],
+    });
 
     expect(assetsContainer.textContent).toContain("hero.png");
     expect(assetsContainer.textContent).toContain("secondary.webp");
@@ -179,7 +189,7 @@ describe("broadcast media library", () => {
     clipboardWriteTextMock.mockResolvedValue(undefined);
 
     const container = setupDom();
-    renderLibrary(container, [makeAsset()]);
+    renderLibrary(container, { assets: [makeAsset()] });
 
     const copyButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent.includes("Copy URL"),
@@ -203,5 +213,56 @@ describe("broadcast media library", () => {
       "https://cdn.example.org/images/hero.png",
     );
     expect(container.textContent).toContain("URL copied.");
+  });
+
+  it("loads more assets and hides the button when pagination is exhausted", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            {
+              id: "ad85c64b-bd72-4fd0-8d07-e9f869f594a1",
+              url: "https://cdn.example.org/images/third.webp",
+              filename: "third.webp",
+              contentType: "image/webp",
+              sizeBytes: 4096,
+              createdAt: "2026-06-27T19:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        }),
+    });
+
+    const container = setupDom();
+    renderLibrary(container, {
+      assets: [makeAsset()],
+      nextCursor: "cursor:page-2",
+    });
+
+    const loadMoreButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent.includes("Load more"));
+
+    expect(loadMoreButton).toBeTruthy();
+    if (!loadMoreButton || !domWindow) {
+      throw new Error("Expected load more button and JSDOM window.");
+    }
+    const activeWindow = domWindow;
+
+    await act(async () => {
+      loadMoreButton.dispatchEvent(
+        new activeWindow.MouseEvent("click", { bubbles: true }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/broadcasts/images?cursor=cursor%3Apage-2&limit=100",
+    );
+    expect(container.textContent).toContain("hero.png");
+    expect(container.textContent).toContain("third.webp");
+    expect(container.textContent).not.toContain("Load more");
   });
 });

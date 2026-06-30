@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 
 import { broadcastMediaAssets } from "../src/index.js";
 import {
+  countMediaAssets,
   createMediaAsset,
   getMediaAssetById,
   listMediaAssets,
@@ -117,5 +118,36 @@ describe("media assets repository", () => {
     expect(fetched?.id).toBe(created.id);
     expect(fetched?.deletedAt).not.toBeNull();
     expect(typeof fetched?.deletedAt).toBe("string");
+  });
+
+  it("counts only non-deleted assets", async () => {
+    await createMediaAsset(
+      context.db,
+      buildMediaAssetInput({
+        storageKey: "broadcasts/first.png",
+        publicUrl: "https://cdn.example.org/broadcasts/first.png",
+        filename: "first.png",
+      }),
+    );
+    const deleted = await createMediaAsset(
+      context.db,
+      buildMediaAssetInput({
+        storageKey: "broadcasts/deleted.png",
+        publicUrl: "https://cdn.example.org/broadcasts/deleted.png",
+        filename: "deleted.png",
+      }),
+    );
+    await createMediaAsset(
+      context.db,
+      buildMediaAssetInput({
+        storageKey: "broadcasts/last.png",
+        publicUrl: "https://cdn.example.org/broadcasts/last.png",
+        filename: "last.png",
+      }),
+    );
+
+    await softDeleteMediaAsset(context.db, deleted.id);
+
+    await expect(countMediaAssets(context.db)).resolves.toBe(2);
   });
 });

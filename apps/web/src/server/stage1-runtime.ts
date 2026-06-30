@@ -1,5 +1,6 @@
 import {
   accounts,
+  countMediaAssets,
   createMediaAsset,
   createDatabaseConnection,
   listMediaAssets,
@@ -174,6 +175,15 @@ export async function listBroadcastMediaAssets(
   }
 
   return listMediaAssets(runtime.connection.db, input);
+}
+
+export async function countBroadcastMediaAssets() {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return countMediaAssets(runtime.connection.db);
 }
 
 export async function listEnabledOrgSenders() {
