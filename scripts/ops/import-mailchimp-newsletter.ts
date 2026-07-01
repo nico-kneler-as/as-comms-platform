@@ -82,6 +82,11 @@ function parseMailchimpCsv(csvText: string): readonly MailchimpCsvRow[] {
     skip_empty_lines: true,
     bom: true,
     relax_column_count: true,
+    // Mailchimp exports mix RFC doubled-quotes ("") with backslash-escaped
+    // quotes (\") inside the same file (e.g. a name field 'Joelisoa \"Joel\"'),
+    // which is malformed CSV. relax_quotes keeps such rows instead of aborting
+    // the whole import on CSV_INVALID_CLOSING_QUOTE.
+    relax_quotes: true,
   }) as readonly MailchimpCsvRow[];
 }
 
