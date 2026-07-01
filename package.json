@@ -30,6 +30,7 @@
     "ops:recover-orphan-task-details": "tsx scripts/ops/recover-orphan-task-details.ts",
     "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
     "ops:import-mailchimp-newsletter": "tsx scripts/ops/import-mailchimp-newsletter.ts",
+    "ops:reconcile-sms-consent": "tsx scripts/ops/reconcile-sms-consent-from-salesforce.ts",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
@@ -59,6 +60,7 @@
   },
   "devDependencies": {
     "@as-comms/db": "workspace:*",
+    "@as-comms/domain": "workspace:*",
     "@eslint/js": "^9.23.0",
     "@next/eslint-plugin-next": "^15.2.2",
     "@playwright/test": "^1.52.0",
@@ -68,6 +70,7 @@
     "autoprefixer": "^10.4.21",
     "csv-parse": "^7.0.0",
     "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.2",
     "playwright": "^1.52.0",
