@@ -172,6 +172,31 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("All approved contacts");
   });
 
+  it("renders the newsletter all-available surface without project filters", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        availableModes={["specific", "all_available"]}
+        criteria={{
+          ...baseProps.criteria,
+          initialFilter: "all_available",
+        }}
+        countState={{
+          count: 12,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("All newsletter subscribers");
+    expect(markup).toContain(
+      "This broadcast goes to every subscribed newsletter recipient, minus suppressions.",
+    );
+    expect(markup).not.toContain("Audience filters");
+    expect(markup).not.toContain("Find volunteers");
+  });
+
   it("renders only the project and status surface in project mode", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep

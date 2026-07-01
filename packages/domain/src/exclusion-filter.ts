@@ -44,6 +44,7 @@ async function resolveExclusionReason(
   }
 
   if (
+    member.contactId !== null &&
     await repositories.contactConsent.isOptedOut(
       member.contactId,
       { type: "all" },
@@ -55,6 +56,7 @@ async function resolveExclusionReason(
 
   if (
     run.kind === "project" &&
+    member.contactId !== null &&
     member.frozenProjectId !== null &&
     (await repositories.contactConsent.isOptedOut(
       member.contactId,
@@ -67,6 +69,7 @@ async function resolveExclusionReason(
 
   if (
     run.kind === "newsletter" &&
+    member.contactId !== null &&
     (await repositories.contactConsent.isOptedOut(
       member.contactId,
       { type: "newsletter" },

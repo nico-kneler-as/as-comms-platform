@@ -84,6 +84,10 @@ function toMergeContext(member: AudienceMember): MergeContext {
   };
 }
 
+function readAudienceRecipientKey(member: AudienceMember): string {
+  return member.contactId ?? member.newsletterSubscriberId ?? member.frozenEmail;
+}
+
 export function createMergeRenderer(): MergeRenderer {
   return {
     render(template, context) {
@@ -121,7 +125,7 @@ export function createMergeRenderer(): MergeRenderer {
         }
 
         if (missingTokens.length > 0) {
-          missingByContact[member.contactId] = missingTokens;
+          missingByContact[readAudienceRecipientKey(member)] = missingTokens;
         }
       }
 

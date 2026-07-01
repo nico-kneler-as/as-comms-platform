@@ -17,7 +17,7 @@ export async function POST(
   const runtime = await getStage1WebRuntime();
   const target = await resolveUnsubscribeTarget(runtime, decodedToken);
 
-  if (target !== null) {
+  if (target !== null && target.contactId !== null) {
     await createConsentLedger({
       repositories: runtime.campaigns,
     }).recordOptOut({

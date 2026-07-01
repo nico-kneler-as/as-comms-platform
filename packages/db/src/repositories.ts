@@ -6831,6 +6831,7 @@ function mapAudienceSnapshotRow(
     id: row.id,
     campaignRunId: row.campaignRunId,
     contactId: row.contactId,
+    newsletterSubscriberId: row.newsletterSubscriberId,
     frozenEmail: row.frozenEmail,
     frozenFirstName: row.frozenFirstName,
     frozenProjectName: row.frozenProjectName,
@@ -7051,6 +7052,7 @@ function mapAudienceSnapshotInsert(
     id: parsed.id,
     campaignRunId: runId,
     contactId: parsed.contactId,
+    newsletterSubscriberId: parsed.newsletterSubscriberId,
     frozenEmail: parsed.frozenEmail,
     frozenFirstName: parsed.frozenFirstName ?? null,
     frozenProjectName: parsed.frozenProjectName ?? null,
@@ -7076,6 +7078,12 @@ function mapAudienceSnapshotMutationFields(
 ): Partial<typeof audienceSnapshots.$inferInsert> {
   const values: Partial<typeof audienceSnapshots.$inferInsert> = {};
 
+  if (input.contactId !== undefined) {
+    values.contactId = input.contactId;
+  }
+  if (input.newsletterSubscriberId !== undefined) {
+    values.newsletterSubscriberId = input.newsletterSubscriberId;
+  }
   if (input.frozenEmail !== undefined) {
     values.frozenEmail = input.frozenEmail;
   }
@@ -7371,12 +7379,7 @@ export function createStage5RepositoryBundle(
           .values(
             members.map((member) => mapAudienceSnapshotInsert(runId, member)),
           )
-          .onConflictDoNothing({
-            target: [
-              audienceSnapshots.campaignRunId,
-              audienceSnapshots.contactId,
-            ],
-          });
+          .onConflictDoNothing();
       },
 
       async listForRun(runId) {

@@ -350,16 +350,18 @@ async function processEvent(
     }
 
     if (event.RecordType === "SpamComplaint") {
-      await writeSpamComplaintReview({
-        runtime,
-        sourceEvidenceId,
-        contactId: snapshot.contactId,
-        recipient: event.Recipient,
-      });
+      if (snapshot.contactId !== null) {
+        await writeSpamComplaintReview({
+          runtime,
+          sourceEvidenceId,
+          contactId: snapshot.contactId,
+          recipient: event.Recipient,
+        });
+      }
     }
 
     if (isRecipientUnsubscribe(event)) {
-      if (run !== null) {
+      if (run !== null && snapshot.contactId !== null) {
         await runtime.campaigns.contactConsent.recordOptOut(
           snapshot.contactId,
           run.kind === "project" && run.projectId !== null
@@ -371,13 +373,15 @@ async function processEvent(
       }
     }
 
-    await persistence.persistCanonicalEvent(
-      buildCanonicalEvent({
-        event,
-        sourceEvidenceId,
-        contactId: snapshot.contactId,
-      }),
-    );
+    if (snapshot.contactId !== null) {
+      await persistence.persistCanonicalEvent(
+        buildCanonicalEvent({
+          event,
+          sourceEvidenceId,
+          contactId: snapshot.contactId,
+        }),
+      );
+    }
   } catch (error) {
     await runtime.campaigns.webhookDeadLetter.record({
       recordType: event.RecordType,

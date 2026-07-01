@@ -111,6 +111,7 @@ async function seedRunAndSnapshot(
     {
       id: "snapshot-postmark",
       contactId: "contact-postmark",
+      newsletterSubscriberId: null,
       frozenEmail: "john@example.com",
       frozenFirstName: "John",
       frozenProjectName: "Postmark Test Project",

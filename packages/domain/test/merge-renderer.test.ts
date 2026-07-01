@@ -10,6 +10,7 @@ function buildMember(
 ): AudienceMember {
   return {
     contactId: "contact-1",
+    newsletterSubscriberId: null,
     frozenEmail: "contact-1@example.org",
     frozenFirstName: "Taylor",
     frozenProjectName: "Forests",
@@ -144,5 +145,25 @@ describe("createMergeRenderer", () => {
 
     expect(rendered.html).toBe("<strong>Rivers</strong>");
     expect(rendered.text).toBe("* Rivers *");
+  });
+
+  it("keys missing-token warnings by newsletter subscriber when no contact id exists", () => {
+    expect(
+      renderer.validateTokens(
+        {
+          subject: "Hi {{firstName}}",
+          bodyHtml: "<p>{{firstName}}</p>",
+        },
+        [
+          buildMember({
+            contactId: null,
+            newsletterSubscriberId: "subscriber-1",
+            frozenFirstName: null,
+          }),
+        ],
+      ),
+    ).toEqual({
+      "subscriber-1": ["firstName"],
+    });
   });
 });

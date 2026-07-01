@@ -94,6 +94,7 @@ async function seedTarget(
     {
       id: `snapshot-${input.kind}`,
       contactId: "contact-unsubscribe",
+      newsletterSubscriberId: null,
       frozenEmail: "taylor@example.org",
       frozenFirstName: "Taylor",
       frozenProjectName:

@@ -139,14 +139,23 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       | "project_status"
       | "specific"
       | "all_approved"
+      | "all_available"
     )[];
     readonly criteria: {
-      readonly initialFilter?: "project_status" | "specific" | "all_approved";
+      readonly initialFilter?:
+        | "project_status"
+        | "specific"
+        | "all_approved"
+        | "all_available";
     };
     readonly onBack: () => void;
     readonly onContinue: () => void;
     readonly onInitialFilterChange: (
-      value: "project_status" | "specific" | "all_approved",
+      value:
+        | "project_status"
+        | "specific"
+        | "all_approved"
+        | "all_available",
     ) => void;
     readonly onVolunteerSearchQueryChange: (value: string) => void;
     readonly previewRows: readonly {
@@ -201,6 +210,17 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
           }}
         >
           All approved
+        </button>
+      ) : null}
+      {availableModes.includes("all_available") ? (
+        <button
+          type="button"
+          aria-label="mode-all-available"
+          onClick={() => {
+            onInitialFilterChange("all_available");
+          }}
+        >
+          All available
         </button>
       ) : null}
       <button
@@ -875,7 +895,7 @@ describe("NewCampaignWizard", () => {
     );
   });
 
-  it("treats an org sender as newsletter-kind and gates the audience step to specific individuals", async () => {
+  it("treats an org sender as newsletter-kind and gates the audience step to specific plus all-available modes", async () => {
     await renderWizard({
       bootstrap: buildBootstrap({
         senderOptions: [
@@ -916,7 +936,9 @@ describe("NewCampaignWizard", () => {
         kind: "newsletter",
       }),
     );
-    expect(getByTestId("audience-available-modes").textContent).toBe("specific");
+    expect(getByTestId("audience-available-modes").textContent).toBe(
+      "specific,all_available",
+    );
     expect(
       document.querySelector('[aria-label="mode-project-status"]'),
     ).toBeNull();

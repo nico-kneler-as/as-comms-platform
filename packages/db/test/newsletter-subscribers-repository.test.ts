@@ -9,6 +9,7 @@ import {
   countSendableNewsletterSubscribers,
   getNewsletterSubscriberByEmail,
   getNewsletterSuppressionByEmail,
+  listSendableNewsletterSubscribers,
   listNewsletterSubscribers,
   upsertNewsletterSubscriber,
   upsertNewsletterSuppression,
@@ -106,6 +107,49 @@ describe("newsletter subscribers repository", () => {
     const countValue = await countSendableNewsletterSubscribers(context.db);
 
     expect(countValue).toBe(2);
+  });
+
+  it("lists sendable subscribers in deterministic email order", async () => {
+    const bravo = await upsertNewsletterSubscriber(context.db, {
+      email: "bravo@example.com",
+      firstName: "Bravo",
+      status: "subscribed",
+    });
+    await upsertNewsletterSubscriber(context.db, {
+      email: "charlie@example.com",
+      firstName: "Charlie",
+      status: "pending",
+    });
+    const alpha = await upsertNewsletterSubscriber(context.db, {
+      email: "alpha@example.com",
+      firstName: "Alpha",
+      status: "subscribed",
+    });
+    await upsertNewsletterSubscriber(context.db, {
+      email: "suppressed@example.com",
+      firstName: "Suppressed",
+      status: "subscribed",
+    });
+    await upsertNewsletterSuppression(context.db, {
+      email: "suppressed@example.com",
+      reason: "cleaned",
+      source: "mailchimp_import",
+    });
+
+    const rows = await listSendableNewsletterSubscribers(context.db);
+
+    expect(rows).toEqual([
+      {
+        id: alpha.id,
+        email: "alpha@example.com",
+        firstName: "Alpha",
+      },
+      {
+        id: bravo.id,
+        email: "bravo@example.com",
+        firstName: "Bravo",
+      },
+    ]);
   });
 
   it("lists subscribers in engaged-first order and filters by minimum rating", async () => {

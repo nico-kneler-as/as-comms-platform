@@ -114,6 +114,7 @@ function toMergeContext(member: AudienceMember): MergeContext {
 function toAudienceMember(snapshot: AudienceSnapshotRecord): AudienceMember {
   return {
     contactId: snapshot.contactId,
+    newsletterSubscriberId: snapshot.newsletterSubscriberId,
     frozenEmail: snapshot.frozenEmail,
     frozenFirstName: snapshot.frozenFirstName,
     frozenProjectName: snapshot.frozenProjectName,
@@ -150,6 +151,7 @@ function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
   return {
     id: randomUUID(),
     contactId: member.contactId,
+    newsletterSubscriberId: member.newsletterSubscriberId,
     frozenEmail: member.frozenEmail,
     frozenFirstName: member.frozenFirstName,
     frozenProjectName: member.frozenProjectName,
@@ -178,7 +180,17 @@ function filterAudienceMembersBySelectedContacts(
   }
 
   const selectedContactIds = new Set(run.audienceCriteria.contactIds);
-  return rows.filter((row) => selectedContactIds.has(row.contactId));
+  return rows.filter(
+    (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
+  );
+}
+
+function readAudienceRecipientKey(input: {
+  readonly contactId: string | null;
+  readonly newsletterSubscriberId: string | null;
+  readonly frozenEmail: string;
+}): string {
+  return input.contactId ?? input.newsletterSubscriberId ?? input.frozenEmail;
 }
 
 async function appendCampaignAudit(
@@ -462,7 +474,14 @@ export function createCampaignSendOrchestrator(deps: {
               Metadata: {
                 campaignRunId: runId,
                 audienceSnapshotId: snapshot.id,
-                contactId: snapshot.contactId,
+                ...(snapshot.contactId === null
+                  ? {}
+                  : { contactId: snapshot.contactId }),
+                ...(snapshot.newsletterSubscriberId === null
+                  ? {}
+                  : {
+                      newsletterSubscriberId: snapshot.newsletterSubscriberId,
+                    }),
               },
               Headers: [
                 {
@@ -516,7 +535,7 @@ export function createCampaignSendOrchestrator(deps: {
             deliveryStatus: "failed",
           });
           logger.warn(
-            `Campaign run ${runId} recipient ${message.snapshot.contactId} failed with Postmark error ${String(result.ErrorCode)}: ${result.Message}`,
+            `Campaign run ${runId} recipient ${readAudienceRecipientKey(message.snapshot)} failed with Postmark error ${String(result.ErrorCode)}: ${result.Message}`,
           );
         }
         await appendCampaignAudit(deps.repositories, {

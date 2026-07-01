@@ -13,6 +13,7 @@ import {
   audienceSnapshots,
   contactConsent,
   mailchimpCampaignActivityDetails,
+  newsletterSubscribers,
   projectDimensions,
   sourceEvidenceLog,
 } from "../src/index.js";
@@ -88,6 +89,21 @@ async function seedContact(context: Stage1Context, contactId = "contact-1") {
   });
 }
 
+async function seedNewsletterSubscriber(
+  context: Stage1Context,
+  id = "11111111-1111-1111-1111-111111111111",
+) {
+  await context.db.insert(newsletterSubscribers).values({
+    id,
+    email: "subscriber@example.org",
+    firstName: "Subscriber",
+    status: "subscribed",
+    source: "mailchimp_import",
+    createdAt: new Date("2026-05-15T12:00:00.000Z"),
+    updatedAt: new Date("2026-05-15T12:00:00.000Z"),
+  });
+}
+
 async function seedMailchimpActivity(
   context: Stage1Context,
   input: {
@@ -160,6 +176,7 @@ describe("Stage 5 campaigns repositories", () => {
       {
         id: "snapshot-insert-read",
         contactId: "contact-1",
+        newsletterSubscriberId: null,
         frozenEmail: "contact-1@example.org",
         frozenFirstName: "Volunteer",
         frozenProjectName: "Test Project",
@@ -302,6 +319,7 @@ describe("Stage 5 campaigns repositories", () => {
       id: "snapshot-unique-1",
       campaignRunId: run.id,
       contactId: "contact-1",
+      newsletterSubscriberId: null,
       frozenEmail: "contact-1@example.org",
       frozenFirstName: "Volunteer",
       frozenProjectName: "Test Project",
@@ -317,6 +335,7 @@ describe("Stage 5 campaigns repositories", () => {
         id: "snapshot-unique-2",
         campaignRunId: run.id,
         contactId: "contact-1",
+        newsletterSubscriberId: null,
         frozenEmail: "contact-1@example.org",
         frozenFirstName: "Volunteer",
         frozenProjectName: "Test Project",
@@ -325,6 +344,150 @@ describe("Stage 5 campaigns repositories", () => {
         unsubscribeToken: "token-unique-2",
         deliveryStatus: "pending",
         createdAt: new Date("2026-05-15T12:01:00.000Z"),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("allows newsletter-subscriber snapshots and rejects invalid recipient combinations", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+    await seedContact(context);
+    await seedNewsletterSubscriber(context);
+
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-newsletter-snapshot-checks" }),
+    );
+
+    await expect(
+      context.db.insert(audienceSnapshots).values({
+        id: "snapshot-newsletter-1",
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+        frozenEmail: "subscriber@example.org",
+        frozenFirstName: "Subscriber",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-newsletter-1",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:00:00.000Z"),
+      }),
+    ).resolves.toBeDefined();
+
+    await expect(
+      context.db.insert(audienceSnapshots).values({
+        id: "snapshot-invalid-both-null",
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "nobody@example.org",
+        frozenFirstName: null,
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-invalid-both-null",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:01:00.000Z"),
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      context.db.insert(audienceSnapshots).values({
+        id: "snapshot-invalid-both-set",
+        campaignRunId: run.id,
+        contactId: "contact-1",
+        newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+        frozenEmail: "both@example.org",
+        frozenFirstName: "Both",
+        frozenProjectName: "Test Project",
+        frozenProjectId: "project-1",
+        frozenAliasEmail: "forest@adventurescientists.org",
+        unsubscribeToken: "token-invalid-both-set",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:02:00.000Z"),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("enforces partial recipient uniqueness for contacts and newsletter subscribers independently", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+    await seedContact(context);
+    await seedNewsletterSubscriber(context);
+
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-recipient-uniques" }),
+    );
+
+    await context.db.insert(audienceSnapshots).values([
+      {
+        id: "snapshot-contact-unique-1",
+        campaignRunId: run.id,
+        contactId: "contact-1",
+        newsletterSubscriberId: null,
+        frozenEmail: "contact-1@example.org",
+        frozenFirstName: "Volunteer",
+        frozenProjectName: "Test Project",
+        frozenProjectId: "project-1",
+        frozenAliasEmail: "forest@adventurescientists.org",
+        unsubscribeToken: "token-contact-unique-1",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:00:00.000Z"),
+      },
+      {
+        id: "snapshot-subscriber-unique-1",
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+        frozenEmail: "subscriber@example.org",
+        frozenFirstName: "Subscriber",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-subscriber-unique-1",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:01:00.000Z"),
+      },
+    ]);
+
+    await expect(
+      context.db.insert(audienceSnapshots).values({
+        id: "snapshot-contact-unique-2",
+        campaignRunId: run.id,
+        contactId: "contact-1",
+        newsletterSubscriberId: null,
+        frozenEmail: "contact-1@example.org",
+        frozenFirstName: "Volunteer",
+        frozenProjectName: "Test Project",
+        frozenProjectId: "project-1",
+        frozenAliasEmail: "forest@adventurescientists.org",
+        unsubscribeToken: "token-contact-unique-2",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:02:00.000Z"),
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      context.db.insert(audienceSnapshots).values({
+        id: "snapshot-subscriber-unique-2",
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+        frozenEmail: "subscriber@example.org",
+        frozenFirstName: "Subscriber",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-subscriber-unique-2",
+        deliveryStatus: "pending",
+        createdAt: new Date("2026-05-15T12:03:00.000Z"),
       }),
     ).rejects.toThrow();
   });

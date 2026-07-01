@@ -360,6 +360,7 @@ function buildAudienceSnapshot(
   return {
     id: randomUUID(),
     contactId: member.contactId,
+    newsletterSubscriberId: member.newsletterSubscriberId,
     frozenEmail: member.frozenEmail,
     frozenFirstName: member.frozenFirstName,
     frozenProjectName: member.frozenProjectName,
@@ -496,14 +497,16 @@ async function readRequestOrigin(): Promise<string> {
 }
 
 function filterAudienceMembersBySelectedContacts<
-  T extends { readonly contactId: string },
+  T extends { readonly contactId: string | null },
 >(rows: readonly T[], contactIds: readonly string[]): readonly T[] {
   if (contactIds.length === 0) {
     return rows;
   }
 
   const selectedContactIds = new Set(contactIds);
-  return rows.filter((row) => selectedContactIds.has(row.contactId));
+  return rows.filter(
+    (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
+  );
 }
 
 export async function sendNow(

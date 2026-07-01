@@ -53,6 +53,7 @@ function buildMember(
 ): AudienceMember {
   return {
     contactId,
+    newsletterSubscriberId: null,
     frozenEmail: `${contactId}@example.org`,
     frozenFirstName: "Test",
     frozenProjectName: "Project A",
@@ -202,5 +203,29 @@ describe("createExclusionFilter", () => {
       "opted_out_all",
       "opted_out_project",
     ]);
+  });
+
+  it("skips contact-consent checks for newsletter subscribers without contact ids", async () => {
+    const newsletterFilter = createFilter({
+      run: buildRun("newsletter"),
+      optedOutScopes: new Set(["contact-1:newsletter:*"]),
+    });
+
+    await expect(
+      newsletterFilter.applyExclusions(
+        [
+          {
+            ...buildMember("contact-ignored"),
+            contactId: null,
+            newsletterSubscriberId: "subscriber-1",
+            frozenEmail: "subscriber@example.org",
+          },
+        ],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      eligible: [{ newsletterSubscriberId: "subscriber-1" }],
+    });
   });
 });

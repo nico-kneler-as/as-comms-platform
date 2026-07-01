@@ -23,7 +23,7 @@ interface ResolvedProjectScope {
 }
 
 export interface UnsubscribeTarget {
-  readonly contactId: string;
+  readonly contactId: string | null;
   readonly email: string;
   readonly runId: string;
   readonly kind: CampaignKind;
@@ -163,6 +163,9 @@ export async function loadUnsubscribePageModel(input: {
   }
 
   if (target.kind === "project" && target.project.id === null) {
+    return buildInvalidModel(input.token, footerAddress);
+  }
+  if (target.contactId === null) {
     return buildInvalidModel(input.token, footerAddress);
   }
 

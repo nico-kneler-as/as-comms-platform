@@ -35,7 +35,8 @@ import { StepHeader, WizardFooter } from "./wizard-shell";
 export type AudienceInitialFilter =
   | "project_status"
   | "specific"
-  | "all_approved";
+  | "all_approved"
+  | "all_available";
 
 export type CampaignAudienceCriteria = AudienceCriteria & {
   readonly initialFilter?: AudienceInitialFilter | undefined;
@@ -62,6 +63,11 @@ const MODE_META: Record<
   all_approved: {
     title: "All approved contacts",
     hint: "Every approved contact across all projects, minus auto-exclusions.",
+    Icon: Users,
+  },
+  all_available: {
+    title: "All newsletter subscribers",
+    hint: "Everyone subscribed to the newsletter, minus suppressions.",
     Icon: Users,
   },
 };
@@ -202,6 +208,23 @@ export function AudienceBuilderStep({
                   <p className="text-[13px] leading-relaxed text-slate-600">
                     This broadcast goes to every approved contact across all
                     projects, minus auto-exclusions.
+                  </p>
+                </section>
+
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
+
+            {initialFilter === "all_available" ? (
+              <>
+                <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-[13px] leading-relaxed text-slate-600">
+                    This broadcast goes to every subscribed newsletter recipient,
+                    minus suppressions.
                   </p>
                 </section>
 
