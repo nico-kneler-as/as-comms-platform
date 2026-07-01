@@ -6,6 +6,8 @@ export interface SmsMetrics {
   readonly remaining: number;
 }
 
+export const DEFAULT_SMS_OPT_OUT_FOOTER = "Reply STOP to opt out";
+
 const GSM_7_BASIC_CHARS = new Set([
   "@",
   "\u00a3",

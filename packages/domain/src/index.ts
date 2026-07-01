@@ -22,6 +22,7 @@ export * from "./records.js";
 export * from "./repositories.js";
 export * from "./settings/index.js";
 export * from "./sms-audience-intersect.js";
+export * from "./sms-broadcast-render.js";
 export * from "./sms-consent-reconcile.js";
 export * from "./sms-segments.js";
 export * from "./source-evidence-supersede-policy.js";
