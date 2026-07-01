@@ -1,7 +1,8 @@
 export type MergeToken = "firstName" | "projectName" | "aliasEmail";
 
 export interface AudienceMember {
-  readonly contactId: string;
+  readonly contactId: string | null;
+  readonly newsletterSubscriberId: string | null;
   readonly frozenEmail: string;
   readonly frozenFirstName: string | null;
   readonly frozenProjectName: string | null;

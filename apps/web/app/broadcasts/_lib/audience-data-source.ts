@@ -30,6 +30,7 @@ import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import {
   getStage1WebRuntime,
+  listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
 } from "@/src/server/stage1-runtime";
 
@@ -283,11 +284,16 @@ async function resolvePrimaryAliasEmail(
 
 function hasAppliedAudienceFilters(
   criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   },
 ): boolean {
   switch (readAudienceMode(criteria)) {
     case "all_approved":
+    case "all_available":
     case "project_status":
     case "specific":
       return true;
@@ -296,10 +302,18 @@ function hasAppliedAudienceFilters(
 
 function readAudienceMode(
   criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   },
-): "project_status" | "specific" | "all_approved" {
+): "project_status" | "specific" | "all_approved" | "all_available" {
   return criteria.initialFilter ?? "project_status";
+}
+
+function readAudienceRecipientKey(member: AudienceMember): string {
+  return member.contactId ?? member.newsletterSubscriberId ?? member.frozenEmail;
 }
 
 function normalizeAliasHint(address: string | null | undefined): string | null {
@@ -335,11 +349,15 @@ function toStoredAudienceCriteria(
 }
 
 function filterAudienceMembersBySelection<
-  T extends { readonly contactId: string },
+  T extends { readonly contactId: string | null },
 >(
   rows: readonly T[],
   criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   },
 ): readonly T[] {
   if (readAudienceMode(criteria) !== "specific") {
@@ -351,7 +369,9 @@ function filterAudienceMembersBySelection<
   }
 
   const selectedContactIds = new Set(criteria.contactIds ?? []);
-  return rows.filter((row) => selectedContactIds.has(row.contactId));
+  return rows.filter(
+    (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
+  );
 }
 
 function readPrimaryEmail(input: {
@@ -565,10 +585,27 @@ async function loadApprovedContactsAudience(
 
   return rows.map((row) => ({
     contactId: row.contactId,
+    newsletterSubscriberId: null,
     frozenEmail: row.email,
     frozenFirstName: readFirstName(row.displayName),
     frozenProjectName: row.projectName,
     frozenProjectId: row.projectId,
+    frozenAliasEmail: null,
+  }));
+}
+
+async function loadNewsletterSubscriberAudience(): Promise<
+  readonly AudienceMember[]
+> {
+  const rows = await listSendableNewsletterSubscribers();
+
+  return rows.map((row) => ({
+    contactId: null,
+    newsletterSubscriberId: row.id,
+    frozenEmail: row.email,
+    frozenFirstName: row.firstName ?? null,
+    frozenProjectName: null,
+    frozenProjectId: null,
     frozenAliasEmail: null,
   }));
 }
@@ -691,6 +728,7 @@ async function loadSpecificContactsAudience(
 
     audience.push({
       contactId: contact.id,
+      newsletterSubscriberId: null,
       frozenEmail,
       frozenFirstName: readFirstName(contact.displayName),
       frozenProjectName: project?.projectName ?? null,
@@ -712,6 +750,9 @@ export async function resolveStoredCampaignAudience(input: {
   readonly at: Date;
 }): Promise<readonly AudienceMember[]> {
   if (input.kind === "newsletter") {
+    if ((input.criteria.contactIds?.length ?? 0) === 0) {
+      return loadNewsletterSubscriberAudience();
+    }
     return loadSpecificContactsAudience(input.criteria, input.at);
   }
 
@@ -725,7 +766,11 @@ export async function resolveStoredCampaignAudience(input: {
 async function resolveWizardAudience(
   kind: CampaignKind,
   criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   },
   at: Date,
 ): Promise<readonly AudienceMember[]> {
@@ -734,6 +779,10 @@ async function resolveWizardAudience(
 
   if (mode === "all_approved" && kind === "newsletter") {
     return loadApprovedContactsAudience(at);
+  }
+
+  if (mode === "all_available" && kind === "newsletter") {
+    return loadNewsletterSubscriberAudience();
   }
 
   if (mode === "specific" && kind === "newsletter") {
@@ -938,7 +987,11 @@ async function readRequestOrigin(): Promise<string> {
 export async function resolveAudienceCountAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   };
 }): Promise<UiResult<AudienceCountData>> {
   await requireSession();
@@ -974,7 +1027,11 @@ export async function resolveAudienceCountAction(input: {
 export async function previewAudienceAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   };
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireSession();
@@ -1001,7 +1058,7 @@ export async function previewAudienceAction(input: {
               : (projectsById.get(member.frozenProjectId) ?? null);
 
           return {
-            contactId: member.contactId,
+            contactId: readAudienceRecipientKey(member),
             name: member.frozenFirstName ?? member.frozenEmail,
             email: member.frozenEmail,
             project: member.frozenProjectName,
@@ -1032,7 +1089,11 @@ export async function loadComposePreviewAction(input: {
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   };
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
@@ -1073,6 +1134,7 @@ export async function loadComposePreviewAction(input: {
       },
       audience,
     );
+    const missingByRecipient = new Map(Object.entries(missingByContact));
     const normalizedSampleIndex =
       ((input.sampleIndex % audience.length) + audience.length) %
       audience.length;
@@ -1131,7 +1193,7 @@ export async function loadComposePreviewAction(input: {
         sample === undefined
           ? null
           : {
-              contactId: sample.contactId,
+              contactId: readAudienceRecipientKey(sample),
               name: sample.frozenFirstName ?? sample.frozenEmail,
               initials: deriveInitials(
                 sample.frozenFirstName,
@@ -1144,15 +1206,18 @@ export async function loadComposePreviewAction(input: {
               html: rendered.html,
               text: rendered.text,
             },
-      warningCount: Object.keys(missingByContact).length,
+      warningCount: missingByRecipient.size,
       affectedContacts: audience
-        .filter((member) => missingByContact[member.contactId] !== undefined)
+        .filter((member) =>
+          missingByRecipient.has(readAudienceRecipientKey(member)),
+        )
         .map((member) => ({
-          contactId: member.contactId,
+          contactId: readAudienceRecipientKey(member),
           name: member.frozenFirstName ?? member.frozenEmail,
           email: member.frozenEmail,
           project: member.frozenProjectName,
-          missingTokens: missingByContact[member.contactId] ?? [],
+          missingTokens:
+            missingByRecipient.get(readAudienceRecipientKey(member)) ?? [],
         })),
       footerAddress,
     });
@@ -1359,7 +1424,11 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
   readonly audienceCriteria: AudienceCriteria & {
-    readonly initialFilter?: "project_status" | "specific" | "all_approved";
+    readonly initialFilter?:
+      | "project_status"
+      | "specific"
+      | "all_approved"
+      | "all_available";
   };
   readonly audienceSize: number | null;
 }): Promise<UiResult<CampaignWizardDraftData>> {

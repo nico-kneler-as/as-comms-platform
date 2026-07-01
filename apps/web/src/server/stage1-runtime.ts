@@ -4,6 +4,7 @@ import {
   createOrgSender,
   createMediaAsset,
   createDatabaseConnection,
+  listSendableNewsletterSubscribers as listSendableNewsletterSubscribersFromDb,
   getOrgSenderByEmail,
   listMediaAssets,
   listOrgSenders,
@@ -233,6 +234,15 @@ export async function getOrgSenderByEmailRecord(email: string) {
   }
 
   return getOrgSenderByEmail(runtime.connection.db, email);
+}
+
+export async function listSendableNewsletterSubscribers() {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return listSendableNewsletterSubscribersFromDb(runtime.connection.db);
 }
 
 export async function softDeleteBroadcastMediaAsset(id: string) {

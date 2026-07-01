@@ -184,6 +184,37 @@ export async function countSendableNewsletterSubscribers(
   return result[0]?.value ?? 0;
 }
 
+export async function listSendableNewsletterSubscribers(
+  db: NewsletterSubscribersDatabase,
+): Promise<
+  readonly {
+    readonly id: string;
+    readonly email: string;
+    readonly firstName: string | null;
+  }[]
+> {
+  const rows = await db
+    .select({
+      id: newsletterSubscribers.id,
+      email: newsletterSubscribers.email,
+      firstName: newsletterSubscribers.firstName,
+    })
+    .from(newsletterSubscribers)
+    .leftJoin(
+      newsletterSuppressions,
+      eq(newsletterSubscribers.email, newsletterSuppressions.email),
+    )
+    .where(
+      and(
+        eq(newsletterSubscribers.status, "subscribed"),
+        isNull(newsletterSuppressions.id),
+      ),
+    )
+    .orderBy(asc(newsletterSubscribers.email), asc(newsletterSubscribers.id));
+
+  return rows;
+}
+
 export async function upsertNewsletterSuppression(
   db: NewsletterSubscribersDatabase,
   input: UpsertNewsletterSuppressionInput,

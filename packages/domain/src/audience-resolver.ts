@@ -278,6 +278,7 @@ async function resolveAudienceMembers(
 
     audience.push({
       contactId,
+      newsletterSubscriberId: null,
       frozenEmail: contact.primaryEmail?.trim().toLowerCase() ?? "",
       frozenFirstName: readFirstName(contact.displayName),
       frozenProjectName: project?.projectName ?? null,

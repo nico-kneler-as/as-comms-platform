@@ -53,11 +53,11 @@ function defaultAudienceModeForSenderType(
   return senderType === "org" ? "specific" : "project_status";
 }
 
-function readAllowedAudienceModesForSenderType(
+export function readAllowedAudienceModesForSenderType(
   senderType: CampaignSenderType | null,
 ): readonly AudienceInitialFilter[] {
   return senderType === "org"
-    ? ["specific"]
+    ? ["specific", "all_available"]
     : ["project_status", "specific"];
 }
 
@@ -70,6 +70,7 @@ function hasAppliedAudienceFilters(
 
   switch (criteria.initialFilter) {
     case "all_approved":
+    case "all_available":
     case "project_status":
     case "specific":
       return true;
@@ -84,7 +85,7 @@ function deriveInitialFilter(
   }
 
   if (draft.kind === "newsletter") {
-    return "specific";
+    return "all_available";
   }
 
   if (
@@ -224,6 +225,17 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "all_approved",
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+    };
+  }
+
+  if (input.mode === "all_available") {
+    return {
+      ...input.current,
+      initialFilter: "all_available",
       projectId: null,
       projectIds: [],
       statuses: [],

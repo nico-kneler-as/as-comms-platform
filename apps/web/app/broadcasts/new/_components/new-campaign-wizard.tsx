@@ -97,6 +97,7 @@ export function hasAppliedAudienceFilters(
 
   switch (criteria.initialFilter) {
     case "all_approved":
+    case "all_available":
     case "project_status":
     case "specific":
       return true;
@@ -111,7 +112,7 @@ export function deriveInitialFilter(
   }
 
   if (draft.kind === "newsletter") {
-    return "specific";
+    return "all_available";
   }
 
   if (
@@ -279,6 +280,17 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "all_approved",
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+    };
+  }
+
+  if (input.mode === "all_available") {
+    return {
+      ...input.current,
+      initialFilter: "all_available",
       projectId: null,
       projectIds: [],
       statuses: [],

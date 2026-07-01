@@ -1341,9 +1341,13 @@ export const audienceSnapshots = pgTable(
     campaignRunId: text("campaign_run_id")
       .notNull()
       .references(() => campaignRuns.id, { onDelete: "cascade" }),
-    contactId: text("contact_id")
-      .notNull()
-      .references(() => contacts.id, { onDelete: "restrict" }),
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "restrict",
+    }),
+    newsletterSubscriberId: uuid("newsletter_subscriber_id").references(
+      () => newsletterSubscribers.id,
+      { onDelete: "restrict" },
+    ),
     frozenEmail: text("frozen_email").notNull(),
     frozenFirstName: text("frozen_first_name"),
     frozenProjectName: text("frozen_project_name"),
@@ -1394,18 +1398,27 @@ export const audienceSnapshots = pgTable(
       "audience_snapshots_delivery_status_check",
       sql`${table.deliveryStatus} IN ('pending', 'sent', 'delivered', 'bounced', 'complained', 'unsubscribed', 'failed', 'suppressed_at_send')`,
     ),
+    check(
+      "audience_snapshots_recipient_check",
+      sql`num_nonnulls(${table.contactId}, ${table.newsletterSubscriberId}) = 1`,
+    ),
     index("audience_snapshots_run_id_idx").on(table.campaignRunId),
     index("audience_snapshots_contact_id_idx").on(table.contactId),
+    index("audience_snapshots_newsletter_subscriber_id_idx").on(
+      table.newsletterSubscriberId,
+    ),
     uniqueIndex("audience_snapshots_unsubscribe_token_idx").on(
       table.unsubscribeToken,
     ),
     index("audience_snapshots_provider_message_id_idx")
       .on(table.providerMessageId)
       .where(isNotNull(table.providerMessageId)),
-    uniqueIndex("audience_snapshots_run_contact_unique").on(
-      table.campaignRunId,
-      table.contactId,
-    ),
+    uniqueIndex("audience_snapshots_run_contact_unique")
+      .on(table.campaignRunId, table.contactId)
+      .where(isNotNull(table.contactId)),
+    uniqueIndex("audience_snapshots_run_newsletter_subscriber_unique")
+      .on(table.campaignRunId, table.newsletterSubscriberId)
+      .where(isNotNull(table.newsletterSubscriberId)),
   ],
 );
 

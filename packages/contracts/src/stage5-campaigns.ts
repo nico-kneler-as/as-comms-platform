@@ -331,10 +331,40 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
   });
 export type CampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
 
-export const audienceSnapshotRecordSchema = z.object({
+function validateAudienceSnapshotRecipient(
+  value: {
+    readonly contactId: string | null;
+    readonly newsletterSubscriberId: string | null;
+  },
+  context: z.RefinementCtx,
+): void {
+  const recipientCount =
+    (value.contactId === null ? 0 : 1) +
+    (value.newsletterSubscriberId === null ? 0 : 1);
+
+  if (recipientCount === 1) {
+    return;
+  }
+
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["contactId"],
+    message:
+      "Exactly one of contactId or newsletterSubscriberId must be provided.",
+  });
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    path: ["newsletterSubscriberId"],
+    message:
+      "Exactly one of contactId or newsletterSubscriberId must be provided.",
+  });
+}
+
+const audienceSnapshotSchemaBase = z.object({
   id: idSchema,
   campaignRunId: idSchema,
-  contactId: idSchema,
+  contactId: nullableStringSchema.default(null),
+  newsletterSubscriberId: nullableStringSchema.default(null),
   frozenEmail: z.string().email(),
   frozenFirstName: nullableStringSchema.default(null),
   frozenProjectName: nullableStringSchema.default(null),
@@ -353,11 +383,15 @@ export const audienceSnapshotRecordSchema = z.object({
   lastEventAt: nullableTimestampSchema.default(null),
   createdAt: timestampSchema,
 });
+
+export const audienceSnapshotRecordSchema = audienceSnapshotSchemaBase.superRefine(
+  validateAudienceSnapshotRecipient,
+);
 export type AudienceSnapshotRecord = z.infer<
   typeof audienceSnapshotRecordSchema
 >;
 
-export const newAudienceSnapshotSchema = audienceSnapshotRecordSchema
+export const newAudienceSnapshotSchema = audienceSnapshotSchemaBase
   .omit({
     campaignRunId: true,
     createdAt: true,
@@ -373,7 +407,8 @@ export const newAudienceSnapshotSchema = audienceSnapshotRecordSchema
     complainedAt: nullableTimestampSchema.optional(),
     unsubscribedAt: nullableTimestampSchema.optional(),
     lastEventAt: nullableTimestampSchema.optional(),
-  });
+  })
+  .superRefine(validateAudienceSnapshotRecipient);
 export type NewAudienceSnapshot = z.infer<typeof newAudienceSnapshotSchema>;
 
 export const contactConsentRecordSchema = z
