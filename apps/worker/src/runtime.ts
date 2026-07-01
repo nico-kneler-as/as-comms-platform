@@ -311,6 +311,9 @@ function buildCampaignSendDependencies(input: {
       "unused",
     baseUrl,
   });
+  const broadcastMessageStream =
+    readOptionalTrimmedEnv(input.env.POSTMARK_BROADCAST_STREAM_ID) ??
+    "broadcast";
 
   return {
     orchestrator: createCampaignSendOrchestrator({
@@ -327,6 +330,7 @@ function buildCampaignSendDependencies(input: {
       mergeRenderer,
       postmarkClient,
       appUrl,
+      broadcastMessageStream,
     }),
   };
 }

@@ -59,16 +59,22 @@ import {
   type CreateDraftInput,
   type DeliveryStatus,
   type NewAudienceSnapshot,
+  type NewsletterSuppressionRecord,
   type OrgSettingsRecord,
   type PostmarkWebhookDeadLetterRecord,
   type RunState,
   type SuppressionListRecord,
   type SuppressionReason,
+  type UpsertNewsletterSuppressionInput,
   type UpdateDraftInput,
   type WebhookDeadLetterFailureKind,
 } from "@as-comms/contracts";
 
 import type { DatabaseConnection } from "./client.js";
+import {
+  getNewsletterSuppressionByEmail,
+  upsertNewsletterSuppression,
+} from "./newsletter-subscribers-repository.js";
 import {
   mapAiKnowledgeEntryRow,
   mapAiKnowledgeEntryToInsert,
@@ -353,6 +359,12 @@ export interface Stage5RepositoryBundle {
     ): Promise<void>;
     isSuppressed(normalizedEmail: string, at: Date): Promise<boolean>;
     listAll(): Promise<readonly SuppressionListRecord[]>;
+  };
+  readonly newsletterSuppressions: {
+    upsert(
+      input: UpsertNewsletterSuppressionInput,
+    ): Promise<NewsletterSuppressionRecord>;
+    findByEmail(email: string): Promise<NewsletterSuppressionRecord | null>;
   };
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
@@ -7589,6 +7601,16 @@ export function createStage5RepositoryBundle(
           .orderBy(asc(suppressionList.normalizedEmail));
 
         return rows.map(mapSuppressionListRow);
+      },
+    },
+
+    newsletterSuppressions: {
+      async upsert(input) {
+        return upsertNewsletterSuppression(db, input);
+      },
+
+      async findByEmail(email) {
+        return getNewsletterSuppressionByEmail(db, email);
       },
     },
 

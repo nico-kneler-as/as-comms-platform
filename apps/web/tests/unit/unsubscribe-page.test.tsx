@@ -1,12 +1,16 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { POST as unsubscribeAllPost } from "../../app/u/[token]/all/route";
 import { POST as unsubscribePost } from "../../app/u/[token]/confirm/route";
 import UnsubscribeTokenPage from "../../app/u/[token]/page";
 import { UnsubscribePageView } from "../../app/u/[token]/_components/unsubscribe-page-view";
-import type { UnsubscribePageModel } from "../../app/u/[token]/_lib/unsubscribe";
+import {
+  loadUnsubscribePageModel,
+  type UnsubscribePageModel,
+} from "../../app/u/[token]/_lib/unsubscribe";
 import { getStage1WebRuntime } from "../../src/server/stage1-runtime";
 import {
   createStage1WebTestRuntime,
@@ -17,19 +21,90 @@ Object.assign(globalThis, { React });
 
 async function seedTarget(
   runtime: Stage1WebTestRuntime,
-  input: { readonly kind: "project" | "newsletter"; readonly token: string },
+  input: {
+    readonly kind: "project" | "newsletter";
+    readonly token: string;
+    readonly contactId?: string | null;
+    readonly newsletterSubscriberId?: string | null;
+  },
 ) {
   const campaigns = (await getStage1WebRuntime()).campaigns;
+  const contactId =
+    input.contactId === undefined
+      ? input.kind === "project"
+        ? "contact-unsubscribe"
+        : null
+      : input.contactId;
+  const newsletterSubscriberId =
+    input.newsletterSubscriberId === undefined
+      ? input.kind === "newsletter"
+        ? input.token === "token-news-null-contact"
+          ? "seed-newsletter-null-contact"
+          : "seed-newsletter-default"
+        : null
+      : input.newsletterSubscriberId;
 
-  await runtime.context.repositories.contacts.upsert({
-    id: "contact-unsubscribe",
-    salesforceContactId: null,
-    displayName: "Taylor Recipient",
-    primaryEmail: "taylor@example.org",
-    primaryPhone: null,
-    createdAt: "2026-05-15T12:00:00.000Z",
-    updatedAt: "2026-05-15T12:00:00.000Z",
-  });
+  if (contactId !== null) {
+    await runtime.context.repositories.contacts.upsert({
+      id: contactId,
+      salesforceContactId: null,
+      displayName: "Taylor Recipient",
+      primaryEmail: "taylor@example.org",
+      primaryPhone: null,
+      createdAt: "2026-05-15T12:00:00.000Z",
+      updatedAt: "2026-05-15T12:00:00.000Z",
+    });
+  }
+  let persistedNewsletterSubscriberId: string | null = null;
+  if (newsletterSubscriberId !== null) {
+    // Drizzle's execute() result type here is intentionally opaque in the web
+    // test runtime, so we seed via SQL and narrow the returned id locally.
+    const seededSubscriber = await runtime.context.db.execute<{ id: string }>(sql`
+            insert into newsletter_subscribers (
+              id,
+              email,
+              first_name,
+              last_name,
+              status,
+              member_rating,
+              optin_time,
+              optin_ip,
+              confirm_time,
+              confirm_ip,
+              last_changed_at,
+              interests,
+              tags,
+              source,
+              created_at,
+              updated_at
+            ) values (
+              gen_random_uuid(),
+              ${"taylor@example.org"},
+              ${"Taylor"},
+              ${"Recipient"},
+              ${"subscribed"},
+              ${2},
+              ${"2026-05-15T12:00:00.000Z"}::timestamptz,
+              null,
+              null,
+              null,
+              ${"2026-05-15T12:00:00.000Z"}::timestamptz,
+              null,
+              null,
+              ${"mailchimp_import"},
+              ${"2026-05-15T12:00:00.000Z"}::timestamptz,
+              ${"2026-05-15T12:00:00.000Z"}::timestamptz
+            )
+            on conflict (email) do update
+            set
+              status = excluded.status,
+              updated_at = excluded.updated_at
+            returning id
+          `);
+    persistedNewsletterSubscriberId =
+      (seededSubscriber as { rows?: readonly { id?: string }[] }).rows?.[0]?.id?.toString() ??
+      null;
+  }
 
   await runtime.context.repositories.projectDimensions.upsert({
     projectId: "project-host",
@@ -63,7 +138,7 @@ async function seedTarget(
   });
 
   const run = await campaigns.campaignRuns.create({
-    id: `run-${input.kind}`,
+    id: `run-${input.token}`,
     kind: input.kind,
     launchType: "normal_email",
     projectId: input.kind === "project" ? "project-sub" : null,
@@ -92,9 +167,9 @@ async function seedTarget(
 
   await campaigns.audienceSnapshots.bulkInsert(run.id, [
     {
-      id: `snapshot-${input.kind}`,
-      contactId: "contact-unsubscribe",
-      newsletterSubscriberId: null,
+      id: `snapshot-${input.token}`,
+      contactId,
+      newsletterSubscriberId: persistedNewsletterSubscriberId,
       frozenEmail: "taylor@example.org",
       frozenFirstName: "Taylor",
       frozenProjectName:
@@ -103,7 +178,7 @@ async function seedTarget(
       frozenAliasEmail: "forests@adventurescientists.org",
       unsubscribeToken: input.token,
       deliveryStatus: "sent",
-      providerMessageId: `${input.kind}-message-id`,
+      providerMessageId: `${input.token}-message-id`,
     },
   ]);
 
@@ -127,6 +202,12 @@ describe("public unsubscribe page", () => {
     runtime = await createStage1WebTestRuntime();
     await seedTarget(runtime, { kind: "project", token: "token-project" });
     await seedTarget(runtime, { kind: "newsletter", token: "token-news" });
+    await seedTarget(runtime, {
+      kind: "newsletter",
+      token: "token-news-null-contact",
+      contactId: null,
+      newsletterSubscriberId: "newsletter-subscriber-1",
+    });
   });
 
   afterEach(async () => {
@@ -177,7 +258,7 @@ describe("public unsubscribe page", () => {
       scopeType: "project",
       scopeId: "project-host",
       source: "recipient_click",
-      sourceRunId: "run-project",
+      sourceRunId: "run-token-project",
     });
   });
 
@@ -190,6 +271,18 @@ describe("public unsubscribe page", () => {
 
     expect(html).toContain("You&#x27;ve been unsubscribed from Forests emails.");
     expect(html).toContain("taylor@example.org");
+  });
+
+  it("loads a valid newsletter page model for a null-contact recipient", async () => {
+    const page = await UnsubscribeTokenPage({
+      params: Promise.resolve({ token: "token-news-null-contact" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    expect(html).toContain("Unsubscribe from the AS newsletter?");
+    expect(html).toContain("Confirm unsubscribe");
+    expect(html).toContain('action="/u/token-news-null-contact/confirm"');
   });
 
   it("GET does not record an opt-out for link prefetchers (regression test)", async () => {
@@ -223,6 +316,114 @@ describe("public unsubscribe page", () => {
     expect(html).toContain("info@adventurescientists.org");
   });
 
+  it("keeps a non-newsletter null-contact target invalid", async () => {
+    const webRuntime = await getStage1WebRuntime();
+    const originalFindSnapshot =
+      webRuntime.campaigns.audienceSnapshots.findByUnsubscribeToken.bind(
+        webRuntime.campaigns.audienceSnapshots,
+      );
+    const originalFindRun =
+      webRuntime.campaigns.campaignRuns.findById.bind(
+        webRuntime.campaigns.campaignRuns,
+      );
+    const originalFindProject = webRuntime.settings.projects.findById.bind(
+      webRuntime.settings.projects,
+    );
+
+    webRuntime.campaigns.audienceSnapshots.findByUnsubscribeToken = () =>
+      Promise.resolve({
+        id: "snapshot-project-null-contact",
+        campaignRunId: "run-project-null-contact",
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "taylor@example.org",
+        frozenFirstName: "Taylor",
+        frozenProjectName: "Forests",
+        frozenProjectId: "project-host",
+        frozenAliasEmail: "forests@adventurescientists.org",
+        unsubscribeToken: "token-project-null-contact",
+        deliveryStatus: "sent",
+        providerMessageId: "provider-project-null-contact",
+        sentAt: null,
+        deliveredAt: null,
+        bouncedAt: null,
+        openedAt: null,
+        clickedAt: null,
+        complainedAt: null,
+        unsubscribedAt: null,
+        lastEventAt: null,
+        createdAt: "2026-05-15T12:00:00.000Z",
+      });
+    webRuntime.campaigns.campaignRuns.findById = () =>
+      Promise.resolve({
+        id: "run-project-null-contact",
+        kind: "project",
+        launchType: "normal_email",
+        state: "scheduled",
+        projectId: "project-host",
+        name: null,
+        fromEmail: "forests@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "forests@adventurescientists.org",
+        subjectTemplate: "Hello",
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-host",
+          projectIds: ["project-host"],
+          statuses: [],
+          contactIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 1,
+        scheduledAt: null,
+        startedAt: null,
+        completedAt: null,
+        finalizedAt: null,
+        cancelledAt: null,
+        cancelledReason: null,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+        createdAt: "2026-05-15T12:00:00.000Z",
+        updatedAt: "2026-05-15T12:00:00.000Z",
+      });
+    webRuntime.settings.projects.findById = (() =>
+      Promise.resolve({
+        projectId: "project-host",
+        projectName: "Forests",
+        projectAlias: "forests",
+        connectedToProjectId: null,
+        source: "manual",
+        isActive: true,
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+      })) as unknown as typeof webRuntime.settings.projects.findById;
+
+    const model = await loadUnsubscribePageModel({
+      runtime: webRuntime,
+      token: "token-project-null-contact",
+      requestedAllBanner: false,
+      confirmed: false,
+    });
+
+    webRuntime.campaigns.audienceSnapshots.findByUnsubscribeToken =
+      originalFindSnapshot;
+    webRuntime.campaigns.campaignRuns.findById = originalFindRun;
+    webRuntime.settings.projects.findById = originalFindProject;
+
+    expect(model.state).toBe("invalid");
+  });
+
   it("renders the same success state for an already-unsubscribed token", async () => {
     if (!runtime) {
       throw new Error("runtime not initialized");
@@ -232,7 +433,7 @@ describe("public unsubscribe page", () => {
       "contact-unsubscribe",
       { type: "project", id: "project-host" },
       "provider_event",
-      "run-project",
+      "run-token-project",
     );
 
     const page = await UnsubscribeTokenPage({
@@ -271,10 +472,66 @@ describe("public unsubscribe page", () => {
           scopeType: "all",
           scopeId: null,
           source: "recipient_click",
-          sourceRunId: "run-project",
+          sourceRunId: "run-token-project",
         }),
       ]),
     );
+  });
+
+  it("writes a newsletter suppression for a null-contact newsletter confirm click", async () => {
+    const response = await unsubscribePost(
+      new Request("http://localhost/u/token-news-null-contact/confirm", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-news-null-contact" }) },
+    );
+
+    expect(response.status).toBe(303);
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+    const suppression = await campaigns.newsletterSuppressions.findByEmail(
+      "taylor@example.org",
+    );
+
+    expect(suppression).toMatchObject({
+      email: "taylor@example.org",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+
+    await unsubscribePost(
+      new Request("http://localhost/u/token-news-null-contact/confirm", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-news-null-contact" }) },
+    );
+
+    expect(
+      await campaigns.newsletterSuppressions.findByEmail("taylor@example.org"),
+    ).toMatchObject({
+      email: "taylor@example.org",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+  });
+
+  it("writes a newsletter suppression for a null-contact newsletter all click", async () => {
+    const response = await unsubscribeAllPost(
+      new Request("http://localhost/u/token-news-null-contact/all", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-news-null-contact" }) },
+    );
+
+    expect(response.status).toBe(303);
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+
+    expect(
+      await campaigns.newsletterSuppressions.findByEmail("taylor@example.org"),
+    ).toMatchObject({
+      email: "taylor@example.org",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
   });
 
   it("matches the project snapshot", () => {

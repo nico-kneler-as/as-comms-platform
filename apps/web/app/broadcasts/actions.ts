@@ -179,6 +179,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
   readonly repositories: Stage1WebRuntime["repositories"];
   readonly settings: Stage1WebRuntime["settings"];
 }) {
+  const env = readWebEnv();
   // Web-side orchestrator only handles freeze/cancel/etc.; the worker
   // does the actual sendBatch. appUrl is still required by the deps
   // interface so unsubscribe-footer wiring stays consistent end-to-end.
@@ -215,6 +216,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
     mergeRenderer: createMergeRenderer(),
     postmarkClient: buildPostmarkClientForActions(),
     appUrl,
+    broadcastMessageStream: env.POSTMARK_BROADCAST_STREAM_ID,
   });
 }
 

@@ -3183,8 +3183,13 @@ export async function createOrgSenderAction(
   }
 
   // Postmark only verifies the shared adventurescientists.org domain today.
-  // Any sender outside that domain would not be deliverable.
-  if (!parsed.data.email.endsWith(`@${VERIFIED_SENDER_DOMAIN}`)) {
+  // A dedicated newsletter sending subdomain also needs to be allowed here;
+  // it only becomes deliverable after Postmark verifies that sender.
+  const senderHost = parsed.data.email.split("@")[1] ?? "";
+  if (
+    senderHost !== VERIFIED_SENDER_DOMAIN &&
+    !senderHost.endsWith(`.${VERIFIED_SENDER_DOMAIN}`)
+  ) {
     return errorResult(
       "invalid_email_domain",
       "Use an @adventurescientists.org sender address.",
