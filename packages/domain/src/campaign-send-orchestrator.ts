@@ -243,6 +243,7 @@ export function createCampaignSendOrchestrator(deps: {
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
   appUrl: string;
+  broadcastMessageStream?: string;
   batchSize?: number;
   logger?: Pick<Console, "error" | "info" | "warn">;
   now?: () => Date;
@@ -251,6 +252,12 @@ export function createCampaignSendOrchestrator(deps: {
   const logger = deps.logger ?? console;
   const now = deps.now ?? (() => new Date());
   const appUrl = deps.appUrl.trim();
+  const trimmedBroadcastMessageStream = deps.broadcastMessageStream?.trim();
+  const broadcastMessageStream =
+    trimmedBroadcastMessageStream === undefined ||
+    trimmedBroadcastMessageStream.length === 0
+      ? "broadcast"
+      : trimmedBroadcastMessageStream;
   if (appUrl.length === 0) {
     throw new Error(
       "createCampaignSendOrchestrator requires a non-empty appUrl for unsubscribe links.",
@@ -398,7 +405,7 @@ export function createCampaignSendOrchestrator(deps: {
             readonly Subject: string;
             readonly HtmlBody: string;
             readonly TextBody: string;
-            readonly MessageStream: "broadcast";
+            readonly MessageStream: string;
             readonly Metadata: Record<string, string>;
             readonly Headers: readonly {
               readonly Name: string;
@@ -470,7 +477,7 @@ export function createCampaignSendOrchestrator(deps: {
               Subject: rendered.subject,
               HtmlBody: rendered.html,
               TextBody: rendered.text,
-              MessageStream: "broadcast",
+              MessageStream: broadcastMessageStream,
               Metadata: {
                 campaignRunId: runId,
                 audienceSnapshotId: snapshot.id,

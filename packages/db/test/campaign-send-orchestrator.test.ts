@@ -123,6 +123,7 @@ function createMockPostmarkClient(input: {
       readonly To: string;
       readonly HtmlBody?: string;
       readonly TextBody?: string;
+      readonly MessageStream?: string;
     }[],
   ) => Promise<void> | void;
   resultFor?: (email: string) => { readonly errorCode: number; readonly message: string };
@@ -136,6 +137,7 @@ function createMockPostmarkClient(input: {
         readonly To: string;
         readonly HtmlBody?: string;
         readonly TextBody?: string;
+        readonly MessageStream?: string;
       }[];
     }) {
       calls += 1;
@@ -169,6 +171,7 @@ function createOrchestrator(
   context: Stage1Context,
   postmarkClient: ReturnType<typeof createMockPostmarkClient>,
   batchSize = 500,
+  broadcastMessageStream?: string,
 ) {
   const campaigns = createStage5RepositoryBundle(context.db);
 
@@ -202,6 +205,9 @@ function createOrchestrator(
       postmarkClient,
       appUrl: "https://test.example",
       batchSize,
+      ...(broadcastMessageStream === undefined
+        ? {}
+        : { broadcastMessageStream }),
     }),
   };
 }
@@ -272,6 +278,33 @@ describe("Campaign send orchestrator", () => {
 
     expect(snapshot?.deliveryStatus).toBe("pending");
     expect(refreshedRun?.state).toBe("sending");
+  });
+
+  it("uses the configured broadcast message stream", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 1);
+
+    let streams: readonly string[] = [];
+    const { campaigns, orchestrator } = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          streams = messages.map((message) => message.MessageStream ?? "");
+        },
+      }),
+      500,
+      "as-newsletter-stream",
+    );
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-custom-stream" }),
+    );
+
+    await orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await orchestrator.processSendRequest(run.id);
+
+    expect(streams).toEqual(["as-newsletter-stream"]);
   });
 
   it("stops between batches when the run is cancelled mid-send", async () => {

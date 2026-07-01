@@ -24,6 +24,7 @@ interface ResolvedProjectScope {
 
 export interface UnsubscribeTarget {
   readonly contactId: string | null;
+  readonly newsletterSubscriberId: string | null;
   readonly email: string;
   readonly runId: string;
   readonly kind: CampaignKind;
@@ -101,6 +102,7 @@ export async function resolveUnsubscribeTarget(
 
   return {
     contactId: snapshot.contactId,
+    newsletterSubscriberId: snapshot.newsletterSubscriberId,
     email: snapshot.frozenEmail,
     runId: run.id,
     kind: run.kind,
@@ -165,7 +167,7 @@ export async function loadUnsubscribePageModel(input: {
   if (target.kind === "project" && target.project.id === null) {
     return buildInvalidModel(input.token, footerAddress);
   }
-  if (target.contactId === null) {
+  if (target.contactId === null && target.kind !== "newsletter") {
     return buildInvalidModel(input.token, footerAddress);
   }
 
@@ -174,12 +176,23 @@ export async function loadUnsubscribePageModel(input: {
     return buildInvalidModel(input.token, footerAddress);
   }
 
-  const consentLedger = createConsentLedger({
-    repositories: input.runtime.campaigns,
-  });
-  const consentRows = await consentLedger.listForContact(target.contactId);
+  const consentRows =
+    target.contactId === null
+      ? []
+      : await createConsentLedger({
+          repositories: input.runtime.campaigns,
+        }).listForContact(target.contactId);
+  const newsletterSuppression =
+    target.kind === "newsletter" && target.contactId === null
+      ? await input.runtime.campaigns.newsletterSuppressions.findByEmail(
+          target.email,
+        )
+      : null;
   const allOptedOut = hasAllOptOut(consentRows);
-  const alreadyOptedOut = allOptedOut || hasScopeOptOut(consentRows, scope);
+  const alreadyOptedOut =
+    target.kind === "newsletter" && target.contactId === null
+      ? newsletterSuppression !== null
+      : allOptedOut || hasScopeOptOut(consentRows, scope);
   const isSuccess = input.confirmed || alreadyOptedOut;
 
   if (target.kind === "newsletter") {

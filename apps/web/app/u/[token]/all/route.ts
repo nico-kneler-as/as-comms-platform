@@ -27,6 +27,17 @@ export async function POST(
       sourceRunId: target.runId,
     });
   }
+  if (
+    target !== null &&
+    target.contactId === null &&
+    target.kind === "newsletter"
+  ) {
+    await runtime.campaigns.newsletterSuppressions.upsert({
+      email: target.email,
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+  }
 
   return NextResponse.redirect(
     new URL(`/u/${encodeURIComponent(decodedToken)}?all=1`, request.url),

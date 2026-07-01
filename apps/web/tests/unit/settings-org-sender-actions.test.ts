@@ -96,6 +96,22 @@ describe("org sender settings actions", () => {
     expect(await listAllOrgSenders()).toHaveLength(0);
   });
 
+  it("accepts sender emails on verified subdomains", async () => {
+    const result = await createOrgSenderAction({
+      email: "newsletter@news.adventurescientists.org",
+      label: "Adventure Scientists Newsletter"
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        email: "newsletter@news.adventurescientists.org",
+        label: "Adventure Scientists Newsletter",
+        enabled: true
+      }
+    });
+  });
+
   it("rejects duplicate sender emails without throwing", async () => {
     if (!runtime) throw new Error("runtime not initialized");
 

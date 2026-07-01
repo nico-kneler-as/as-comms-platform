@@ -30,6 +30,17 @@ export async function POST(
       });
     }
   }
+  if (
+    target !== null &&
+    target.contactId === null &&
+    target.kind === "newsletter"
+  ) {
+    await runtime.campaigns.newsletterSuppressions.upsert({
+      email: target.email,
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+  }
 
   return NextResponse.redirect(
     new URL(
