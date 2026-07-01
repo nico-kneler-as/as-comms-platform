@@ -129,7 +129,12 @@ function mapSubscriberRow(row: MailchimpCsvRow): UpsertNewsletterSubscriberInput
     email,
     firstName: normalizeOptionalString(row["First Name"]),
     lastName: normalizeOptionalString(row["Last Name"]),
-    status: normalizeOptionalString(row.Status) ?? "subscribed",
+    // Every row in the Mailchimp *subscribed* export is a subscribed member.
+    // The CSV "Status" column is unreliable here — it carries custom values
+    // like "In the Field" / "Trip Planning" (not a subscription status), which
+    // would wrongly exclude those members from the sendable audience. Suppression
+    // is driven by the separate unsubscribed/cleaned files, not this column.
+    status: "subscribed",
     memberRating: parseMemberRating(row.MEMBER_RATING),
     optinTime: parseMailchimpTimestamp(row.OPTIN_TIME),
     optinIp: normalizeOptionalString(row.OPTIN_IP),
