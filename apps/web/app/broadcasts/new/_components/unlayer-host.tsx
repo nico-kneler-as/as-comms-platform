@@ -11,6 +11,7 @@ import {
 import {
   AlertOctagon,
   AlertTriangle,
+  Download,
   Info,
   RefreshCw,
   X,
@@ -46,6 +47,7 @@ export interface UnlayerHostProps {
 
 export interface UnlayerHostHandle {
   flushExport: () => Promise<boolean>;
+  getDesignJson: () => Promise<unknown>;
 }
 
 function cloneValue<T>(value: T): T {
@@ -71,25 +73,42 @@ function readRows(design: unknown): Record<string, unknown>[] {
 
 function readFooterPresent(design: unknown): boolean {
   return readRows(design).some((row) => {
-    const columns = Array.isArray(row.columns) ? row.columns : [];
-    return columns.some((column) => {
-      if (!isRecord(column) || !Array.isArray(column.contents)) {
-        return false;
-      }
+    return isFooterRow(row);
+  });
+}
 
-      return column.contents.some((content) => {
-        return (
-          isRecord(content) &&
-          (content.id === "footer-html-1" || content.type === "html")
-        );
-      });
+function isFooterContent(content: Record<string, unknown>): boolean {
+  if (content.id === "footer-html-1") {
+    return true;
+  }
+
+  if (!isRecord(content.values) || typeof content.values.html !== "string") {
+    return false;
+  }
+
+  return content.values.html.includes("as-locked-footer-start");
+}
+
+function isFooterRow(row: Record<string, unknown>): boolean {
+  const columns = Array.isArray(row.columns) ? row.columns : [];
+  return columns.some((column) => {
+    if (!isRecord(column) || !Array.isArray(column.contents)) {
+      return false;
+    }
+
+    return column.contents.some((content) => {
+      return isRecord(content) && isFooterContent(content);
     });
   });
 }
 
+function readFooterTemplateRow(): Record<string, unknown> | null {
+  return readRows(BRAND_DEFAULT_STARTER).find((row) => isFooterRow(row)) ?? null;
+}
+
 function readFooterLocked(design: unknown): boolean {
   return readRows(design).some((row) => {
-    if (row.id !== "row-3" || row.locked !== true) {
+    if (!isFooterRow(row) || row.locked !== true) {
       return false;
     }
 
@@ -100,14 +119,7 @@ function readFooterLocked(design: unknown): boolean {
       }
 
       return column.contents.some((content) => {
-        if (!isRecord(content) || content.id !== "footer-html-1") {
-          return false;
-        }
-
-        return (
-          isRecord(content.values) &&
-          content.values.locked === true
-        );
+        return isRecord(content) && isFooterContent(content);
       });
     });
   });
@@ -126,9 +138,14 @@ function ensureFooterRow(design: unknown): unknown {
   }
 
   const existingRows = readRows(base);
+  const footerRow = readFooterTemplateRow();
+  if (footerRow === null) {
+    return base;
+  }
+
   base.body.rows = [
     ...existingRows,
-    cloneValue(BRAND_DEFAULT_STARTER.body.rows[2]),
+    cloneValue(footerRow),
   ];
   return base;
 }
@@ -203,6 +220,29 @@ function exportEditor(
   });
 }
 
+function buildDesignExportFilename() {
+  return `broadcast-design-${new Date().toISOString().replaceAll(":", "-")}.json`;
+}
+
+function downloadDesignJson(serializedDesign: string) {
+  const blob = new Blob([serializedDesign], { type: "application/json" });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = buildDesignExportFilename();
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function readEditorInstance(
+  ref: EditorRef | null,
+  fallback: NonNullable<EditorRef["editor"]> | null,
+): NonNullable<EditorRef["editor"]> | null {
+  return ref?.editor ?? fallback ?? null;
+}
+
 function EditorLoadingSkeleton() {
   return (
     <div
@@ -244,8 +284,10 @@ function EditorLoadingSkeleton() {
 export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
   function UnlayerHost({ savedDesign, onSave, onReadyChange }, ref) {
     const emailEditorRef = useRef<EditorRef>(null);
+    const editorInstanceRef = useRef<NonNullable<EditorRef["editor"]> | null>(null);
     const exportTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const exportMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const initializedRef = useRef(false);
     const footerFallbackRef = useRef(false);
     const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -260,6 +302,7 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
       number | null
     >(null);
     const [footerHintActive, setFooterHintActive] = useState(false);
+    const [exportMessage, setExportMessage] = useState<string | null>(null);
 
     const hardSizeError = designBytes >= HARD_SIZE_LIMIT_BYTES;
     const softSizeWarning =
@@ -271,8 +314,11 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
 
     const publishExport = useCallback(
       async (forceFooterValidation = false): Promise<boolean> => {
-        const editor = emailEditorRef.current?.editor;
-        if (editor === null || editor === undefined) {
+        const editor = readEditorInstance(
+          emailEditorRef.current,
+          editorInstanceRef.current,
+        );
+        if (editor === null) {
           return false;
         }
 
@@ -330,12 +376,63 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
       setLiveMessage(message);
     }, []);
 
+    const getDesignJson = useCallback(async (): Promise<unknown> => {
+      const editor = readEditorInstance(
+        emailEditorRef.current,
+        editorInstanceRef.current,
+      );
+      if (editor === null) {
+        return BRAND_DEFAULT_STARTER;
+      }
+
+      const output = await exportEditor(editor);
+      return footerFallbackRef.current
+        ? output.bodyDesignJson
+        : ensureFooterRow(output.bodyDesignJson);
+    }, []);
+
+    const showExportMessage = useCallback((message: string) => {
+      setExportMessage(message);
+      setLiveMessage(message);
+      if (exportMessageTimeoutRef.current !== null) {
+        clearTimeout(exportMessageTimeoutRef.current);
+      }
+      exportMessageTimeoutRef.current = setTimeout(() => {
+        setExportMessage(null);
+      }, 4_000);
+    }, []);
+
+    const handleExportDesignJson = useCallback(async () => {
+      const design = await getDesignJson();
+      const serializedDesign = JSON.stringify(design, null, 2);
+      let copiedToClipboard = false;
+      const clipboard: { writeText?: (value: string) => Promise<void> } | undefined =
+        typeof window === "undefined" ? undefined : window.navigator.clipboard;
+
+      try {
+        if (clipboard?.writeText) {
+          await clipboard.writeText(serializedDesign);
+          copiedToClipboard = true;
+        }
+      } catch {
+        copiedToClipboard = false;
+      }
+
+      downloadDesignJson(serializedDesign);
+      showExportMessage(
+        copiedToClipboard
+          ? "Design JSON downloaded and copied to the clipboard."
+          : "Design JSON downloaded. Clipboard copy is unavailable in this browser.",
+      );
+    }, [getDesignJson, showExportMessage]);
+
     useImperativeHandle(
       ref,
       () => ({
         flushExport: () => publishExport(),
+        getDesignJson,
       }),
-      [publishExport],
+      [getDesignJson, publishExport],
     );
 
     useEffect(() => {
@@ -364,6 +461,9 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
         if (loadTimeoutRef.current !== null) {
           clearTimeout(loadTimeoutRef.current);
         }
+        if (exportMessageTimeoutRef.current !== null) {
+          clearTimeout(exportMessageTimeoutRef.current);
+        }
         if (exportTimeoutRef.current !== null) {
           clearTimeout(exportTimeoutRef.current);
         }
@@ -371,6 +471,7 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
     }, [failLoad]);
 
     const handleLoad = useCallback((editor: NonNullable<EditorRef["editor"]>) => {
+      editorInstanceRef.current = editor;
       editor.addEventListener("design:updated", () => {
         scheduleAutosave();
       });
@@ -378,6 +479,7 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
 
     const handleReady = useCallback(
       (editor: NonNullable<EditorRef["editor"]>) => {
+        editorInstanceRef.current = editor;
         if (initializedRef.current) {
           return;
         }
@@ -526,13 +628,28 @@ export const UnlayerHost = forwardRef<UnlayerHostHandle, UnlayerHostProps>(
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-200 bg-slate-50/70 px-4 py-2 text-[11px] text-slate-500">
-          <span className="inline-flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-200 bg-slate-50/70 px-4 py-2 text-[11px] text-slate-500">
+          <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
             <Info className="size-3" aria-hidden="true" />
             The AS unsubscribe footer is added automatically. You don&apos;t
             need to add one.
           </span>
-          <span className="ml-auto font-mono text-[10.5px] tabular-nums text-slate-500">
+          {exportMessage ? (
+            <span className="text-[11px] text-slate-600">{exportMessage}</span>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              void handleExportDesignJson();
+            }}
+          >
+            <Download className="size-3.5" aria-hidden="true" />
+            Export design (JSON)
+          </Button>
+          <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
             {blockCount.toLocaleString()}{" "}
             <span className="text-slate-400">
               block{blockCount === 1 ? "" : "s"}
