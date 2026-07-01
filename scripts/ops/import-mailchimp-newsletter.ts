@@ -341,16 +341,42 @@ export async function runNewsletterImport(
       throw new Error("Database connection is required when execute=true.");
     }
 
+    // Mailchimp exports contain occasional malformed rows (e.g. an invalid
+    // email that fails contract validation). Skip + count those instead of
+    // aborting the whole import.
+    let skippedInvalidRows = 0;
+    const safeUpsert = async (
+      fn: () => Promise<unknown>,
+      email: string,
+    ): Promise<void> => {
+      try {
+        await fn();
+      } catch (error) {
+        skippedInvalidRows += 1;
+        console.warn(
+          `[import-mailchimp-newsletter] skipped invalid row (email=${JSON.stringify(
+            email,
+          )}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
+
     for (const input of subscriberInputs) {
-      await upsertNewsletterSubscriber(db, input);
+      await safeUpsert(() => upsertNewsletterSubscriber(db, input), input.email);
     }
 
     for (const input of unsubscribedInputs) {
-      await upsertNewsletterSuppression(db, input);
+      await safeUpsert(() => upsertNewsletterSuppression(db, input), input.email);
     }
 
     for (const input of cleanedInputs) {
-      await upsertNewsletterSuppression(db, input);
+      await safeUpsert(() => upsertNewsletterSuppression(db, input), input.email);
+    }
+
+    if (skippedInvalidRows > 0) {
+      console.warn(
+        `[import-mailchimp-newsletter] skipped ${skippedInvalidRows} row(s) that failed validation.`,
+      );
     }
   }
 
