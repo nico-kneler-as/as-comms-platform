@@ -82,6 +82,11 @@ function parseMailchimpCsv(csvText: string): readonly MailchimpCsvRow[] {
     skip_empty_lines: true,
     bom: true,
     relax_column_count: true,
+    // Mailchimp exports mix RFC doubled-quotes ("") with backslash-escaped
+    // quotes (\") inside the same file (e.g. a name field 'Joelisoa \"Joel\"'),
+    // which is malformed CSV. relax_quotes keeps such rows instead of aborting
+    // the whole import on CSV_INVALID_CLOSING_QUOTE.
+    relax_quotes: true,
   }) as readonly MailchimpCsvRow[];
 }
 
@@ -124,7 +129,12 @@ function mapSubscriberRow(row: MailchimpCsvRow): UpsertNewsletterSubscriberInput
     email,
     firstName: normalizeOptionalString(row["First Name"]),
     lastName: normalizeOptionalString(row["Last Name"]),
-    status: normalizeOptionalString(row.Status) ?? "subscribed",
+    // Every row in the Mailchimp *subscribed* export is a subscribed member.
+    // The CSV "Status" column is unreliable here — it carries custom values
+    // like "In the Field" / "Trip Planning" (not a subscription status), which
+    // would wrongly exclude those members from the sendable audience. Suppression
+    // is driven by the separate unsubscribed/cleaned files, not this column.
+    status: "subscribed",
     memberRating: parseMemberRating(row.MEMBER_RATING),
     optinTime: parseMailchimpTimestamp(row.OPTIN_TIME),
     optinIp: normalizeOptionalString(row.OPTIN_IP),
@@ -331,16 +341,42 @@ export async function runNewsletterImport(
       throw new Error("Database connection is required when execute=true.");
     }
 
+    // Mailchimp exports contain occasional malformed rows (e.g. an invalid
+    // email that fails contract validation). Skip + count those instead of
+    // aborting the whole import.
+    let skippedInvalidRows = 0;
+    const safeUpsert = async (
+      fn: () => Promise<unknown>,
+      email: string,
+    ): Promise<void> => {
+      try {
+        await fn();
+      } catch (error) {
+        skippedInvalidRows += 1;
+        console.warn(
+          `[import-mailchimp-newsletter] skipped invalid row (email=${JSON.stringify(
+            email,
+          )}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
+
     for (const input of subscriberInputs) {
-      await upsertNewsletterSubscriber(db, input);
+      await safeUpsert(() => upsertNewsletterSubscriber(db, input), input.email);
     }
 
     for (const input of unsubscribedInputs) {
-      await upsertNewsletterSuppression(db, input);
+      await safeUpsert(() => upsertNewsletterSuppression(db, input), input.email);
     }
 
     for (const input of cleanedInputs) {
-      await upsertNewsletterSuppression(db, input);
+      await safeUpsert(() => upsertNewsletterSuppression(db, input), input.email);
+    }
+
+    if (skippedInvalidRows > 0) {
+      console.warn(
+        `[import-mailchimp-newsletter] skipped ${skippedInvalidRows} row(s) that failed validation.`,
+      );
     }
   }
 

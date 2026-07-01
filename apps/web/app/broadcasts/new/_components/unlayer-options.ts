@@ -1,12 +1,5 @@
 "use client";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
-if (!APP_URL) {
-  throw new Error(
-    "NEXT_PUBLIC_APP_URL is required for the broadcast HTML composer brand-default starter",
-  );
-}
-
 export const CUSTOM_CSS = `
 /* Active tool button — slate-900 */
 .blockbuilder-content-tool[aria-selected="true"],
@@ -55,6 +48,34 @@ export const FOOTER_HTML = `<!-- as-locked-footer-start -->
   Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715
 </div>
 <!-- as-locked-footer-end -->` as const;
+
+export const SOCIAL_LINKS_HTML = `
+<div style="text-align:center;font-family:'Geist Sans',system-ui,-apple-system,sans-serif;">
+  <a
+    href="https://www.facebook.com/adventurescientists"
+    target="_blank"
+    rel="noreferrer noopener"
+    style="display:inline-block;margin:0 6px 0 0;padding:8px 14px;border:1px solid #d8d8d0;border-radius:9999px;color:#253746;font-size:12px;font-weight:600;letter-spacing:0.02em;text-decoration:none;"
+  >
+    Facebook
+  </a>
+  <a
+    href="https://www.instagram.com/adventurescientists"
+    target="_blank"
+    rel="noreferrer noopener"
+    style="display:inline-block;margin:0 6px;padding:8px 14px;border:1px solid #d8d8d0;border-radius:9999px;color:#253746;font-size:12px;font-weight:600;letter-spacing:0.02em;text-decoration:none;"
+  >
+    Instagram
+  </a>
+  <a
+    href="https://www.linkedin.com/company/adventure-scientists"
+    target="_blank"
+    rel="noreferrer noopener"
+    style="display:inline-block;margin:0 0 0 6px;padding:8px 14px;border:1px solid #d8d8d0;border-radius:9999px;color:#253746;font-size:12px;font-weight:600;letter-spacing:0.02em;text-decoration:none;"
+  >
+    LinkedIn
+  </a>
+</div>` as const;
 
 export const UNLAYER_OPTIONS = {
   displayMode: "email",
@@ -140,8 +161,8 @@ export const BRAND_DEFAULT_STARTER = {
   counters: {
     u_column: 4,
     u_row: 4,
-    u_content_text: 2,
-    u_content_image: 2,
+    u_content_text: 1,
+    u_content_image: 1,
     u_content_html: 2,
   },
   body: {
@@ -159,14 +180,12 @@ export const BRAND_DEFAULT_STARTER = {
                 type: "image",
                 values: {
                   src: {
-                    url: `${APP_URL}/brand/as-mark.png`,
-                    width: 512,
-                    height: 512,
+                    url: "https://pub-30761e7e9d5048c8aca67da2bf45f892.r2.dev/mailchimp-import/6883086-beech-both.png",
                   },
-                  altText: "Adventure Scientists",
+                  altText: "Adventure Scientists newsletter header",
                   textAlign: "center",
-                  containerPadding: "16px",
-                  size: { autoWidth: false, width: "64px" },
+                  containerPadding: "0px",
+                  size: { autoWidth: false, width: "600px" },
                 },
               },
             ],
@@ -177,9 +196,9 @@ export const BRAND_DEFAULT_STARTER = {
           },
         ],
         values: {
-          backgroundColor: "#ffffff",
+          backgroundColor: "#D8D8D0",
           columnsBackgroundColor: "#ffffff",
-          padding: "16px 0 0 0",
+          padding: "1px 1px 0 1px",
         },
       },
       {
@@ -210,18 +229,43 @@ export const BRAND_DEFAULT_STARTER = {
           },
         ],
         values: {
-          backgroundColor: "#ffffff",
+          backgroundColor: "#D8D8D0",
           columnsBackgroundColor: "#ffffff",
-          padding: "0px",
+          padding: "0 1px",
         },
       },
       {
         id: "row-3",
         cells: [1],
-        locked: true,
         columns: [
           {
             id: "col-3",
+            contents: [
+              {
+                id: "social-html-1",
+                type: "html",
+                values: {
+                  html: SOCIAL_LINKS_HTML,
+                  containerPadding: "8px 32px 24px 32px",
+                },
+              },
+            ],
+            values: { backgroundColor: "#ffffff", padding: "0px" },
+          },
+        ],
+        values: {
+          backgroundColor: "#D8D8D0",
+          columnsBackgroundColor: "#ffffff",
+          padding: "0 1px",
+        },
+      },
+      {
+        id: "row-4",
+        cells: [1],
+        locked: true,
+        columns: [
+          {
+            id: "col-4",
             contents: [
               {
                 id: "footer-html-1",
@@ -237,14 +281,14 @@ export const BRAND_DEFAULT_STARTER = {
           },
         ],
         values: {
-          backgroundColor: "#ffffff",
+          backgroundColor: "#D8D8D0",
           columnsBackgroundColor: "#ffffff",
-          padding: "0px",
+          padding: "0 1px 1px 1px",
         },
       },
     ],
     values: {
-      backgroundColor: "#ffffff",
+      backgroundColor: "#F3F2EE",
       contentWidth: "600px",
       fontFamily: {
         label: "Geist Sans",
