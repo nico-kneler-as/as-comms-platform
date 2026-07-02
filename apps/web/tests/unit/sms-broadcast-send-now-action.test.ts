@@ -240,7 +240,7 @@ function normalizeRows<TRow>(
 ): readonly TRow[] {
   return Array.isArray(result)
     ? (result as readonly TRow[])
-    : (((result as { readonly rows?: readonly TRow[] }).rows ?? []) as readonly TRow[]);
+    : ((result as { readonly rows?: readonly TRow[] }).rows ?? []);
 }
 
 describe("sendSmsBroadcastNow", () => {
