@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { parseArgs } from "node:util";
 
-import { asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { asc, eq, isNotNull, sql } from "drizzle-orm";
 
 import {
   closeDatabaseConnection,
@@ -13,7 +13,6 @@ import {
   contactIdentities,
   contacts,
   createDatabaseConnection,
-  mapConsentRecordRow,
   type DatabaseConnection,
   type Stage1Database,
 } from "@as-comms/db";
@@ -175,37 +174,20 @@ async function loadFallbackSalesforceMatches(
   });
 }
 
-async function loadLatestConsentByContactOrPhone(
+/**
+ * Loads the latest consent row per contact (or per phone) in a SINGLE
+ * window-function query. Preloading these avoids one round-trip per contact,
+ * which is both far faster and robust against connection drops over a proxy.
+ */
+async function loadLatestConsentRows(
   db: Stage1Database,
-  input: {
-    readonly contactId: string;
-    readonly phoneE164: string;
-  },
-): Promise<ConsentRecord | null> {
-  const [contactRow] = await db
-    .select()
-    .from(consentRecords)
-    .where(eq(consentRecords.contactId, input.contactId))
-    .orderBy(desc(consentRecords.createdAt), desc(consentRecords.id))
-    .limit(1);
-
-  if (contactRow !== undefined) {
-    return mapConsentRecordRow(contactRow);
-  }
-
-  const [phoneRow] = await db
-    .select()
-    .from(consentRecords)
-    .where(eq(consentRecords.phoneE164, input.phoneE164))
-    .orderBy(desc(consentRecords.createdAt), desc(consentRecords.id))
-    .limit(1);
-
-  return phoneRow === undefined ? null : mapConsentRecordRow(phoneRow);
-}
-
-async function loadLatestBackfillConsentRows(
-  db: Stage1Database,
+  partition: "contact" | "phone",
 ): Promise<readonly LatestConsentRow[]> {
+  const partitionColumn =
+    partition === "contact"
+      ? consentRecords.contactId
+      : consentRecords.phoneE164;
+
   const result = await db.execute(sql<LatestConsentRow>`
     with ranked as (
       select
@@ -222,11 +204,11 @@ async function loadLatestBackfillConsentRows(
         ${consentRecords.createdAt} as "createdAt",
         ${consentRecords.updatedAt} as "updatedAt",
         row_number() over (
-          partition by ${consentRecords.contactId}
+          partition by ${partitionColumn}
           order by ${consentRecords.createdAt} desc, ${consentRecords.id} desc
         ) as "rowNumber"
       from ${consentRecords}
-      where ${consentRecords.contactId} is not null
+      where ${partitionColumn} is not null
     )
     select
       "id",
@@ -243,10 +225,6 @@ async function loadLatestBackfillConsentRows(
       "updatedAt"
     from ranked
     where "rowNumber" = 1
-      and "status" = 'opted_in'
-      and "source" = 'volunteer_application_form'
-      and "notes" = ${VOLUNTEER_APPLICATION_BACKFILL_NOTE}
-    order by "contactId" asc
   `);
 
   return normalizeSqlResultRows(
@@ -264,7 +242,7 @@ function buildSalesforceConsentInsert(input: {
   readonly status: ConsentStatus;
   readonly reason: string;
   readonly notes: string;
-  readonly nowIso: string;
+  readonly now: Date;
 }): typeof consentRecords.$inferInsert {
   return {
     id: randomUUID(),
@@ -273,12 +251,12 @@ function buildSalesforceConsentInsert(input: {
     status: input.status,
     source: "salesforce_field",
     sourceDetail: null,
-    consentedAt: input.status === "opted_in" ? input.nowIso : null,
-    revokedAt: input.status === "revoked" ? input.nowIso : null,
+    consentedAt: input.status === "opted_in" ? input.now : null,
+    revokedAt: input.status === "revoked" ? input.now : null,
     recordedByUserId: null,
     notes: input.notes,
-    createdAt: input.nowIso,
-    updatedAt: input.nowIso,
+    createdAt: input.now,
+    updatedAt: input.now,
   };
 }
 
@@ -395,9 +373,8 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       row.rawPhone === null ? null : tryNormalizePhoneE164(row.rawPhone),
     );
   }
-  const nowIso = (input.now ?? new Date()).toISOString();
-  const runDate = nowIso.slice(0, 10);
-  const latestConsentCache = new Map<string, ConsentRecord | null>();
+  const now = input.now ?? new Date();
+  const runDate = now.toISOString().slice(0, 10);
 
   return input.db.transaction(async (tx) => {
     const directMatches = await loadDirectSalesforceMatches(tx);
@@ -432,20 +409,24 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       }
     }
 
-    async function getLatestConsent(lookup: {
+    const latestConsentByContact = new Map<string, LatestConsentRow>();
+    for (const row of await loadLatestConsentRows(tx, "contact")) {
+      latestConsentByContact.set(row.contactId, row);
+    }
+    const latestConsentByPhone = new Map<string, LatestConsentRow>();
+    for (const row of await loadLatestConsentRows(tx, "phone")) {
+      latestConsentByPhone.set(row.phoneE164, row);
+    }
+
+    function getLatestConsent(lookup: {
       readonly contactId: string;
       readonly phoneE164: string;
-    }): Promise<ConsentRecord | null> {
-      if (latestConsentCache.has(lookup.contactId)) {
-        return latestConsentCache.get(lookup.contactId) ?? null;
-      }
-
-      const latestConsent = await loadLatestConsentByContactOrPhone(tx, {
-        contactId: lookup.contactId,
-        phoneE164: lookup.phoneE164,
-      });
-      latestConsentCache.set(lookup.contactId, latestConsent);
-      return latestConsent;
+    }): LatestConsentRow | null {
+      return (
+        latestConsentByContact.get(lookup.contactId) ??
+        latestConsentByPhone.get(lookup.phoneE164) ??
+        null
+      );
     }
 
     for (const salesforceContactId15 of distinctCsvContactIds) {
@@ -475,7 +456,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
         continue;
       }
 
-      const latestConsent = await getLatestConsent({
+      const latestConsent = getLatestConsent({
         contactId: match.contactId,
         phoneE164: resolvedPhone,
       });
@@ -498,7 +479,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
             status: action.status,
             reason: action.reason,
             notes: `${action.reason} [${TRACK_A_RECONCILE_LABEL} ${runDate}]`,
-            nowIso,
+            now,
           }),
         );
         continue;
@@ -508,8 +489,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       pushSample(samples.optedInAlreadyCurrentContactIds, match.contactId);
     }
 
-    const latestBackfillConsentRows = await loadLatestBackfillConsentRows(tx);
-    for (const latestConsent of latestBackfillConsentRows) {
+    for (const latestConsent of latestConsentByContact.values()) {
       const salesforceContactId15 = contactIdToSalesforce15.get(latestConsent.contactId) ?? null;
       if (
         !shouldScrubLatestBackfillConsent({
@@ -539,7 +519,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
           status: action.status,
           reason: action.reason,
           notes: `not in Salesforce Text_Opt_In__c set [${TRACK_A_RECONCILE_LABEL} ${runDate}]`,
-          nowIso,
+          now,
         }),
       );
     }
