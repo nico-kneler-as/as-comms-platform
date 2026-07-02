@@ -408,6 +408,7 @@ export interface ContactMembershipRepository {
 
 export interface SmsMessageRepository {
   insert(record: SmsMessageRecord): Promise<SmsMessageRecord>;
+  bulkInsert(records: readonly SmsMessageRecord[]): Promise<void>;
   findByTwilioSid(sid: string): Promise<SmsMessageRecord | null>;
   findLatestByStatuses(
     statuses: readonly SmsMessageRecord["sendStatus"][],
@@ -437,6 +438,9 @@ export interface SmsMessageRepository {
 export interface ConsentRecordRepository {
   findLatestByPhone(phoneE164: string): Promise<ConsentRecord | null>;
   findLatestByContact(contactId: string): Promise<ConsentRecord | null>;
+  findLatestByContactIds(
+    contactIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ConsentRecord>>;
   insert(record: ConsentRecord): Promise<ConsentRecord>;
 }
 

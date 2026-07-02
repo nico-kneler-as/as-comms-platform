@@ -199,6 +199,7 @@ function createRepositoryBundle(input: {
     },
     smsMessages: {
       insert: (record) => Promise.resolve(record),
+      bulkInsert: () => Promise.resolve(),
       findByTwilioSid: () => Promise.resolve(null),
       findLatestByStatuses: () => Promise.resolve(null),
       hasInboundForPhone: () => Promise.resolve(false),
@@ -209,6 +210,7 @@ function createRepositoryBundle(input: {
     consentRecords: {
       findLatestByPhone: () => Promise.resolve(null),
       findLatestByContact: () => Promise.resolve(null),
+      findLatestByContactIds: () => Promise.resolve(new Map()),
       insert: (record) => Promise.resolve(record),
     },
     smsSenders: {
