@@ -622,6 +622,15 @@ export const campaignSendPayloadSchema = z.object({
 });
 export type CampaignSendPayload = z.infer<typeof campaignSendPayloadSchema>;
 
+export const smsBroadcastSendJobName = "sms-broadcast-send" as const;
+export const smsBroadcastSendJobMaxAttempts = campaignSendJobMaxAttempts;
+export const smsBroadcastSendPayloadSchema = z.object({
+  runId: z.string().min(1),
+});
+export type SmsBroadcastSendPayload = z.infer<
+  typeof smsBroadcastSendPayloadSchema
+>;
+
 export const pollPostmarkSenderStatusJobName =
   "poll-postmark-sender-status" as const;
 export const pollPostmarkSenderStatusPayloadSchema = z.object({

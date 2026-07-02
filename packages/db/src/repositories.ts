@@ -1065,6 +1065,28 @@ function clampSmsListLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(limit ?? 50, 200));
 }
 
+const SMS_MESSAGE_BULK_INSERT_CHUNK_SIZE = 500;
+
+interface LatestConsentByContactRow {
+  readonly id: string;
+  readonly contactId: string | null;
+  readonly phoneE164: string;
+  readonly status: "opted_in" | "revoked";
+  readonly source:
+    | "volunteer_application_form"
+    | "sms_reply_yes"
+    | "operator_attestation"
+    | "salesforce_field"
+    | "inbound_thread";
+  readonly sourceDetail: string | null;
+  readonly consentedAt: Date | null;
+  readonly revokedAt: Date | null;
+  readonly recordedByUserId: string | null;
+  readonly notes: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
 function createSmsRepositorySlices(db: Stage1Database) {
   return {
     smsMessages: {
@@ -1075,6 +1097,24 @@ function createSmsRepositorySlices(db: Stage1Database) {
         return mapSmsMessageRow(
           requireRow(row, "Expected SMS message row to be returned."),
         );
+      },
+
+      async bulkInsert(records) {
+        if (records.length === 0) {
+          return;
+        }
+
+        for (
+          let index = 0;
+          index < records.length;
+          index += SMS_MESSAGE_BULK_INSERT_CHUNK_SIZE
+        ) {
+          await db.insert(smsMessages).values(
+            records
+              .slice(index, index + SMS_MESSAGE_BULK_INSERT_CHUNK_SIZE)
+              .map(mapSmsMessageToInsert),
+          );
+        }
       },
 
       async findByTwilioSid(sid) {
@@ -1201,6 +1241,69 @@ function createSmsRepositorySlices(db: Stage1Database) {
           .limit(1);
 
         return row === undefined ? null : mapConsentRecordRow(row);
+      },
+
+      async findLatestByContactIds(contactIds) {
+        const uniqueContactIds = [...new Set(contactIds)];
+        if (uniqueContactIds.length === 0) {
+          return new Map();
+        }
+
+        const result = await db.execute(sql<LatestConsentByContactRow>`
+          with ranked_consents as (
+            select
+              id as "id",
+              contact_id as "contactId",
+              phone_e164 as "phoneE164",
+              status as "status",
+              source as "source",
+              source_detail as "sourceDetail",
+              consented_at as "consentedAt",
+              revoked_at as "revokedAt",
+              recorded_by_user_id as "recordedByUserId",
+              notes as "notes",
+              created_at as "createdAt",
+              updated_at as "updatedAt",
+              row_number() over (
+                partition by contact_id
+                order by created_at desc, id desc
+              ) as rn
+            from consent_records
+            where contact_id in (${sql.join(
+              uniqueContactIds.map((contactId) => sql`${contactId}`),
+              sql`, `,
+            )})
+          )
+          select
+            "id",
+            "contactId",
+            "phoneE164",
+            "status",
+            "source",
+            "sourceDetail",
+            "consentedAt",
+            "revokedAt",
+            "recordedByUserId",
+            "notes",
+            "createdAt",
+            "updatedAt"
+          from ranked_consents
+          where rn = 1
+        `);
+
+        return new Map(
+          normalizeSqlResultRows<LatestConsentByContactRow>(
+            result as { readonly rows?: readonly LatestConsentByContactRow[] },
+          ).map((row) => {
+            const record = mapConsentRecordRow(row);
+            if (record.contactId === null) {
+              throw new Error(
+                "Expected batched consent lookup rows to have contact ids.",
+              );
+            }
+            return [record.contactId, record] as const;
+          }),
+        );
       },
 
       async insert(record) {

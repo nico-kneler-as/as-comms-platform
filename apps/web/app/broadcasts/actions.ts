@@ -10,6 +10,9 @@ import {
   campaignSendJobName,
   campaignSendJobMaxAttempts,
   campaignSendPayloadSchema,
+  smsBroadcastSendJobMaxAttempts,
+  smsBroadcastSendJobName,
+  smsBroadcastSendPayloadSchema,
   type CampaignRunRecord,
   scheduleSendInputSchema,
   sendNowInputSchema,
@@ -22,6 +25,7 @@ import {
   createMergeRenderer,
   formatOrgAddress,
   normalizeAliasEmail,
+  planSmsBroadcastFreeze,
   renderBroadcastEmail,
 } from "@as-comms/domain";
 import { createPostmarkClient } from "@as-comms/integrations";
@@ -57,6 +61,14 @@ interface CampaignActionData {
 interface CampaignTestSendData {
   readonly runId: string;
   readonly recipientEmail: string;
+}
+
+interface SmsBroadcastSendNowData {
+  readonly frozen: number;
+  readonly reachable: number;
+  readonly selected: number;
+  readonly deduplicatedByPhone: number;
+  readonly unreachable: Readonly<Record<string, number>>;
 }
 
 const recipientFilterSchema = z.enum([
@@ -261,6 +273,28 @@ async function enqueueCampaignSendJob(input: {
       job_key => ${`campaign-send:${input.runId}`},
       job_key_mode => 'replace',
       max_attempts => ${campaignSendJobMaxAttempts}
+    )
+  `);
+}
+
+async function enqueueSmsBroadcastSendJob(input: {
+  readonly db: Pick<
+    NonNullable<Stage1WebRuntime["connection"]>["db"],
+    "execute"
+  >;
+  readonly runId: string;
+}): Promise<void> {
+  const payload = smsBroadcastSendPayloadSchema.parse({
+    runId: input.runId,
+  });
+
+  await input.db.execute(sql`
+    select graphile_worker.add_job(
+      identifier => ${smsBroadcastSendJobName},
+      payload => ${JSON.stringify(payload)}::json,
+      job_key => ${`sms-broadcast-send:${input.runId}`},
+      job_key_mode => 'replace',
+      max_attempts => ${smsBroadcastSendJobMaxAttempts}
     )
   `);
 }
@@ -483,6 +517,110 @@ async function freezeNewsletterAudienceForSend(input: {
   };
 }
 
+async function freezeSmsBroadcastAudienceForSend(input: {
+  readonly transaction: Stage1WebTransaction;
+  readonly run: CampaignRunRecord;
+  readonly runId: string;
+  readonly actorUserId: string;
+  readonly at: Date;
+  readonly audience: readonly {
+    readonly contactId: string;
+    readonly firstName: string | null;
+    readonly email: string | null;
+    readonly projectName: string | null;
+  }[];
+}) {
+  const latestConsentByContactId =
+    await input.transaction.repositories.consentRecords.findLatestByContactIds(
+      input.run.audienceCriteria.contactIds,
+    );
+  const plan = await planSmsBroadcastFreeze({
+    bodyTemplate: input.run.bodyTextTemplate,
+    deps: {
+      resolveAudience: () => Promise.resolve(input.audience),
+      loadLatestConsentByContactIds: async (contactIds) => {
+        const missingContactIds = contactIds.filter(
+          (contactId) => !latestConsentByContactId.has(contactId),
+        );
+        const consentByContactId =
+          missingContactIds.length === 0
+            ? latestConsentByContactId
+            : new Map([
+                ...latestConsentByContactId,
+                ...(
+                  await input.transaction.repositories.consentRecords.findLatestByContactIds(
+                    missingContactIds,
+                  )
+                ),
+              ]);
+
+        return new Map(
+          [...consentByContactId].map(([contactId, consent]) => [
+            contactId,
+            {
+              status: consent.status,
+              phoneE164: consent.phoneE164,
+            },
+          ]),
+        );
+      },
+      resolveActiveSmsSenderId: async () => {
+        const activeSenders =
+          await input.transaction.repositories.smsSenders.listActive();
+        if (activeSenders.length !== 1) {
+          throw new Error(
+            `expected exactly one active SMS sender, found ${String(activeSenders.length)}`,
+          );
+        }
+
+        const [activeSender] = activeSenders;
+        if (activeSender === undefined) {
+          throw new Error("Expected exactly one active SMS sender.");
+        }
+
+        return activeSender.id;
+      },
+    },
+  });
+
+  await input.transaction.repositories.smsMessages.bulkInsert(
+    plan.messages.map((message) => ({
+      id: randomUUID(),
+      twilioMessageSid: null,
+      direction: "outbound",
+      contactId: message.contactId,
+      phoneE164: message.phoneE164,
+      senderId: plan.senderId,
+      broadcastRunId: input.runId,
+      body: message.body,
+      segments: message.segments,
+      encoding: message.encoding,
+      mediaUrls: null,
+      sendStatus: "queued",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: null,
+      receivedAt: null,
+      actorId: input.actorUserId,
+      createdAt: input.at,
+      updatedAt: input.at,
+    })),
+  );
+
+  await input.transaction.campaigns.campaignRuns.transitionState(
+    input.runId,
+    "draft",
+    "scheduled",
+    {
+      audienceSize: plan.frozen,
+      scheduledAt: input.at.toISOString(),
+      lastEditedByUserId: input.actorUserId,
+    },
+  );
+
+  return plan;
+}
+
 async function readRequestOrigin(): Promise<string> {
   const requestHeaders = await headers();
   const origin = requestHeaders.get("origin");
@@ -674,6 +812,111 @@ export async function schedule(
       error instanceof Error
         ? error.message
         : "Unable to schedule the broadcast.",
+      true,
+    );
+  }
+}
+
+export async function sendSmsBroadcastNow(rawInput: {
+  readonly runId: string;
+}): Promise<UiSuccess<SmsBroadcastSendNowData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const parsed = z
+      .object({
+        runId: z.string().trim().min(1),
+      })
+      .parse(rawInput);
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.launchType !== "sms") {
+      return errorResult(
+        "campaign_sms_send_invalid_launch_type",
+        "This broadcast is not an SMS broadcast.",
+      );
+    }
+    if (run.state !== "draft") {
+      return errorResult(
+        "campaign_sms_send_invalid_state",
+        `SMS broadcasts can only be sent from draft state. Current state: ${run.state}.`,
+      );
+    }
+
+    const queuedAt = new Date();
+    const audience = (
+      await resolveStoredCampaignAudience({
+        kind: run.kind,
+        criteria: run.audienceCriteria,
+        at: queuedAt,
+      })
+    )
+      .flatMap((member) =>
+        member.contactId === null
+          ? []
+          : [{
+              contactId: member.contactId,
+              firstName: member.frozenFirstName,
+              email: member.frozenEmail,
+              projectName: member.frozenProjectName,
+            }],
+      );
+    const frozen = await withStage1WebTransaction((transaction) =>
+      freezeSmsBroadcastAudienceForSend({
+        transaction,
+        run,
+        runId: parsed.runId,
+        actorUserId: admin.userId,
+        at: queuedAt,
+        audience,
+      }),
+    );
+
+    if (runtime.connection === null) {
+      throw new Error(
+        "DATABASE_URL must be set before using the Stage 1 web runtime.",
+      );
+    }
+
+    await enqueueSmsBroadcastSendJob({
+      db: runtime.connection.db,
+      runId: parsed.runId,
+    });
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.scheduled",
+      runId: parsed.runId,
+      detail: "SMS send requested; the worker will start immediately.",
+      metadataJson: {
+        channel: "sms",
+        frozen: frozen.frozen,
+      },
+    });
+
+    return {
+      ok: true,
+      data: {
+        frozen: frozen.frozen,
+        reachable: frozen.reachable,
+        selected: frozen.selectedContacts,
+        deduplicatedByPhone: frozen.deduplicatedByPhone,
+        unreachable: frozen.unreachable,
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_sms_send_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to start the SMS broadcast send.",
       true,
     );
   }
