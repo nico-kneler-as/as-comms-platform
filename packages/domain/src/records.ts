@@ -34,6 +34,7 @@ export interface SmsMessageRecord {
   readonly contactId: string;
   readonly phoneE164: string;
   readonly senderId: string;
+  readonly broadcastRunId: string | null;
   readonly body: string;
   readonly segments: number;
   readonly encoding: SmsEncoding;

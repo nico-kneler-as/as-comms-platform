@@ -446,6 +446,9 @@ export const smsMessages = pgTable(
     senderId: text("sender_id")
       .notNull()
       .references(() => smsSenders.id, { onDelete: "restrict" }),
+    broadcastRunId: text("broadcast_run_id").references(() => campaignRuns.id, {
+      onDelete: "cascade",
+    }),
     body: text("body").notNull(),
     segments: integer("segments").notNull().default(1),
     encoding: text("encoding").notNull(),
@@ -481,6 +484,9 @@ export const smsMessages = pgTable(
     uniqueIndex("sms_messages_twilio_sid_unique")
       .on(table.twilioMessageSid)
       .where(isNotNull(table.twilioMessageSid)),
+    index("sms_messages_broadcast_run_id_idx")
+      .on(table.broadcastRunId)
+      .where(isNotNull(table.broadcastRunId)),
     index("sms_messages_phone_e164_idx").on(table.phoneE164),
   ],
 );
