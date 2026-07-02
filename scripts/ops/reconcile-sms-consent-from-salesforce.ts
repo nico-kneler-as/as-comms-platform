@@ -22,10 +22,11 @@ import {
   type ConsentRecord,
   type ConsentStatus,
 } from "@as-comms/domain";
+import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import {
   normalizeOptionalString,
   normalizeSfId18to15,
-  parseSalesforceOptInContactIds,
+  parseSalesforceOptInRows,
   shouldScrubLatestBackfillConsent,
   VOLUNTEER_APPLICATION_BACKFILL_NOTE,
 } from "./reconcile-sms-consent-from-salesforce-helpers.js";
@@ -62,6 +63,7 @@ type LatestConsentRow = {
 type ReconcileSamples = {
   readonly matchedContactIds: readonly string[];
   readonly optedInInsertedContactIds: readonly string[];
+  readonly optedInViaCsvPhoneContactIds: readonly string[];
   readonly optedInAlreadyCurrentContactIds: readonly string[];
   readonly optedInNoPhoneContactIds: readonly string[];
   readonly notInPlatformSalesforceContactIds: readonly string[];
@@ -73,6 +75,7 @@ export type ReconcileSmsConsentFromSalesforceSummary = {
   readonly distinctCsvContacts: number;
   readonly matched: number;
   readonly optedInInserted: number;
+  readonly optedInViaCsvPhone: number;
   readonly optedInAlreadyCurrent: number;
   readonly optedInNoPhone: number;
   readonly notInPlatform: number;
@@ -299,6 +302,7 @@ export function renderReconcileSmsConsentFromSalesforceSummary(
     `| distinct_csv_contacts | ${summary.distinctCsvContacts} |`,
     `| matched | ${summary.matched} |`,
     `| opted_in_inserted | ${summary.optedInInserted} |`,
+    `| opted_in_via_csv_phone | ${summary.optedInViaCsvPhone} |`,
     `| opted_in_already_current | ${summary.optedInAlreadyCurrent} |`,
     `| opted_in_no_phone | ${summary.optedInNoPhone} |`,
     `| not_in_platform | ${summary.notInPlatform} |`,
@@ -309,6 +313,11 @@ export function renderReconcileSmsConsentFromSalesforceSummary(
     ...renderSampleSection(
       "## Sample opted-in inserts",
       summary.samples.optedInInsertedContactIds,
+    ),
+    "",
+    ...renderSampleSection(
+      "## Sample opted-in via CSV phone (platform had no phone)",
+      summary.samples.optedInViaCsvPhoneContactIds,
     ),
     "",
     ...renderSampleSection(
@@ -376,8 +385,16 @@ export async function reconcileSmsConsentFromSalesforce(input: {
   readonly apply: boolean;
   readonly now?: Date;
 }): Promise<ReconcileSmsConsentFromSalesforceSummary> {
-  const distinctCsvContactIds = parseSalesforceOptInContactIds(input.csvText);
+  const csvRows = parseSalesforceOptInRows(input.csvText);
+  const distinctCsvContactIds = csvRows.map((row) => row.contactId15);
   const distinctCsvContactIdSet = new Set(distinctCsvContactIds);
+  const csvPhoneByContactId = new Map<string, string | null>();
+  for (const row of csvRows) {
+    csvPhoneByContactId.set(
+      row.contactId15,
+      row.rawPhone === null ? null : tryNormalizePhoneE164(row.rawPhone),
+    );
+  }
   const nowIso = (input.now ?? new Date()).toISOString();
   const runDate = nowIso.slice(0, 10);
   const latestConsentCache = new Map<string, ConsentRecord | null>();
@@ -391,6 +408,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
     const samples = {
       matchedContactIds: [],
       optedInInsertedContactIds: [],
+      optedInViaCsvPhoneContactIds: [],
       optedInAlreadyCurrentContactIds: [],
       optedInNoPhoneContactIds: [],
       notInPlatformSalesforceContactIds: [],
@@ -398,6 +416,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
     } satisfies Record<keyof ReconcileSamples, string[]>;
     let matched = 0;
     let optedInInserted = 0;
+    let optedInViaCsvPhone = 0;
     let optedInAlreadyCurrent = 0;
     let optedInNoPhone = 0;
     let notInPlatform = 0;
@@ -413,19 +432,19 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       }
     }
 
-    async function getLatestConsent(match: {
+    async function getLatestConsent(lookup: {
       readonly contactId: string;
-      readonly primaryPhone: string;
+      readonly phoneE164: string;
     }): Promise<ConsentRecord | null> {
-      if (latestConsentCache.has(match.contactId)) {
-        return latestConsentCache.get(match.contactId) ?? null;
+      if (latestConsentCache.has(lookup.contactId)) {
+        return latestConsentCache.get(lookup.contactId) ?? null;
       }
 
       const latestConsent = await loadLatestConsentByContactOrPhone(tx, {
-        contactId: match.contactId,
-        phoneE164: match.primaryPhone,
+        contactId: lookup.contactId,
+        phoneE164: lookup.phoneE164,
       });
-      latestConsentCache.set(match.contactId, latestConsent);
+      latestConsentCache.set(lookup.contactId, latestConsent);
       return latestConsent;
     }
 
@@ -444,7 +463,13 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       matched += 1;
       pushSample(samples.matchedContactIds, match.contactId);
 
-      if (match.primaryPhone === null) {
+      // Prefer the platform's phone; fall back to the CSV-provided mobile
+      // (normalized to E.164) when the platform has none on file.
+      const csvPhone = csvPhoneByContactId.get(salesforceContactId15) ?? null;
+      const resolvedPhone = match.primaryPhone ?? csvPhone;
+      const usedCsvPhone = match.primaryPhone === null && csvPhone !== null;
+
+      if (resolvedPhone === null) {
         optedInNoPhone += 1;
         pushSample(samples.optedInNoPhoneContactIds, match.contactId);
         continue;
@@ -452,7 +477,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
 
       const latestConsent = await getLatestConsent({
         contactId: match.contactId,
-        primaryPhone: match.primaryPhone,
+        phoneE164: resolvedPhone,
       });
       const action = reconcileSmsConsent({
         sfTextOptIn: true,
@@ -462,10 +487,14 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       if (action.kind === "append") {
         optedInInserted += 1;
         pushSample(samples.optedInInsertedContactIds, match.contactId);
+        if (usedCsvPhone) {
+          optedInViaCsvPhone += 1;
+          pushSample(samples.optedInViaCsvPhoneContactIds, match.contactId);
+        }
         optInInserts.push(
           buildSalesforceConsentInsert({
             contactId: match.contactId,
-            phoneE164: match.primaryPhone,
+            phoneE164: resolvedPhone,
             status: action.status,
             reason: action.reason,
             notes: `${action.reason} [${TRACK_A_RECONCILE_LABEL} ${runDate}]`,
@@ -528,6 +557,7 @@ export async function reconcileSmsConsentFromSalesforce(input: {
       distinctCsvContacts: distinctCsvContactIds.length,
       matched,
       optedInInserted,
+      optedInViaCsvPhone,
       optedInAlreadyCurrent,
       optedInNoPhone,
       notInPlatform,
