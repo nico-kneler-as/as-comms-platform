@@ -103,6 +103,7 @@ afterEach(() => {
 const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   availableModes: ["project_status", "specific"],
   hasPickedMode: false,
+  selectedSenderType: "project",
   criteria: {
     projectId: null,
     projectIds: [],
@@ -157,6 +158,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
         {...baseProps}
         hasPickedMode={true}
         availableModes={["specific"]}
+        selectedSenderType="org"
         criteria={{
           ...baseProps.criteria,
           initialFilter: "specific",
@@ -165,8 +167,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     expect(markup).toContain("Individual volunteers");
+    expect(markup).toContain("Find newsletter subscribers");
     expect(markup).toContain(
-      "No sender-scoped projects are available for volunteer search.",
+      "Type at least 2 characters to search newsletter subscribers.",
     );
     expect(markup).not.toContain("Project / status");
     expect(markup).not.toContain("All approved contacts");

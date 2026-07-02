@@ -11,6 +11,7 @@ import {
   getNewsletterSuppressionByEmail,
   listSendableNewsletterSubscribers,
   listNewsletterSubscribers,
+  searchNewsletterSubscribers,
   upsertNewsletterSubscriber,
   upsertNewsletterSuppression,
 } from "../src/newsletter-subscribers-repository.js";
@@ -150,6 +151,53 @@ describe("newsletter subscribers repository", () => {
         firstName: "Bravo",
       },
     ]);
+  });
+
+  it("searches sendable subscribers by email, first name, and last name while respecting limit", async () => {
+    await upsertNewsletterSubscriber(context.db, {
+      email: "alpha@example.com",
+      firstName: "Alpha",
+      lastName: "Anderson",
+      status: "subscribed",
+    });
+    await upsertNewsletterSubscriber(context.db, {
+      email: "bravo@example.com",
+      firstName: "Beatrice",
+      lastName: "Bravo",
+      status: "subscribed",
+    });
+    await upsertNewsletterSubscriber(context.db, {
+      email: "charlie@example.com",
+      firstName: "Charlie",
+      lastName: "Chaplin",
+      status: "pending",
+    });
+    await upsertNewsletterSubscriber(context.db, {
+      email: "suppressed@example.com",
+      firstName: "Suppress",
+      lastName: "Target",
+      status: "subscribed",
+    });
+    await upsertNewsletterSuppression(context.db, {
+      email: "suppressed@example.com",
+      reason: "cleaned",
+      source: "mailchimp_import",
+    });
+
+    const byEmail = await searchNewsletterSubscribers(
+      context.db,
+      "alpha@example",
+      10,
+    );
+    const byFirstName = await searchNewsletterSubscribers(context.db, "beat", 10);
+    const byLastName = await searchNewsletterSubscribers(context.db, "brav", 10);
+    const limited = await searchNewsletterSubscribers(context.db, "a", 1);
+
+    expect(byEmail.map((row) => row.email)).toEqual(["alpha@example.com"]);
+    expect(byFirstName.map((row) => row.email)).toEqual(["bravo@example.com"]);
+    expect(byLastName.map((row) => row.email)).toEqual(["bravo@example.com"]);
+    expect(limited).toHaveLength(1);
+    expect(limited[0]?.email).toBe("alpha@example.com");
   });
 
   it("lists subscribers in engaged-first order and filters by minimum rating", async () => {

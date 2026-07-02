@@ -97,6 +97,7 @@ async function seedRunAndSnapshot(
       projectIds: [projectId],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

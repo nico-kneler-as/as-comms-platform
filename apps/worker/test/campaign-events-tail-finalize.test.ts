@@ -37,6 +37,7 @@ async function seedRun(
       projectIds: [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",
