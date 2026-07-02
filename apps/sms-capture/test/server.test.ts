@@ -200,6 +200,7 @@ describe("SMS capture server", () => {
       contactId: "contact-1",
       phoneE164: "+14065550143",
       senderId: "sender-1",
+      broadcastRunId: null,
       body: "hello",
       segments: 1,
       encoding: "GSM-7",

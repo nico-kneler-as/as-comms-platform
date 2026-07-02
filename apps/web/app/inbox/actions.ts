@@ -1417,6 +1417,7 @@ export async function sendSmsAction(
     contactId,
     phoneE164,
     senderId: sender.id,
+    broadcastRunId: null,
     body,
     segments: metrics.segments,
     encoding: metrics.encoding,

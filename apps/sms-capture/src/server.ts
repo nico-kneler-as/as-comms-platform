@@ -511,6 +511,7 @@ async function handleInboundWebhook(input: {
           contactId: resolution.contact.id,
           phoneE164: fromE164,
           senderId: sender.id,
+          broadcastRunId: null,
           body: parsed.body,
           segments: metrics.segments,
           encoding: metrics.encoding,
