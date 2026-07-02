@@ -93,6 +93,7 @@ async function seedNewsletterRun(
       projectIds: [],
       statuses: [],
       contactIds: ["contact-1"],
+      newsletterSubscriberIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

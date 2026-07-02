@@ -178,6 +178,7 @@ const audienceCriteriaDefaults = {
   projectIds: [],
   statuses: [],
   contactIds: [],
+  newsletterSubscriberIds: [],
   expeditionIds: [],
   lastActivityWindow: "all_time" as const,
   hasReplied: "either" as const,
@@ -228,6 +229,9 @@ export const audienceCriteriaSchema = z
     contactIds: z
       .array(z.string().min(1))
       .default(audienceCriteriaDefaults.contactIds),
+    newsletterSubscriberIds: z
+      .array(z.string().uuid())
+      .default(audienceCriteriaDefaults.newsletterSubscriberIds),
     expeditionIds: z
       .array(z.string().min(1))
       .default(audienceCriteriaDefaults.expeditionIds),
@@ -251,10 +255,11 @@ export const audienceCriteriaSchema = z
 type ParsedAudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
 export type AudienceCriteria = Omit<
   ParsedAudienceCriteria,
-  "projectId" | "contactIds"
+  "projectId" | "contactIds" | "newsletterSubscriberIds"
 > & {
   readonly projectId?: string | null;
   readonly contactIds?: string[];
+  readonly newsletterSubscriberIds?: string[];
 };
 
 const campaignRunProjectScopeSchema = z

@@ -23,9 +23,11 @@ import type { AudienceCriteria, ExpeditionMemberStatus } from "@as-comms/contrac
 
 import type {
   AudienceCountData,
+  AudienceNewsletterSubscriberSearchRow,
   AudiencePreviewRow,
   AudienceStatusCounts,
   AudienceVolunteerSearchRow,
+  CampaignSenderType,
   CampaignProjectOption,
 } from "../../_lib/audience-data-source";
 import { AudienceFilterPanel } from "./audience-filter-panel";
@@ -76,13 +78,17 @@ interface AudienceBuilderStepProps {
   readonly availableModes: readonly AudienceInitialFilter[];
   readonly hasPickedMode: boolean;
   readonly criteria: CampaignAudienceCriteria;
+  readonly selectedSenderType: CampaignSenderType | null;
   readonly countState: AudienceCountData;
   readonly previewRows: readonly AudiencePreviewRow[];
   readonly countLoading: boolean;
   readonly previewLoading: boolean;
   readonly previewErrorMessage: string | null;
   readonly volunteerSearchQuery: string;
-  readonly volunteerSearchRows: readonly AudienceVolunteerSearchRow[];
+  readonly volunteerSearchRows: readonly (
+    | AudienceVolunteerSearchRow
+    | AudienceNewsletterSubscriberSearchRow
+  )[];
   readonly volunteerSearchLoading: boolean;
   readonly volunteerSearchErrorMessage: string | null;
   readonly projectOptions: readonly CampaignProjectOption[];
@@ -104,6 +110,7 @@ export function AudienceBuilderStep({
   availableModes,
   hasPickedMode,
   criteria,
+  selectedSenderType,
   countState,
   previewRows,
   countLoading,
@@ -128,6 +135,10 @@ export function AudienceBuilderStep({
   onContinue,
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter;
+  const specificSelectionCount =
+    selectedSenderType === "org"
+      ? (criteria.newsletterSubscriberIds?.length ?? 0)
+      : (criteria.contactIds?.length ?? 0);
   const canContinue =
     !countLoading &&
     initialFilter !== undefined &&
@@ -140,7 +151,7 @@ export function AudienceBuilderStep({
         criteria.statuses.length > 0 &&
         countState.count > 0
       : initialFilter === "specific"
-        ? (criteria.contactIds?.length ?? 0) > 0 && countState.count > 0
+        ? specificSelectionCount > 0 && countState.count > 0
         : countState.count > 0);
 
   return (
@@ -186,6 +197,7 @@ export function AudienceBuilderStep({
               <>
                 <SpecificVolunteerSelector
                   criteria={criteria}
+                  senderType={selectedSenderType}
                   query={volunteerSearchQuery}
                   rows={volunteerSearchRows}
                   loading={volunteerSearchLoading}
@@ -429,6 +441,7 @@ export function AudienceCountPanel({
 
 function SpecificVolunteerSelector({
   criteria,
+  senderType,
   query,
   rows,
   loading,
@@ -437,20 +450,27 @@ function SpecificVolunteerSelector({
   onToggle,
 }: {
   readonly criteria: CampaignAudienceCriteria;
+  readonly senderType: CampaignSenderType | null;
   readonly query: string;
-  readonly rows: readonly AudienceVolunteerSearchRow[];
+  readonly rows: readonly (
+    | AudienceVolunteerSearchRow
+    | AudienceNewsletterSubscriberSearchRow
+  )[];
   readonly loading: boolean;
   readonly errorMessage: string | null;
   readonly onQueryChange: (value: string) => void;
-  readonly onToggle: (contactId: string) => void;
+  readonly onToggle: (id: string) => void;
 }) {
-  const selectedCount = criteria.contactIds?.length ?? 0;
+  const isOrgSender = senderType === "org";
+  const selectedCount = isOrgSender
+    ? (criteria.newsletterSubscriberIds?.length ?? 0)
+    : (criteria.contactIds?.length ?? 0);
   const selectedProjectIds = [
     ...(criteria.projectId == null ? [] : [criteria.projectId]),
     ...criteria.projectIds,
   ].filter((projectId, index, values) => values.indexOf(projectId) === index);
 
-  if (selectedProjectIds.length === 0) {
+  if (!isOrgSender && selectedProjectIds.length === 0) {
     return (
       <section className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-[12.5px] text-slate-600">
         No sender-scoped projects are available for volunteer search.
@@ -462,7 +482,7 @@ function SpecificVolunteerSelector({
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-4 py-2">
         <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-          Find volunteers
+          {isOrgSender ? "Find newsletter subscribers" : "Find volunteers"}
         </p>
         <span className="text-[11.5px] font-semibold tabular-nums text-slate-500">
           {selectedCount.toLocaleString()} added
@@ -488,32 +508,52 @@ function SpecificVolunteerSelector({
           </div>
         ) : loading ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-[12px] text-slate-500">
-            Searching volunteers…
+            {isOrgSender
+              ? "Searching newsletter subscribers…"
+              : "Searching volunteers…"}
           </div>
         ) : query.trim().length < 2 ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-[12px] text-slate-500">
-            Type at least 2 characters to search within this sender alias.
+            {isOrgSender
+              ? "Type at least 2 characters to search newsletter subscribers."
+              : "Type at least 2 characters to search within this sender alias."}
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-[12px] text-slate-500">
-            No matching volunteers found for this sender alias.
+            {isOrgSender
+              ? "No matching newsletter subscribers found."
+              : "No matching volunteers found for this sender alias."}
           </div>
         ) : (
           <div
             role="listbox"
-            aria-label="Volunteer search results"
+            aria-label={
+              isOrgSender
+                ? "Newsletter subscriber search results"
+                : "Volunteer search results"
+            }
             className="space-y-2"
           >
             {rows.map((row) => {
-              const selected = (criteria.contactIds ?? []).includes(row.contactId);
+              const rowId =
+                "subscriberId" in row ? row.subscriberId : row.contactId;
+              const selected = "subscriberId" in row
+                ? (criteria.newsletterSubscriberIds ?? []).includes(rowId)
+                : (criteria.contactIds ?? []).includes(rowId);
+              const displayName =
+                "subscriberId" in row ? (row.firstName ?? row.email) : row.name;
+              const badgeLabel =
+                "subscriberId" in row
+                  ? "Subscriber"
+                  : (row.projectAlias ?? row.project ?? "No project");
               return (
                 <button
-                  key={row.contactId}
+                  key={rowId}
                   type="button"
                   role="option"
                   aria-selected={selected}
                   onClick={() => {
-                    onToggle(row.contactId);
+                    onToggle(rowId);
                   }}
                   className={cn(
                     `flex w-full items-center justify-between gap-3 border px-3 py-3 text-left ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING}`,
@@ -527,11 +567,11 @@ function SpecificVolunteerSelector({
                       className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11.5px] font-semibold uppercase text-slate-700"
                       aria-hidden="true"
                     >
-                      {deriveInitials(row.name, row.email)}
+                      {deriveInitials(displayName, row.email)}
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-[12.5px] font-semibold text-slate-900">
-                        {row.name}
+                        {displayName}
                       </span>
                       <span className="mt-0.5 block truncate font-mono text-[11px] text-slate-500">
                         {row.email}
@@ -540,7 +580,7 @@ function SpecificVolunteerSelector({
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      {row.projectAlias ?? row.project ?? "No project"}
+                      {badgeLabel}
                     </span>
                     {selected ? (
                       <span

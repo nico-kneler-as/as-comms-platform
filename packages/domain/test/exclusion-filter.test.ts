@@ -28,6 +28,7 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
       projectIds: kind === "project" ? ["project-a"] : [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
       expeditionIds: [],
       lastActivityWindow: "all_time",
       hasReplied: "either",

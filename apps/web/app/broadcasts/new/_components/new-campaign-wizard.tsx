@@ -107,7 +107,10 @@ export function hasAppliedAudienceFilters(
 export function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
-  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+  if (
+    (draft.audienceCriteria.contactIds?.length ?? 0) > 0 ||
+    (draft.audienceCriteria.newsletterSubscriberIds?.length ?? 0) > 0
+  ) {
     return "specific";
   }
 
@@ -284,6 +287,7 @@ function buildCriteriaForMode(input: {
       projectIds: [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -295,6 +299,7 @@ function buildCriteriaForMode(input: {
       projectIds: [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -306,6 +311,7 @@ function buildCriteriaForMode(input: {
       projectIds: aliasProjectIds,
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -316,6 +322,7 @@ function buildCriteriaForMode(input: {
     projectIds: aliasProjectIds,
     statuses: [],
     contactIds: [],
+    newsletterSubscriberIds: [],
   };
 }
 
@@ -329,6 +336,7 @@ export function clearAudienceCriteria(
     projectIds: [],
     statuses: [],
     contactIds: [],
+    newsletterSubscriberIds: [],
   };
 }
 
@@ -473,6 +481,7 @@ export function NewCampaignWizard({
     availableAudienceModes,
     dirty,
     selectedSenderVerified,
+    selectedSenderType,
     aliasProjects,
     previewFingerprint,
     warningDismissed,
@@ -528,6 +537,9 @@ export function NewCampaignWizard({
               result.data.audienceCriteria.projectId ??
               result.data.audienceCriteria.projectIds[0] ??
               null,
+            contactIds: result.data.audienceCriteria.contactIds ?? [],
+            newsletterSubscriberIds:
+              result.data.audienceCriteria.newsletterSubscriberIds ?? [],
             initialFilter: criteria.initialFilter,
           },
           audienceSize: result.data.audienceSize,
@@ -585,6 +597,7 @@ export function NewCampaignWizard({
             : [...readProjectIds(current), projectId],
         )[0] ?? null,
       contactIds: [],
+      newsletterSubscriberIds: [],
       statuses: [],
     }));
     setVolunteerSearchQuery("");
@@ -617,9 +630,21 @@ export function NewCampaignWizard({
   function toggleVolunteer(contactId: string) {
     updateCriteria((current) => ({
       ...current,
-      contactIds: (current.contactIds ?? []).includes(contactId)
-        ? (current.contactIds ?? []).filter((value) => value !== contactId)
-        : [...(current.contactIds ?? []), contactId],
+      ...(selectedSenderType === "org"
+        ? {
+            newsletterSubscriberIds: (
+              current.newsletterSubscriberIds ?? []
+            ).includes(contactId)
+              ? (current.newsletterSubscriberIds ?? []).filter(
+                  (value) => value !== contactId,
+                )
+              : [...(current.newsletterSubscriberIds ?? []), contactId],
+          }
+        : {
+            contactIds: (current.contactIds ?? []).includes(contactId)
+              ? (current.contactIds ?? []).filter((value) => value !== contactId)
+              : [...(current.contactIds ?? []), contactId],
+          }),
     }));
   }
 
@@ -771,6 +796,7 @@ export function NewCampaignWizard({
                 availableModes={availableAudienceModes}
                 hasPickedMode={hasPickedAudienceMode}
                 criteria={criteria}
+                selectedSenderType={selectedSenderType}
                 countState={countState}
                 previewRows={previewRows}
                 countLoading={countLoading}

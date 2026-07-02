@@ -12,6 +12,7 @@ const previewAudienceActionMock = vi.hoisted(() => vi.fn());
 const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
 const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
+const searchNewsletterSubscribersActionMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
 const testSendMock = vi.hoisted(() => vi.fn());
 const scheduleMock = vi.hoisted(() => vi.fn());
@@ -24,6 +25,7 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   previewAudienceAction: previewAudienceActionMock,
   resolveAudienceCountAction: resolveAudienceCountActionMock,
   saveCampaignWizardDraftAction: saveCampaignWizardDraftActionMock,
+  searchNewsletterSubscribersAction: searchNewsletterSubscribersActionMock,
   searchProjectVolunteersAction: searchProjectVolunteersActionMock,
 }));
 
@@ -131,6 +133,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     onContinue,
     onInitialFilterChange,
     onVolunteerSearchQueryChange,
+    onVolunteerToggle,
     previewRows,
     volunteerSearchQuery,
     volunteerSearchRows,
@@ -158,15 +161,23 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
         | "all_available",
     ) => void;
     readonly onVolunteerSearchQueryChange: (value: string) => void;
+    readonly onVolunteerToggle: (id: string) => void;
     readonly previewRows: readonly {
       readonly contactId: string;
       readonly name: string;
     }[];
     readonly volunteerSearchQuery: string;
-    readonly volunteerSearchRows: readonly {
-      readonly contactId: string;
-      readonly name: string;
-    }[];
+    readonly volunteerSearchRows: readonly (
+      | {
+          readonly contactId: string;
+          readonly name: string;
+        }
+      | {
+          readonly subscriberId: string;
+          readonly firstName: string | null;
+          readonly email: string;
+        }
+    )[];
   }) => (
     <section data-testid="audience-step">
       <div>AudienceBuilderStep</div>
@@ -234,9 +245,26 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       </button>
       <div data-testid="preview-row-count">{String(previewRows.length)}</div>
       <ul data-testid="volunteer-rows">
-        {volunteerSearchRows.map((row) => (
-          <li key={row.contactId}>{row.name}</li>
-        ))}
+        {volunteerSearchRows.map((row) => {
+          const rowId = "contactId" in row ? row.contactId : row.subscriberId;
+          const label =
+            "contactId" in row ? row.name : (row.firstName ?? row.email);
+
+          return (
+            <li key={rowId}>
+              {label}
+              <button
+                type="button"
+                aria-label={`toggle-row-${rowId}`}
+                onClick={() => {
+                  onVolunteerToggle(rowId);
+                }}
+              >
+                Toggle
+              </button>
+            </li>
+          );
+        })}
       </ul>
       <button type="button" aria-label="audience-back" onClick={onBack}>
         Back
@@ -454,14 +482,15 @@ function buildDraft(
     bodyHtmlTemplate: "<p>Hello {{firstName}}</p>",
     bodyTextTemplate: "Hello {{firstName}}",
     preheader: "Preview line",
-    audienceCriteria: {
-      projectId: "project-1",
-      projectIds: ["project-1"],
-      statuses: [],
-      contactIds: ["contact-1"],
-      expeditionIds: [],
-      lastActivityWindow: "all_time",
-      hasReplied: "either",
+      audienceCriteria: {
+        projectId: "project-1",
+        projectIds: ["project-1"],
+        statuses: [],
+        contactIds: ["contact-1"],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
       hasClicked: "either",
     },
     audienceSize: 2,
@@ -694,6 +723,16 @@ beforeEach(() => {
         project: "Beech Leaf Disease",
         projectAlias: "Forests",
         projectAliasHint: "forests@",
+      },
+    ],
+  });
+  searchNewsletterSubscribersActionMock.mockResolvedValue({
+    ok: true,
+    data: [
+      {
+        subscriberId: "11111111-1111-1111-1111-111111111111",
+        email: "alpha@example.org",
+        firstName: "Alpha",
       },
     ],
   });
@@ -942,5 +981,68 @@ describe("NewCampaignWizard", () => {
     expect(
       document.querySelector('[aria-label="mode-project-status"]'),
     ).toBeNull();
+  });
+
+  it("searches newsletter subscribers for org senders and persists newsletterSubscriberIds", async () => {
+    vi.useFakeTimers();
+
+    await renderWizard({
+      bootstrap: buildBootstrap({
+        senderOptions: [
+          {
+            projectId: null,
+            projectName: "Adventure Scientists",
+            projectAliasLabel: "Adventure Scientists",
+            email: "info@adventurescientists.org",
+            connectedToProjectId: null,
+            status: "verified",
+            senderType: "org",
+          },
+        ],
+      }),
+      draft: buildDraft({
+        kind: "newsletter",
+        fromEmail: "info@adventurescientists.org",
+        replyToEmail: "info@adventurescientists.org",
+        audienceCriteria: {
+          projectId: null,
+          projectIds: [],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+      }),
+    });
+
+    await click("launch-continue");
+    await click("name-continue");
+    await click("mode-specific");
+    await click("search-alice");
+    await advanceTimersBy(300);
+
+    expect(searchNewsletterSubscribersActionMock).toHaveBeenCalledWith({
+      query: "alice",
+    });
+    expect(getByTestId("volunteer-rows").textContent).toContain("Alpha");
+
+    await click("toggle-row-11111111-1111-1111-1111-111111111111");
+    await click("audience-continue");
+
+    const savedInput = saveCampaignWizardDraftActionMock.mock.calls.at(-1)?.[0] as
+      | SaveActionInput
+      | undefined;
+    expect(savedInput).toMatchObject({
+      kind: "newsletter",
+      audienceCriteria: {
+        initialFilter: "specific",
+        newsletterSubscriberIds: [
+          "11111111-1111-1111-1111-111111111111",
+        ],
+      },
+    });
   });
 });

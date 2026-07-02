@@ -13,6 +13,7 @@ import {
   getAudienceBuilderBootstrap,
   resolveAudienceCountAction,
   resolveStoredCampaignAudience,
+  searchNewsletterSubscribersAction,
   searchProjectVolunteersAction,
 } from "../../app/broadcasts/_lib/audience-data-source";
 import {
@@ -94,6 +95,7 @@ async function seedNewsletterSubscriber(
     readonly id: string;
     readonly email: string;
     readonly firstName: string | null;
+    readonly lastName?: string | null;
     readonly status: "subscribed" | "pending";
   },
 ): Promise<void> {
@@ -102,6 +104,7 @@ async function seedNewsletterSubscriber(
       id,
       email,
       first_name,
+      last_name,
       status,
       source,
       created_at,
@@ -110,6 +113,7 @@ async function seedNewsletterSubscriber(
       ${input.id}::uuid,
       ${input.email},
       ${input.firstName},
+      ${input.lastName ?? null},
       ${input.status},
       'mailchimp_import',
       ${new Date("2026-06-01T12:00:00.000Z").toISOString()}::timestamptz,
@@ -293,6 +297,60 @@ describe("campaign audience data source", () => {
     ]);
   });
 
+  it("resolves specific newsletter subscriber picks as non-contact audience members and excludes suppressed picks", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "55555555-5555-5555-5555-555555555555",
+      email: "picked@example.org",
+      firstName: "Picked",
+      status: "subscribed",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "66666666-6666-6666-6666-666666666666",
+      email: "suppressed-picked@example.org",
+      firstName: "Suppressed",
+      status: "subscribed",
+    });
+    await seedNewsletterSuppression(runtime, {
+      id: "77777777-7777-7777-7777-777777777777",
+      email: "suppressed-picked@example.org",
+    });
+
+    const audience = await resolveStoredCampaignAudience({
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [
+          "66666666-6666-6666-6666-666666666666",
+          "55555555-5555-5555-5555-555555555555",
+        ],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      at: new Date("2026-06-15T12:00:00.000Z"),
+    });
+
+    expect(audience).toEqual([
+      {
+        contactId: null,
+        newsletterSubscriberId: "55555555-5555-5555-5555-555555555555",
+        frozenEmail: "picked@example.org",
+        frozenFirstName: "Picked",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+      },
+    ]);
+  });
+
   it("counts all_available newsletter audiences from sendable subscribers", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");
@@ -336,6 +394,46 @@ describe("campaign audience data source", () => {
         count: 1,
         hasAppliedFilters: true,
       },
+    });
+  });
+
+  it("searches newsletter subscribers for org-sender specific audiences", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-8888-8888-8888-888888888888",
+      email: "alpha@example.org",
+      firstName: "Alpha",
+      lastName: "Lane",
+      status: "subscribed",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "99999999-9999-9999-9999-999999999999",
+      email: "suppressed@example.org",
+      firstName: "Suppressed",
+      lastName: "Lane",
+      status: "subscribed",
+    });
+    await seedNewsletterSuppression(runtime, {
+      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      email: "suppressed@example.org",
+    });
+
+    const result = await searchNewsletterSubscribersAction({
+      query: "alpha",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: [
+        {
+          subscriberId: "88888888-8888-8888-8888-888888888888",
+          email: "alpha@example.org",
+          firstName: "Alpha",
+        },
+      ],
     });
   });
 });
