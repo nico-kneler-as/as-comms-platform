@@ -9,6 +9,7 @@ import type {
 
 import type {
   AudienceBuilderBootstrap,
+  AudienceNewsletterSubscriberSearchRow,
   AudiencePreviewRow,
   AudienceStatusCounts,
   AudienceVolunteerSearchRow,
@@ -24,6 +25,7 @@ import {
   loadSelectedAliasSignatureAction,
   previewAudienceAction,
   resolveAudienceCountAction,
+  searchNewsletterSubscribersAction,
   searchProjectVolunteersAction,
 } from "../../_lib/audience-data-source";
 import type {
@@ -80,7 +82,10 @@ function hasAppliedAudienceFilters(
 function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
-  if ((draft.audienceCriteria.contactIds?.length ?? 0) > 0) {
+  if (
+    (draft.audienceCriteria.contactIds?.length ?? 0) > 0 ||
+    (draft.audienceCriteria.newsletterSubscriberIds?.length ?? 0) > 0
+  ) {
     return "specific";
   }
 
@@ -229,6 +234,7 @@ function buildCriteriaForMode(input: {
       projectIds: [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -240,6 +246,7 @@ function buildCriteriaForMode(input: {
       projectIds: [],
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -251,6 +258,7 @@ function buildCriteriaForMode(input: {
       projectIds: aliasProjectIds,
       statuses: [],
       contactIds: [],
+      newsletterSubscriberIds: [],
     };
   }
 
@@ -261,6 +269,7 @@ function buildCriteriaForMode(input: {
     projectIds: aliasProjectIds,
     statuses: [],
     contactIds: [],
+    newsletterSubscriberIds: [],
   };
 }
 
@@ -274,6 +283,7 @@ function clearAudienceCriteria(
     projectIds: [],
     statuses: [],
     contactIds: [],
+    newsletterSubscriberIds: [],
   };
 }
 
@@ -327,6 +337,8 @@ export function useNewCampaignWizardState({
       draft.audienceCriteria.projectIds[0] ??
       null,
     contactIds: draft.audienceCriteria.contactIds ?? [],
+    newsletterSubscriberIds:
+      draft.audienceCriteria.newsletterSubscriberIds ?? [],
     initialFilter: initialAudienceMode,
   });
   const [hasPickedAudienceMode, setHasPickedAudienceMode] = useState(
@@ -341,6 +353,8 @@ export function useNewCampaignWizardState({
         draft.audienceCriteria.projectIds[0] ??
         null,
       contactIds: draft.audienceCriteria.contactIds ?? [],
+      newsletterSubscriberIds:
+        draft.audienceCriteria.newsletterSubscriberIds ?? [],
       initialFilter: initialAudienceMode,
     }),
   });
@@ -357,7 +371,10 @@ export function useNewCampaignWizardState({
   >(null);
   const [volunteerSearchQuery, setVolunteerSearchQuery] = useState("");
   const [volunteerSearchRows, setVolunteerSearchRows] = useState<
-    readonly AudienceVolunteerSearchRow[]
+    readonly (
+      | AudienceVolunteerSearchRow
+      | AudienceNewsletterSubscriberSearchRow
+    )[]
   >([]);
   const [volunteerSearchErrorMessage, setVolunteerSearchErrorMessage] =
     useState<string | null>(null);
@@ -503,6 +520,8 @@ export function useNewCampaignWizardState({
         draft.audienceCriteria.projectIds[0] ??
         null,
       contactIds: draft.audienceCriteria.contactIds ?? [],
+      newsletterSubscriberIds:
+        draft.audienceCriteria.newsletterSubscriberIds ?? [],
       initialFilter: initialAudienceMode,
     };
     savedFingerprintRef.current = JSON.stringify({
@@ -774,10 +793,15 @@ export function useNewCampaignWizardState({
     const requestId = ++volunteerSearchRequestRef.current;
     const timer = setTimeout(() => {
       startVolunteerSearchTransition(async () => {
-        const result = await searchProjectVolunteersAction({
-          aliasProjectIds,
-          query: volunteerSearchQuery,
-        });
+        const result =
+          selectedSenderType === "org"
+            ? await searchNewsletterSubscribersAction({
+                query: volunteerSearchQuery,
+              })
+            : await searchProjectVolunteersAction({
+                aliasProjectIds,
+                query: volunteerSearchQuery,
+              });
         if (requestId !== volunteerSearchRequestRef.current) {
           return;
         }
@@ -800,6 +824,7 @@ export function useNewCampaignWizardState({
     criteria.initialFilter,
     currentStep,
     hasPickedAudienceMode,
+    selectedSenderType,
     volunteerSearchQuery,
   ]);
 
@@ -994,6 +1019,7 @@ export function useNewCampaignWizardState({
     availableAudienceModes,
     dirty,
     selectedSenderVerified,
+    selectedSenderType,
     aliasProjects,
     previewFingerprint,
     warningDismissed,

@@ -4,7 +4,9 @@ import {
   count,
   eq,
   gte,
+  ilike,
   isNull,
+  or,
   sql,
 } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -211,6 +213,51 @@ export async function listSendableNewsletterSubscribers(
       ),
     )
     .orderBy(asc(newsletterSubscribers.email), asc(newsletterSubscribers.id));
+
+  return rows;
+}
+
+export async function searchNewsletterSubscribers(
+  db: NewsletterSubscribersDatabase,
+  query: string,
+  limit: number,
+): Promise<
+  readonly {
+    readonly id: string;
+    readonly email: string;
+    readonly firstName: string | null;
+  }[]
+> {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length === 0 || limit <= 0) {
+    return [];
+  }
+
+  const pattern = `%${trimmedQuery}%`;
+  const rows = await db
+    .select({
+      id: newsletterSubscribers.id,
+      email: newsletterSubscribers.email,
+      firstName: newsletterSubscribers.firstName,
+    })
+    .from(newsletterSubscribers)
+    .leftJoin(
+      newsletterSuppressions,
+      eq(newsletterSubscribers.email, newsletterSuppressions.email),
+    )
+    .where(
+      and(
+        eq(newsletterSubscribers.status, "subscribed"),
+        isNull(newsletterSuppressions.id),
+        or(
+          ilike(newsletterSubscribers.email, pattern),
+          ilike(newsletterSubscribers.firstName, pattern),
+          ilike(newsletterSubscribers.lastName, pattern),
+        ),
+      ),
+    )
+    .orderBy(asc(newsletterSubscribers.email), asc(newsletterSubscribers.id))
+    .limit(limit);
 
   return rows;
 }

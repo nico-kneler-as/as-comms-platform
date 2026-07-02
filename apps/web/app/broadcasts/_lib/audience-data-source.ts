@@ -32,6 +32,7 @@ import {
   getStage1WebRuntime,
   listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
+  searchNewsletterSubscribers,
 } from "@/src/server/stage1-runtime";
 
 import { deriveInitials } from "./campaign-preview";
@@ -104,6 +105,12 @@ export interface AudienceVolunteerSearchRow {
   readonly project: string | null;
   readonly projectAlias: string | null;
   readonly projectAliasHint: string | null;
+}
+
+export interface AudienceNewsletterSubscriberSearchRow {
+  readonly subscriberId: string;
+  readonly email: string;
+  readonly firstName: string | null;
 }
 
 export interface CampaignWizardDraftData {
@@ -345,6 +352,7 @@ function toStoredAudienceCriteria(
     projectIds: criteria.projectIds,
     statuses: criteria.statuses,
     contactIds: criteria.contactIds ?? [],
+    newsletterSubscriberIds: criteria.newsletterSubscriberIds ?? [],
   };
 }
 
@@ -610,6 +618,34 @@ async function loadNewsletterSubscriberAudience(): Promise<
   }));
 }
 
+async function loadSpecificNewsletterSubscribersAudience(
+  criteria: AudienceCriteria,
+  at: Date,
+): Promise<readonly AudienceMember[]> {
+  void at;
+  const selectedSubscriberIds = new Set(
+    (criteria.newsletterSubscriberIds ?? []).filter(
+      (subscriberId) => subscriberId.trim().length > 0,
+    ),
+  );
+  if (selectedSubscriberIds.size === 0) {
+    return [];
+  }
+
+  const rows = await listSendableNewsletterSubscribers();
+  return rows
+    .filter((row) => selectedSubscriberIds.has(row.id))
+    .map((row) => ({
+      contactId: null,
+      newsletterSubscriberId: row.id,
+      frozenEmail: row.email,
+      frozenFirstName: row.firstName ?? null,
+      frozenProjectName: null,
+      frozenProjectId: null,
+      frozenAliasEmail: null,
+    }));
+}
+
 async function loadSpecificContactsAudience(
   criteria: AudienceCriteria,
   at: Date,
@@ -750,10 +786,13 @@ export async function resolveStoredCampaignAudience(input: {
   readonly at: Date;
 }): Promise<readonly AudienceMember[]> {
   if (input.kind === "newsletter") {
-    if ((input.criteria.contactIds?.length ?? 0) === 0) {
-      return loadNewsletterSubscriberAudience();
+    if ((input.criteria.newsletterSubscriberIds?.length ?? 0) > 0) {
+      return loadSpecificNewsletterSubscribersAudience(input.criteria, input.at);
     }
-    return loadSpecificContactsAudience(input.criteria, input.at);
+    if ((input.criteria.contactIds?.length ?? 0) > 0) {
+      return loadSpecificContactsAudience(input.criteria, input.at);
+    }
+    return loadNewsletterSubscriberAudience();
   }
 
   const resolver = await createResolver();
@@ -786,7 +825,13 @@ async function resolveWizardAudience(
   }
 
   if (mode === "specific" && kind === "newsletter") {
-    return loadSpecificContactsAudience(parsedCriteria, at);
+    if (parsedCriteria.newsletterSubscriberIds.length > 0) {
+      return loadSpecificNewsletterSubscribersAudience(parsedCriteria, at);
+    }
+    if (parsedCriteria.contactIds.length > 0) {
+      return loadSpecificContactsAudience(parsedCriteria, at);
+    }
+    return [];
   }
 
   return resolveStoredCampaignAudience({
@@ -1338,6 +1383,36 @@ export async function searchProjectVolunteersAction(input: {
       error instanceof Error
         ? error.message
         : "Unable to search contacts for the selected sender.",
+      true,
+    );
+  }
+}
+
+export async function searchNewsletterSubscribersAction(input: {
+  readonly query: string;
+}): Promise<UiResult<readonly AudienceNewsletterSubscriberSearchRow[]>> {
+  await requireSession();
+
+  const query = input.query.trim();
+  if (query.length < 2) {
+    return successResult([]);
+  }
+
+  try {
+    const rows = await searchNewsletterSubscribers(query, 25);
+    return successResult(
+      rows.map((row) => ({
+        subscriberId: row.id,
+        email: row.email,
+        firstName: row.firstName ?? null,
+      })),
+    );
+  } catch (error) {
+    return errorResult(
+      "campaign_newsletter_subscriber_search_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to search newsletter subscribers.",
       true,
     );
   }
