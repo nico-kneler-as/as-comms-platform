@@ -31,9 +31,11 @@ import {
   NotionPageFetcher,
   createSalesforceCapturePort,
   createSimpleTextingCapturePort,
+  createTwilioProvider,
   ProviderCaptureConfigError,
   type FetchImplementation,
   type SalesforceCaptureServiceConfig,
+  type TwilioProvider,
   WebPageFetcher,
 } from "@as-comms/integrations";
 
@@ -47,6 +49,7 @@ import {
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
 import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js";
+import { type SmsBroadcastSendTaskDependencies } from "./jobs/sms-broadcast-send/index.js";
 import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
@@ -117,6 +120,17 @@ const workerMailchimpTransitionConfigSchema = z.object({
   discoverySeed: z.string().datetime(),
 });
 
+const workerSmsServiceConfigSchema = z.object({
+  accountSid: z.string().min(1),
+  authToken: z.string().min(1),
+  messagingServiceSidOrFromNumber: z.string().min(1),
+});
+
+const workerSmsConfigSchema = z.object({
+  enabled: z.preprocess(parseBooleanEnv, z.boolean()).default(false),
+  service: workerSmsServiceConfigSchema.nullable(),
+});
+
 const workerWebConfigSchema = z.object({
   revalidateBaseUrl: z.string().url(),
   revalidateToken: z.string().min(1),
@@ -128,6 +142,7 @@ const workerConfigSchema = z.object({
   launchScope: stage1LaunchScopeConfigSchema,
   capture: workerCaptureConfigSchema,
   mailchimpTransition: workerMailchimpTransitionConfigSchema,
+  sms: workerSmsConfigSchema,
   web: workerWebConfigSchema.optional(),
 });
 
@@ -332,6 +347,69 @@ function buildCampaignSendDependencies(input: {
       appUrl,
       broadcastMessageStream,
     }),
+  };
+}
+
+function readWorkerSmsConfig(
+  env: NodeJS.ProcessEnv,
+): z.infer<typeof workerSmsConfigSchema> {
+  const accountSid = readOptionalTrimmedEnv(env.TWILIO_ACCOUNT_SID);
+  const authToken = readOptionalTrimmedEnv(env.TWILIO_AUTH_TOKEN);
+  const messagingServiceSidOrFromNumber = readOptionalTrimmedEnv(
+    env.TWILIO_MESSAGING_SERVICE_SID_OR_FROM_NUMBER,
+  );
+  const providedCount = [
+    accountSid,
+    authToken,
+    messagingServiceSidOrFromNumber,
+  ].filter((value) => value !== null).length;
+
+  if (providedCount > 0 && providedCount < 3) {
+    throw new Stage1WorkerConfigError(
+      "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID_OR_FROM_NUMBER must all be set together.",
+    );
+  }
+
+  const enabled = parseBooleanEnv(env.SMS_ENABLED);
+  const service =
+    accountSid === null || authToken === null || messagingServiceSidOrFromNumber === null
+      ? null
+      : workerSmsServiceConfigSchema.parse({
+          accountSid,
+          authToken,
+          messagingServiceSidOrFromNumber,
+        });
+
+  if (enabled && service === null) {
+    throw new Stage1WorkerConfigError(
+      "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_MESSAGING_SERVICE_SID_OR_FROM_NUMBER are required when SMS_ENABLED is true.",
+    );
+  }
+
+  return workerSmsConfigSchema.parse({
+    enabled,
+    service,
+  });
+}
+
+function buildSmsBroadcastSendDependencies(input: {
+  readonly sms: WorkerConfig["sms"];
+  readonly campaigns: ReturnType<typeof createStage5RepositoryBundleFromConnection>;
+  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+}): SmsBroadcastSendTaskDependencies {
+  const provider: Pick<TwilioProvider, "sendSms"> | null =
+    input.sms.service === null
+      ? null
+      : createTwilioProvider(input.sms.service);
+
+  return {
+    campaignRuns: input.campaigns.campaignRuns,
+    repositories: {
+      smsMessages: input.repositories.smsMessages,
+      consentRecords: input.repositories.consentRecords,
+    },
+    provider,
+    smsEnabled: input.sms.enabled,
   };
 }
 
@@ -675,6 +753,7 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig | null {
       }),
     },
     mailchimpTransition: readMailchimpTransitionConfig(env),
+    sms: readWorkerSmsConfig(env),
     web: readOptionalWebConfig(env),
   });
 }
@@ -747,6 +826,11 @@ export async function createStage1WorkerRuntimeServices(
     campaigns,
     repositories,
     settings,
+  });
+  const smsBroadcastSend = buildSmsBroadcastSendDependencies({
+    sms: config.sms,
+    campaigns,
+    repositories,
   });
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
@@ -847,6 +931,7 @@ export async function createStage1WorkerRuntimeServices(
         : {
             campaignSend,
           }),
+      smsBroadcastSend,
       campaignEventsTailFinalize: {
         db: connection.db,
         campaigns,

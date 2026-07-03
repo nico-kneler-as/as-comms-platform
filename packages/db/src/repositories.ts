@@ -1161,6 +1161,21 @@ function createSmsRepositorySlices(db: Stage1Database) {
         return row !== undefined;
       },
 
+      async listByBroadcastRun(runId, status) {
+        const rows = await db
+          .select()
+          .from(smsMessages)
+          .where(
+            and(
+              eq(smsMessages.broadcastRunId, runId),
+              eq(smsMessages.sendStatus, status),
+            ),
+          )
+          .orderBy(asc(smsMessages.createdAt), asc(smsMessages.id));
+
+        return rows.map(mapSmsMessageRow);
+      },
+
       async listByContact(contactId, limit) {
         const rows = await db
           .select()

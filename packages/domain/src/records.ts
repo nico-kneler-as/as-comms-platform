@@ -21,6 +21,7 @@ export type SmsDirection = "inbound" | "outbound";
 export type SmsEncoding = "GSM-7" | "Unicode";
 export type SmsSendStatus =
   | "queued"
+  | "suppressed"
   | "sent"
   | "delivered"
   | "failed"

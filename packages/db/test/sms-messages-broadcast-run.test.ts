@@ -127,4 +127,87 @@ describe("sms_messages broadcast run id", () => {
       },
     ]);
   });
+
+  it("lists broadcast rows by run and send status in created order", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+
+    await seedContact(context);
+    await seedSender(context);
+    await seedBroadcastRun(context);
+
+    await context.repositories.smsMessages.insert({
+      id: "sms-message-queued-2",
+      twilioMessageSid: null,
+      direction: "outbound",
+      contactId: "contact-sms-1",
+      phoneE164: "+15555550123",
+      senderId: "sender-sms-1",
+      broadcastRunId: "campaign-run-sms-1",
+      body: "Second queued body",
+      segments: 1,
+      encoding: "GSM-7",
+      mediaUrls: null,
+      sendStatus: "queued",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: null,
+      receivedAt: null,
+      actorId: null,
+      createdAt: new Date("2026-07-02T12:02:00.000Z"),
+      updatedAt: new Date("2026-07-02T12:02:00.000Z"),
+    });
+    await context.repositories.smsMessages.insert({
+      id: "sms-message-sent",
+      twilioMessageSid: "SMsent",
+      direction: "outbound",
+      contactId: "contact-sms-1",
+      phoneE164: "+15555550123",
+      senderId: "sender-sms-1",
+      broadcastRunId: "campaign-run-sms-1",
+      body: "Sent body",
+      segments: 1,
+      encoding: "GSM-7",
+      mediaUrls: null,
+      sendStatus: "sent",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: new Date("2026-07-02T12:01:30.000Z"),
+      receivedAt: null,
+      actorId: null,
+      createdAt: new Date("2026-07-02T12:01:30.000Z"),
+      updatedAt: new Date("2026-07-02T12:01:30.000Z"),
+    });
+    await context.repositories.smsMessages.insert({
+      id: "sms-message-queued-1",
+      twilioMessageSid: null,
+      direction: "outbound",
+      contactId: "contact-sms-1",
+      phoneE164: "+15555550123",
+      senderId: "sender-sms-1",
+      broadcastRunId: "campaign-run-sms-1",
+      body: "First queued body",
+      segments: 1,
+      encoding: "GSM-7",
+      mediaUrls: null,
+      sendStatus: "queued",
+      failedReason: null,
+      failedDetail: null,
+      sentAt: null,
+      receivedAt: null,
+      actorId: null,
+      createdAt: new Date("2026-07-02T12:01:00.000Z"),
+      updatedAt: new Date("2026-07-02T12:01:00.000Z"),
+    });
+
+    const queuedRows = await context.repositories.smsMessages.listByBroadcastRun(
+      "campaign-run-sms-1",
+      "queued",
+    );
+
+    expect(queuedRows.map((row) => row.id)).toEqual([
+      "sms-message-queued-1",
+      "sms-message-queued-2",
+    ]);
+  });
 });

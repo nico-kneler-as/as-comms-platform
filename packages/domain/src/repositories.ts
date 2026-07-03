@@ -414,6 +414,10 @@ export interface SmsMessageRepository {
     statuses: readonly SmsMessageRecord["sendStatus"][],
   ): Promise<SmsMessageRecord | null>;
   hasInboundForPhone(phoneE164: string): Promise<boolean>;
+  listByBroadcastRun(
+    runId: string,
+    status: SmsMessageRecord["sendStatus"],
+  ): Promise<readonly SmsMessageRecord[]>;
   listByContact(
     contactId: string,
     limit?: number,
