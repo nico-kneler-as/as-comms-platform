@@ -169,6 +169,7 @@ export function ComposeStep({
   );
   const [uploadedHtmlValue, setUploadedHtmlValue] = useState("");
   const [uploadWarnings, setUploadWarnings] = useState<readonly string[]>([]);
+  const smsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isSmsLaunch = launchType === "sms";
   const subjectLen = subject.length;
   const subjectOverLimit = subjectLen > 70;
@@ -197,6 +198,29 @@ export function ComposeStep({
       launchType !== "html_email" || htmlComposeMode === "upload",
     );
   }, [htmlComposeMode, launchType]);
+
+  function insertSmsMergeToken(token: string) {
+    const textarea = smsTextareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? bodyPlaintext.length;
+    const selectionEnd = textarea?.selectionEnd ?? bodyPlaintext.length;
+    const nextValue =
+      bodyPlaintext.slice(0, selectionStart) +
+      token +
+      bodyPlaintext.slice(selectionEnd);
+    onBodyChange({
+      bodyDesignJson: null,
+      bodyPlaintext: nextValue,
+      bodyHtml: "",
+    });
+    const nextCaret = selectionStart + token.length;
+    requestAnimationFrame(() => {
+      const el = smsTextareaRef.current;
+      if (el !== null) {
+        el.focus();
+        el.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
 
   function applyUploadedHtml(
     rawHtml: string,
@@ -240,6 +264,7 @@ export function ComposeStep({
           <>
             <div className="relative min-h-[320px] px-4 pb-3 pt-2">
               <textarea
+                ref={smsTextareaRef}
                 id="campaign-sms-body"
                 rows={8}
                 value={bodyPlaintext}
@@ -266,12 +291,26 @@ export function ComposeStep({
                 </span>
                 <span>{smsSegmentMetrics.encoding}</span>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11px] text-slate-500">
                 <span>
                   '{DEFAULT_SMS_OPT_OUT_FOOTER}' is added automatically.
                 </span>
-                <span>
-                  Supported merge tokens: {SMS_MERGE_TOKENS.join(", ")}
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <span>Insert:</span>
+                  {SMS_MERGE_TOKENS.map((token) => (
+                    <button
+                      key={token}
+                      type="button"
+                      onClick={() => {
+                        insertSmsMergeToken(token);
+                      }}
+                      disabled={frozen}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Braces className="h-3 w-3" />
+                      {token}
+                    </button>
+                  ))}
                 </span>
               </div>
             </div>

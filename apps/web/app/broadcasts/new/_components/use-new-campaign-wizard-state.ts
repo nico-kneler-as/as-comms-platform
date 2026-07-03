@@ -663,6 +663,11 @@ export function useNewCampaignWizardState({
 
     previousLaunchTypeRef.current = launchType;
     if (launchType === "sms") {
+      // SMS starts from a blank body — the email default template (Unlayer
+      // design / newsletter boilerplate) must not carry into the SMS body.
+      setBodyPlaintext("");
+      setBodyHtml("");
+      setBodyDesignJson(null);
       setCriteria((current) => {
         if (current.initialFilter === "specific") {
           return {
