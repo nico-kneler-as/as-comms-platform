@@ -11,15 +11,20 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import type { PostmarkSenderStatus } from "@as-comms/contracts";
+import type { LaunchType, PostmarkSenderStatus } from "@as-comms/contracts";
 
-import type { CampaignSenderOption } from "../../_lib/audience-data-source";
+import type {
+  ActiveSmsSender,
+  CampaignSenderOption,
+} from "../../_lib/audience-data-source";
 import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface NameAndSenderStepProps {
+  readonly launchType: LaunchType;
   readonly name: string;
   readonly fromEmail: string | null;
   readonly senderOptions: readonly CampaignSenderOption[];
+  readonly activeSmsSender: ActiveSmsSender | null;
   readonly frozen: boolean;
   readonly onNameChange: (value: string) => void;
   readonly onFromEmailChange: (value: string | null) => void;
@@ -41,8 +46,7 @@ const SENDER_STATUS_META: Record<
     label: "verified",
     chipLabel: "Verified",
     selectable: true,
-    chipClassName:
-      "border-emerald-200 bg-emerald-50 text-emerald-800",
+    chipClassName: "border-emerald-200 bg-emerald-50 text-emerald-800",
     tooltip: null,
   },
   pending: {
@@ -66,27 +70,36 @@ const SENDER_STATUS_META: Record<
     chipLabel: "Unverified",
     selectable: false,
     chipClassName: "border-slate-200 bg-slate-100 text-slate-700",
-    tooltip: "Postmark rejected this sender. Check Settings -> Projects to retry.",
+    tooltip:
+      "Postmark rejected this sender. Check Settings -> Projects to retry.",
   },
 };
 
 export function NameAndSenderStep({
+  launchType,
   name,
   fromEmail,
   senderOptions,
+  activeSmsSender,
   frozen,
   onNameChange,
   onFromEmailChange,
   onBack,
   onContinue,
 }: NameAndSenderStepProps) {
+  const isSmsLaunch = launchType === "sms";
   const canContinue =
-    (fromEmail?.trim().length ?? 0) > 0 && name.trim().length > 0;
+    name.trim().length > 0 &&
+    (isSmsLaunch
+      ? activeSmsSender !== null
+      : (fromEmail?.trim().length ?? 0) > 0);
   const groupedSenderOptions = [
     {
       id: "project",
       label: "Project aliases",
-      options: senderOptions.filter((option) => option.senderType === "project"),
+      options: senderOptions.filter(
+        (option) => option.senderType === "project",
+      ),
     },
     {
       id: "org",
@@ -189,8 +202,12 @@ export function NameAndSenderStep({
   return (
     <section className="flex h-full flex-col">
       <StepHeader
-        title="Name and sender"
-        description="Set the internal broadcast name and choose the sender that recipients will see in their inbox."
+        title={isSmsLaunch ? "Name and SMS sender" : "Name and sender"}
+        description={
+          isSmsLaunch
+            ? "Set the internal broadcast name and confirm the active SMS sender the platform will use."
+            : "Set the internal broadcast name and choose the sender that recipients will see in their inbox."
+        }
       />
 
       <div className="space-y-4">
@@ -213,26 +230,54 @@ export function NameAndSenderStep({
           </p>
         </SectionPanel>
 
-        <SectionPanel label="Sending account" bodyClassName="p-4">
-          <TooltipProvider delayDuration={200}>
-            <div className="space-y-2">
-              {groupedSenderOptions.map((group) => (
-                <div key={group.id} className="space-y-2">
-                  <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-                    {group.label}
-                  </p>
-                  {group.options.map((option) => renderSenderOption(option))}
-                </div>
-              ))}
-            </div>
-          </TooltipProvider>
+        <SectionPanel
+          label={isSmsLaunch ? "SMS sender" : "Sending account"}
+          bodyClassName="p-4"
+        >
+          {isSmsLaunch ? (
+            activeSmsSender === null ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-[12px] leading-relaxed text-rose-800">
+                No active SMS sender configured. Add or activate one in Settings
+                before continuing.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                  Sends from
+                </p>
+                <p className="mt-1 text-[14px] font-semibold text-slate-900">
+                  {activeSmsSender.displayName}
+                </p>
+                <p className="mt-1 font-mono text-[12px] text-slate-600">
+                  {activeSmsSender.phoneE164}
+                </p>
+              </div>
+            )
+          ) : (
+            <TooltipProvider delayDuration={200}>
+              <div className="space-y-2">
+                {groupedSenderOptions.map((group) => (
+                  <div key={group.id} className="space-y-2">
+                    <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                      {group.label}
+                    </p>
+                    {group.options.map((option) => renderSenderOption(option))}
+                  </div>
+                ))}
+              </div>
+            </TooltipProvider>
+          )}
         </SectionPanel>
 
         <p className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3 text-[12px] leading-relaxed text-slate-600">
-          <Info className="mt-0.5 size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+          <Info
+            className="mt-0.5 size-3.5 shrink-0 text-slate-500"
+            aria-hidden="true"
+          />
           <span>
-            Replies route to the same address. To add a new verified sender, ask
-            an admin in Settings.
+            {isSmsLaunch
+              ? "SMS replies route through the same active sender. Change the configured number in Settings."
+              : "Replies route to the same address. To add a new verified sender, ask an admin in Settings."}
           </span>
         </p>
       </div>

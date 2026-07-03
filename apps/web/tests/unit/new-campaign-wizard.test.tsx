@@ -154,11 +154,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     readonly onBack: () => void;
     readonly onContinue: () => void;
     readonly onInitialFilterChange: (
-      value:
-        | "project_status"
-        | "specific"
-        | "all_approved"
-        | "all_available",
+      value: "project_status" | "specific" | "all_approved" | "all_available",
     ) => void;
     readonly onVolunteerSearchQueryChange: (value: string) => void;
     readonly onVolunteerToggle: (id: string) => void;
@@ -182,7 +178,9 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     <section data-testid="audience-step">
       <div>AudienceBuilderStep</div>
       <div data-testid="audience-mode">{criteria.initialFilter ?? "unset"}</div>
-      <div data-testid="audience-available-modes">{availableModes.join(",")}</div>
+      <div data-testid="audience-available-modes">
+        {availableModes.join(",")}
+      </div>
       <input
         aria-label="volunteer-search"
         value={volunteerSearchQuery}
@@ -462,6 +460,11 @@ function buildBootstrap(
         senderType: "project",
       },
     ],
+    activeSmsSender: {
+      id: "sms-sender-1",
+      displayName: "Adventure Scientists",
+      phoneE164: "+14065550199",
+    },
     statuses: ["Waitlist", "Applied"] as readonly ExpeditionMemberStatus[],
     ...overrides,
   };
@@ -482,15 +485,15 @@ function buildDraft(
     bodyHtmlTemplate: "<p>Hello {{firstName}}</p>",
     bodyTextTemplate: "Hello {{firstName}}",
     preheader: "Preview line",
-      audienceCriteria: {
-        projectId: "project-1",
-        projectIds: ["project-1"],
-        statuses: [],
-        contactIds: ["contact-1"],
-        newsletterSubscriberIds: [],
-        expeditionIds: [],
-        lastActivityWindow: "all_time",
-        hasReplied: "either",
+    audienceCriteria: {
+      projectId: "project-1",
+      projectIds: ["project-1"],
+      statuses: [],
+      contactIds: ["contact-1"],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
       hasClicked: "either",
     },
     audienceSize: 2,
@@ -1032,16 +1035,14 @@ describe("NewCampaignWizard", () => {
     await click("toggle-row-11111111-1111-1111-1111-111111111111");
     await click("audience-continue");
 
-    const savedInput = saveCampaignWizardDraftActionMock.mock.calls.at(-1)?.[0] as
-      | SaveActionInput
-      | undefined;
+    const savedInput = saveCampaignWizardDraftActionMock.mock.calls.at(
+      -1,
+    )?.[0] as SaveActionInput | undefined;
     expect(savedInput).toMatchObject({
       kind: "newsletter",
       audienceCriteria: {
         initialFilter: "specific",
-        newsletterSubscriberIds: [
-          "11111111-1111-1111-1111-111111111111",
-        ],
+        newsletterSubscriberIds: ["11111111-1111-1111-1111-111111111111"],
       },
     });
   });

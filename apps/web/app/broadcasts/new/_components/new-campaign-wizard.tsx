@@ -33,7 +33,8 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "launch",
     title: "Launch type",
-    subtitle: "Pick Normal Email for Markdown sends or HTML Email for the drag-and-drop composer.",
+    subtitle:
+      "Pick Normal Email for Markdown sends, HTML Email for the drag-and-drop composer, or SMS for plain-text broadcasts.",
   },
   {
     id: "setup",
@@ -496,19 +497,23 @@ export function NewCampaignWizard({
     return await new Promise<boolean>((resolve) => {
       startSaveTransition(async () => {
         setSaveState("saving");
+        const isSmsLaunch = launchType === "sms";
         const result = await saveCampaignWizardDraftAction({
           runId: draft.runId,
           launchType,
-          kind,
+          kind: isSmsLaunch ? "project" : kind,
           name: name.trim().length === 0 ? null : name.trim(),
-          fromEmail,
-          replyToEmail,
-          subjectTemplate: subject.trim().length === 0 ? null : subject,
-          bodyDesignJson,
-          bodyHtmlTemplate: bodyHtml.trim().length === 0 ? null : bodyHtml,
+          fromEmail: isSmsLaunch ? null : fromEmail,
+          replyToEmail: isSmsLaunch ? null : replyToEmail,
+          subjectTemplate:
+            isSmsLaunch || subject.trim().length === 0 ? null : subject,
+          bodyDesignJson: isSmsLaunch ? null : bodyDesignJson,
+          bodyHtmlTemplate:
+            isSmsLaunch || bodyHtml.trim().length === 0 ? null : bodyHtml,
           bodyTextTemplate:
             bodyPlaintext.trim().length === 0 ? null : bodyPlaintext,
-          preheader: preheader.trim().length === 0 ? null : preheader,
+          preheader:
+            isSmsLaunch || preheader.trim().length === 0 ? null : preheader,
           audienceCriteria: toActionCriteria(criteria),
           audienceSize: countState.hasAppliedFilters ? countState.count : null,
         });
@@ -522,15 +527,30 @@ export function NewCampaignWizard({
 
         savedFingerprintRef.current = JSON.stringify({
           launchType: result.data.launchType,
-          kind: result.data.kind,
+          kind: result.data.launchType === "sms" ? "project" : result.data.kind,
           name: result.data.name,
-          fromEmail: result.data.fromEmail,
-          replyToEmail: result.data.replyToEmail,
-          subject: result.data.subjectTemplate ?? "",
-          preheader: result.data.preheader ?? "",
+          fromEmail:
+            result.data.launchType === "sms" ? null : result.data.fromEmail,
+          replyToEmail:
+            result.data.launchType === "sms" ? null : result.data.replyToEmail,
+          subject:
+            result.data.launchType === "sms"
+              ? ""
+              : (result.data.subjectTemplate ?? ""),
+          preheader:
+            result.data.launchType === "sms"
+              ? ""
+              : (result.data.preheader ?? ""),
           bodyPlaintext: result.data.bodyTextTemplate ?? "",
-          bodyHtml: result.data.bodyHtmlTemplate ?? "",
-          bodyDesignJson: JSON.stringify(result.data.bodyDesignJson ?? null),
+          bodyHtml:
+            result.data.launchType === "sms"
+              ? ""
+              : (result.data.bodyHtmlTemplate ?? ""),
+          bodyDesignJson: JSON.stringify(
+            result.data.launchType === "sms"
+              ? null
+              : (result.data.bodyDesignJson ?? null),
+          ),
           criteria: {
             ...result.data.audienceCriteria,
             projectId:
@@ -642,7 +662,9 @@ export function NewCampaignWizard({
           }
         : {
             contactIds: (current.contactIds ?? []).includes(contactId)
-              ? (current.contactIds ?? []).filter((value) => value !== contactId)
+              ? (current.contactIds ?? []).filter(
+                  (value) => value !== contactId,
+                )
               : [...(current.contactIds ?? []), contactId],
           }),
     }));
@@ -776,9 +798,11 @@ export function NewCampaignWizard({
 
             {currentStep === 1 ? (
               <NameAndSenderStep
+                launchType={launchType}
                 name={name}
                 fromEmail={fromEmail}
                 senderOptions={bootstrap.senderOptions}
+                activeSmsSender={bootstrap.activeSmsSender}
                 frozen={frozen}
                 onNameChange={setName}
                 onFromEmailChange={setFromEmail}
@@ -899,7 +923,7 @@ export function NewCampaignWizard({
                   bootstrap,
                 )}
                 runName={name.trim().length === 0 ? null : name}
-                fromEmail={fromEmail}
+                fromEmail={launchType === "sms" ? null : fromEmail}
                 subject={composePreview?.sample?.subject ?? subject}
                 selectedSenderVerified={selectedSenderVerified}
                 audienceSize={composePreview?.audienceSize ?? countState.count}

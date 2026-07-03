@@ -24,11 +24,12 @@ import { ComposerToolbar } from "@/app/inbox/_components/composer-toolbar";
 
 import type { LaunchType } from "@as-comms/contracts";
 import { prepareUploadedHtml } from "@as-comms/domain/html-import";
+import {
+  DEFAULT_SMS_OPT_OUT_FOOTER,
+  smsMetrics,
+} from "@as-comms/domain/sms-segments";
 
-import type {
-  UnlayerHostHandle,
-  UnlayerHostProps,
-} from "./unlayer-host";
+import type { UnlayerHostHandle, UnlayerHostProps } from "./unlayer-host";
 import { StepHeader, WizardFooter } from "./wizard-shell";
 
 const MERGE_TOKENS = [
@@ -36,19 +37,18 @@ const MERGE_TOKENS = [
   "{{projectName}}",
   "{{aliasEmail}}",
 ] as const;
+const SMS_MERGE_TOKENS = ["{{firstName}}", "{{email}}"] as const;
 
 const loadUnlayerHost = async (): Promise<
   ComponentType<UnlayerHostProps & RefAttributes<UnlayerHostHandle>>
-> =>
-  (await import("./unlayer-host")).UnlayerHost;
+> => (await import("./unlayer-host")).UnlayerHost;
 
-const UnlayerHost = dynamic<UnlayerHostProps & RefAttributes<UnlayerHostHandle>>(
-  loadUnlayerHost,
-  {
-    ssr: false,
-    loading: () => <EditorLoadingSkeleton />,
-  },
-);
+const UnlayerHost = dynamic<
+  UnlayerHostProps & RefAttributes<UnlayerHostHandle>
+>(loadUnlayerHost, {
+  ssr: false,
+  loading: () => <EditorLoadingSkeleton />,
+});
 
 interface ComposeStepProps {
   readonly launchType: LaunchType;
@@ -87,8 +87,7 @@ function readInitialHtmlComposeMode(input: {
     return "editor";
   }
 
-  const looksLikeFullDocument =
-    /<(?:!doctype|html\b)/iu.test(input.bodyHtml);
+  const looksLikeFullDocument = /<(?:!doctype|html\b)/iu.test(input.bodyHtml);
 
   return input.savedDesign === null &&
     input.bodyHtml.trim().length > 0 &&
@@ -101,8 +100,8 @@ function htmlToPlaintext(html: string): string {
   const fromDom =
     typeof DOMParser === "undefined"
       ? html
-      : (new DOMParser().parseFromString(html, "text/html").body.textContent ||
-        "");
+      : new DOMParser().parseFromString(html, "text/html").body.textContent ||
+        "";
 
   return fromDom.replace(/\s+/gu, " ").trim();
 }
@@ -170,21 +169,27 @@ export function ComposeStep({
   );
   const [uploadedHtmlValue, setUploadedHtmlValue] = useState("");
   const [uploadWarnings, setUploadWarnings] = useState<readonly string[]>([]);
+  const isSmsLaunch = launchType === "sms";
   const subjectLen = subject.length;
   const subjectOverLimit = subjectLen > 70;
   const wordCount = bodyPlaintext.trim()
     ? bodyPlaintext.trim().split(/\s+/u).length
     : 0;
-  const canContinue =
-    subject.trim().length > 0 &&
-    (launchType === "normal_email"
-      ? bodyPlaintext.trim().length > 0
-      : htmlComposeMode === "upload"
-        ? bodyHtml.trim().length > 0
-        : bodyPlaintext.trim().length > 0 && htmlEditorReady);
+  const smsBodyWithFooter = `${bodyPlaintext} ${DEFAULT_SMS_OPT_OUT_FOOTER}`;
+  const smsSegmentMetrics = smsMetrics(smsBodyWithFooter);
+  const canContinue = isSmsLaunch
+    ? bodyPlaintext.trim().length > 0
+    : subject.trim().length > 0 &&
+      (launchType === "normal_email"
+        ? bodyPlaintext.trim().length > 0
+        : htmlComposeMode === "upload"
+          ? bodyHtml.trim().length > 0
+          : bodyPlaintext.trim().length > 0 && htmlEditorReady);
 
   useEffect(() => {
-    setHtmlComposeMode(readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }));
+    setHtmlComposeMode(
+      readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }),
+    );
   }, [bodyHtml, launchType, savedDesign]);
 
   useEffect(() => {
@@ -213,71 +218,115 @@ export function ComposeStep({
     <section className="flex h-full flex-col">
       <StepHeader
         title={
-          launchType === "html_email"
-            ? "Compose your HTML email"
-            : "Write your email"
+          isSmsLaunch
+            ? "Write your SMS"
+            : launchType === "html_email"
+              ? "Compose your HTML email"
+              : "Write your email"
         }
         description={
-          launchType === "html_email"
-            ? htmlComposeMode === "upload"
-              ? "Upload or paste a full HTML document. We store the translated HTML directly, surface import warnings, and append the platform footer during preview and send."
-              : "Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step."
-            : "Draft the subject, preheader, and body. The rendered email preview comes next."
+          isSmsLaunch
+            ? "Draft the SMS body. Segment count includes the automatic opt-out footer the platform appends at send time."
+            : launchType === "html_email"
+              ? htmlComposeMode === "upload"
+                ? "Upload or paste a full HTML document. We store the translated HTML directly, surface import warnings, and append the platform footer during preview and send."
+                : "Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step."
+              : "Draft the subject, preheader, and body. The rendered email preview comes next."
         }
       />
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
-          <label
-            htmlFor="campaign-subject"
-            className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-          >
-            Subject
-          </label>
-          <Input
-            id="campaign-subject"
-            value={subject}
-            onChange={(event) => {
-              onSubjectChange(event.currentTarget.value);
-            }}
-            disabled={frozen}
-            placeholder="What recipients see in their inbox"
-            className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
-            aria-label="Broadcast subject"
-          />
-          <span
-            className={
-              subjectOverLimit
-                ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
-                : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
-            }
-          >
-            {subjectLen}/70
-          </span>
-        </div>
-
-        <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
-          <label
-            htmlFor="campaign-preheader"
-            className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-          >
-            Preview
-          </label>
-          <Input
-            id="campaign-preheader"
-            value={preheader}
-            onChange={(event) => {
-              onPreheaderChange(event.currentTarget.value);
-            }}
-            disabled={frozen}
-            placeholder="Preheader text - shown next to the subject in most clients"
-            className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
-            aria-label="Broadcast preheader"
-          />
-        </div>
-
-        {launchType === "html_email" ? (
+        {isSmsLaunch ? (
           <>
+            <div className="relative min-h-[320px] px-4 pb-3 pt-2">
+              <textarea
+                id="campaign-sms-body"
+                rows={8}
+                value={bodyPlaintext}
+                onChange={(event) => {
+                  onBodyChange({
+                    bodyDesignJson: null,
+                    bodyPlaintext: event.currentTarget.value,
+                    bodyHtml: "",
+                  });
+                }}
+                disabled={frozen}
+                placeholder="Write your SMS"
+                className="h-full min-h-[280px] w-full resize-none border-0 bg-white px-0 py-3 text-sm leading-6 text-slate-900 shadow-none focus:outline-none focus:ring-0"
+                aria-label="Broadcast SMS body"
+              />
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11.5px] tabular-nums text-slate-600">
+                <span>{smsSegmentMetrics.length} chars</span>
+                <span>
+                  {smsSegmentMetrics.segments} segment
+                  {smsSegmentMetrics.segments === 1 ? "" : "s"}
+                </span>
+                <span>{smsSegmentMetrics.encoding}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                <span>
+                  '{DEFAULT_SMS_OPT_OUT_FOOTER}' is added automatically.
+                </span>
+                <span>
+                  Supported merge tokens: {SMS_MERGE_TOKENS.join(", ")}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : launchType === "html_email" ? (
+          <>
+            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
+              <label
+                htmlFor="campaign-subject"
+                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+              >
+                Subject
+              </label>
+              <Input
+                id="campaign-subject"
+                value={subject}
+                onChange={(event) => {
+                  onSubjectChange(event.currentTarget.value);
+                }}
+                disabled={frozen}
+                placeholder="What recipients see in their inbox"
+                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
+                aria-label="Broadcast subject"
+              />
+              <span
+                className={
+                  subjectOverLimit
+                    ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
+                    : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
+                }
+              >
+                {subjectLen}/70
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
+              <label
+                htmlFor="campaign-preheader"
+                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+              >
+                Preview
+              </label>
+              <Input
+                id="campaign-preheader"
+                value={preheader}
+                onChange={(event) => {
+                  onPreheaderChange(event.currentTarget.value);
+                }}
+                disabled={frozen}
+                placeholder="Preheader text - shown next to the subject in most clients"
+                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
+                aria-label="Broadcast preheader"
+              />
+            </div>
+
             <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
               <div
                 aria-label="HTML compose mode"
@@ -358,7 +407,9 @@ export function ComposeStep({
                             syncTextareaValue: true,
                           });
                         } catch {
-                          setUploadWarnings(["Unable to read the uploaded HTML file."]);
+                          setUploadWarnings([
+                            "Unable to read the uploaded HTML file.",
+                          ]);
                         }
                       })();
                     }}
@@ -415,80 +466,132 @@ export function ComposeStep({
             )}
           </>
         ) : (
-          <RichTextComposerEditor
-            bodyPlaintext={bodyPlaintext}
-            errorMessage={undefined}
-            showToolbar={false}
-            onChange={(value) => {
-              onBodyChange({
-                bodyDesignJson: null,
-                bodyPlaintext: value.bodyPlaintext,
-                bodyHtml: value.bodyHtml,
-              });
-            }}
-            onClearErrors={() => undefined}
-            frameClassName="overflow-hidden rounded-none border-0"
-            contentClassName="min-h-[300px] bg-white px-4 py-3 text-sm leading-6"
-            bottomSlot={
-              selectedAliasSignature.length > 0 ? (
-                <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
-                  {selectedAliasSignature}
-                </div>
-              ) : undefined
-            }
-            toolbarFooter={({ activeCommands, onCommand, insertText }) => (
-              <div className="border-t border-slate-200 bg-slate-50/70">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
-                  <div className="flex flex-wrap items-center gap-1">
-                    <ComposerToolbar
-                      activeCommands={activeCommands}
-                      onCommand={onCommand}
-                    />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={frozen}
-                          aria-label="Insert merge token"
-                          className="size-7"
-                        >
-                          <Braces className="size-3.5" aria-hidden="true" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        {MERGE_TOKENS.map((token) => (
-                          <DropdownMenuItem
-                            key={token}
-                            onClick={() => {
-                              insertText(token);
-                            }}
-                          >
-                            {token}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+          <>
+            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
+              <label
+                htmlFor="campaign-subject"
+                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+              >
+                Subject
+              </label>
+              <Input
+                id="campaign-subject"
+                value={subject}
+                onChange={(event) => {
+                  onSubjectChange(event.currentTarget.value);
+                }}
+                disabled={frozen}
+                placeholder="What recipients see in their inbox"
+                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
+                aria-label="Broadcast subject"
+              />
+              <span
+                className={
+                  subjectOverLimit
+                    ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
+                    : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
+                }
+              >
+                {subjectLen}/70
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
+              <label
+                htmlFor="campaign-preheader"
+                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+              >
+                Preview
+              </label>
+              <Input
+                id="campaign-preheader"
+                value={preheader}
+                onChange={(event) => {
+                  onPreheaderChange(event.currentTarget.value);
+                }}
+                disabled={frozen}
+                placeholder="Preheader text - shown next to the subject in most clients"
+                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
+                aria-label="Broadcast preheader"
+              />
+            </div>
+
+            <RichTextComposerEditor
+              bodyPlaintext={bodyPlaintext}
+              errorMessage={undefined}
+              showToolbar={false}
+              onChange={(value) => {
+                onBodyChange({
+                  bodyDesignJson: null,
+                  bodyPlaintext: value.bodyPlaintext,
+                  bodyHtml: value.bodyHtml,
+                });
+              }}
+              onClearErrors={() => undefined}
+              frameClassName="overflow-hidden rounded-none border-0"
+              contentClassName="min-h-[300px] bg-white px-4 py-3 text-sm leading-6"
+              bottomSlot={
+                selectedAliasSignature.length > 0 ? (
+                  <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+                    {selectedAliasSignature}
                   </div>
-                  <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
-                    {wordCount.toLocaleString()}{" "}
-                    <span className="text-slate-400">
-                      word{wordCount === 1 ? "" : "s"}
+                ) : undefined
+              }
+              toolbarFooter={({ activeCommands, onCommand, insertText }) => (
+                <div className="border-t border-slate-200 bg-slate-50/70">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <ComposerToolbar
+                        activeCommands={activeCommands}
+                        onCommand={onCommand}
+                      />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={frozen}
+                            aria-label="Insert merge token"
+                            className="size-7"
+                          >
+                            <Braces className="size-3.5" aria-hidden="true" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          {MERGE_TOKENS.map((token) => (
+                            <DropdownMenuItem
+                              key={token}
+                              onClick={() => {
+                                insertText(token);
+                              }}
+                            >
+                              {token}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
+                      {wordCount.toLocaleString()}{" "}
+                      <span className="text-slate-400">
+                        word{wordCount === 1 ? "" : "s"}
+                      </span>
                     </span>
-                  </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[11px] text-slate-500">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Info className="size-3" aria-hidden="true" />
+                      AS footer and unsubscribe links are appended
+                      automatically.
+                    </span>
+                    <span className="ml-auto text-slate-500">
+                      Preview and send a test on the next step.
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[11px] text-slate-500">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Info className="size-3" aria-hidden="true" />
-                    AS footer and unsubscribe links are appended automatically.
-                  </span>
-                  <span className="ml-auto text-slate-500">
-                    Preview and send a test on the next step.
-                  </span>
-                </div>
-              </div>
-            )}
-          />
+              )}
+            />
+          </>
         )}
       </div>
 

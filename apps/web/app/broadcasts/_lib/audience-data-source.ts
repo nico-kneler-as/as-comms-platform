@@ -66,6 +66,7 @@ export interface AudienceBuilderBootstrap {
   readonly expeditions: readonly CampaignExpeditionOption[];
   readonly statuses: readonly ExpeditionMemberStatus[];
   readonly senderOptions: readonly CampaignSenderOption[];
+  readonly activeSmsSender: ActiveSmsSender | null;
 }
 
 export interface AudiencePreviewRow {
@@ -96,6 +97,12 @@ export interface CampaignSenderOption {
   readonly connectedToProjectId: string | null;
   readonly status: PostmarkSenderStatus;
   readonly senderType: CampaignSenderType;
+}
+
+export interface ActiveSmsSender {
+  readonly id: string;
+  readonly displayName: string;
+  readonly phoneE164: string;
 }
 
 export interface AudienceVolunteerSearchRow {
@@ -320,7 +327,9 @@ function readAudienceMode(
 }
 
 function readAudienceRecipientKey(member: AudienceMember): string {
-  return member.contactId ?? member.newsletterSubscriberId ?? member.frozenEmail;
+  return (
+    member.contactId ?? member.newsletterSubscriberId ?? member.frozenEmail
+  );
 }
 
 function normalizeAliasHint(address: string | null | undefined): string | null {
@@ -694,16 +703,14 @@ async function loadSpecificContactsAudience(
         .filter((projectId): projectId is string => projectId !== null),
     ),
   ];
-  const projects = await runtime.repositories.projectDimensions.listByIds(
-    projectIds,
-  );
+  const projects =
+    await runtime.repositories.projectDimensions.listByIds(projectIds);
   const projectsById = new Map(
     projects.map((project) => [project.projectId, project] as const),
   );
 
-  const events = await runtime.repositories.canonicalEvents.listByContactIds(
-    contactIds,
-  );
+  const events =
+    await runtime.repositories.canonicalEvents.listByContactIds(contactIds);
   const eventTypesByContact = new Map<string, string[]>(
     contactIds.map((contactId) => [contactId, []]),
   );
@@ -787,7 +794,10 @@ export async function resolveStoredCampaignAudience(input: {
 }): Promise<readonly AudienceMember[]> {
   if (input.kind === "newsletter") {
     if ((input.criteria.newsletterSubscriberIds?.length ?? 0) > 0) {
-      return loadSpecificNewsletterSubscribersAudience(input.criteria, input.at);
+      return loadSpecificNewsletterSubscribersAudience(
+        input.criteria,
+        input.at,
+      );
     }
     if ((input.criteria.contactIds?.length ?? 0) > 0) {
       return loadSpecificContactsAudience(input.criteria, input.at);
@@ -960,17 +970,29 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     })
     .sort((left, right) => left.projectName.localeCompare(right.projectName));
   const orgSenderOptions = (await listEnabledOrgSenders())
-    .map((sender) => ({
-      projectId: null,
-      projectName: sender.label,
-      projectAliasLabel: sender.label,
-      email: sender.email,
-      connectedToProjectId: null,
-      status: "verified",
-      senderType: "org",
-    }) satisfies CampaignSenderOption)
+    .map(
+      (sender) =>
+        ({
+          projectId: null,
+          projectName: sender.label,
+          projectAliasLabel: sender.label,
+          email: sender.email,
+          connectedToProjectId: null,
+          status: "verified",
+          senderType: "org",
+        }) satisfies CampaignSenderOption,
+    )
     .sort((left, right) => left.projectName.localeCompare(right.projectName));
   const senderOptions = [...projectSenderOptions, ...orgSenderOptions];
+  const activeSmsSender =
+    (await runtime.settings.smsSenders.listActive()).map(
+      (sender) =>
+        ({
+          id: sender.id,
+          displayName: sender.displayName,
+          phoneE164: sender.phoneE164,
+        }) satisfies ActiveSmsSender,
+    )[0] ?? null;
 
   if (runtime.connection === null) {
     return {
@@ -978,6 +1000,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       expeditions: [],
       statuses: expeditionMemberStatusValues,
       senderOptions,
+      activeSmsSender,
     };
   }
 
@@ -1011,6 +1034,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     })),
     statuses: expeditionMemberStatusValues,
     senderOptions,
+    activeSmsSender,
   };
 }
 
@@ -1215,7 +1239,9 @@ export async function loadComposePreviewAction(input: {
       scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail:
-        input.fromEmail ?? sample?.frozenAliasEmail ?? "preview@example.invalid",
+        input.fromEmail ??
+        sample?.frozenAliasEmail ??
+        "preview@example.invalid",
     });
     const rendered = mergeRenderer.render(
       {
