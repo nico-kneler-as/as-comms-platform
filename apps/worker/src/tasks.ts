@@ -13,6 +13,11 @@ import {
   type CampaignSendTaskDependencies,
 } from "./jobs/campaign-send/index.js";
 import {
+  createSmsBroadcastSendTask,
+  smsBroadcastSendJobName,
+  type SmsBroadcastSendTaskDependencies,
+} from "./jobs/sms-broadcast-send/index.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -90,6 +95,7 @@ export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
     readonly campaignSend?: CampaignSendTaskDependencies;
+    readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
@@ -115,6 +121,13 @@ export function createTaskList(
       ? {}
       : {
           [campaignSendJobName]: createCampaignSendTask(input.campaignSend),
+        }),
+    ...(input?.smsBroadcastSend === undefined
+      ? {}
+      : {
+          [smsBroadcastSendJobName]: createSmsBroadcastSendTask(
+            input.smsBroadcastSend,
+          ),
         }),
     ...(input?.campaignEventsTailFinalize === undefined
       ? {}

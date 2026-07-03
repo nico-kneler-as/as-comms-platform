@@ -203,6 +203,7 @@ function createRepositoryBundle(input: {
       findByTwilioSid: () => Promise.resolve(null),
       findLatestByStatuses: () => Promise.resolve(null),
       hasInboundForPhone: () => Promise.resolve(false),
+      listByBroadcastRun: () => Promise.resolve([]),
       listByContact: () => Promise.resolve([]),
       updateDelivery: () => Promise.resolve(null),
       updateSendStatus: () => Promise.resolve(null),

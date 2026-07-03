@@ -26,14 +26,17 @@ import {
   formatOrgAddress,
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
+  renderSmsBroadcast,
   renderBroadcastEmail,
 } from "@as-comms/domain";
+import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { createPostmarkClient } from "@as-comms/integrations";
 import { z } from "zod";
 
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
+import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import { readWebEnv } from "@/src/server/env";
 import {
   getStage1WebRuntime,
@@ -69,6 +72,10 @@ interface SmsBroadcastSendNowData {
   readonly selected: number;
   readonly deduplicatedByPhone: number;
   readonly unreachable: Readonly<Record<string, number>>;
+}
+
+interface SmsBroadcastTestSendData {
+  readonly segments: number;
 }
 
 const recipientFilterSchema = z.enum([
@@ -918,6 +925,81 @@ export async function sendSmsBroadcastNow(rawInput: {
         ? error.message
         : "Unable to start the SMS broadcast send.",
       true,
+    );
+  }
+}
+
+export async function sendSmsBroadcastTest(rawInput: {
+  readonly runId: string;
+  readonly toPhoneE164: string;
+}): Promise<UiSuccess<SmsBroadcastTestSendData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const parsed = z
+      .object({
+        runId: z.string().trim().min(1),
+        toPhoneE164: z.string().trim().min(1),
+      })
+      .parse(rawInput);
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.launchType !== "sms") {
+      return errorResult(
+        "campaign_sms_test_invalid_launch_type",
+        "This broadcast is not an SMS broadcast.",
+      );
+    }
+    if (
+      run.bodyTextTemplate === null ||
+      run.bodyTextTemplate.trim().length === 0
+    ) {
+      return errorResult(
+        "campaign_sms_test_missing_body",
+        "Add SMS body copy before sending a test.",
+      );
+    }
+
+    const normalizedPhone = tryNormalizePhoneE164(parsed.toPhoneE164);
+    if (normalizedPhone === null) {
+      return errorResult(
+        "campaign_sms_test_invalid_phone",
+        "Enter a valid phone number.",
+      );
+    }
+
+    const rendered = renderSmsBroadcast({
+      template: run.bodyTextTemplate,
+      context: {
+        firstName: null,
+        email: null,
+      },
+    });
+    const sendResult = await sendSmsViaTwilio({
+      toE164: normalizedPhone,
+      body: rendered.body,
+    });
+
+    return {
+      ok: true,
+      data: {
+        segments: sendResult.segments,
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_sms_test_send_failed",
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : "Unable to send the SMS broadcast test.",
     );
   }
 }
