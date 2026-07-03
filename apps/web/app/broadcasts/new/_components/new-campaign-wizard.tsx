@@ -15,7 +15,13 @@ import type {
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
 import { saveCampaignWizardDraftAction } from "../../_lib/audience-data-source";
-import { schedule, sendNow, testSend } from "../../actions";
+import {
+  schedule,
+  sendNow,
+  sendSmsBroadcastNow,
+  sendSmsBroadcastTest,
+  testSend,
+} from "../../actions";
 import {
   AudienceBuilderStep,
   type AudienceInitialFilter,
@@ -441,7 +447,9 @@ export function NewCampaignWizard({
     volunteerSearchErrorMessage,
     setVolunteerSearchErrorMessage,
     composePreview,
+    smsPreview,
     composePreviewPending,
+    smsPreviewPending,
     setSampleIndex,
     setSaveState,
     setSaveMessage,
@@ -450,6 +458,8 @@ export function NewCampaignWizard({
     setTestSendOpen,
     testRecipientEmail,
     setTestRecipientEmail,
+    testPhoneE164,
+    setTestPhoneE164,
     affectedContactsOpen,
     setAffectedContactsOpen,
     sendMode,
@@ -684,6 +694,27 @@ export function NewCampaignWizard({
     }
 
     startTestSendTransition(async () => {
+      if (launchType === "sms") {
+        const result = await sendSmsBroadcastTest({
+          runId: draft.runId,
+          toPhoneE164: testPhoneE164,
+        });
+        if (!result.ok) {
+          setToast({
+            tone: "error",
+            message: result.message,
+          });
+          return;
+        }
+
+        setToast({
+          tone: "success",
+          message: `Test sent to ${testPhoneE164} (${String(result.data.segments)} segments).`,
+        });
+        setTestSendOpen(false);
+        return;
+      }
+
       const result = await testSend(draft.runId, testRecipientEmail);
       if (!result.ok) {
         setToast({
@@ -708,6 +739,29 @@ export function NewCampaignWizard({
     }
 
     startSubmitTransition(async () => {
+      if (launchType === "sms") {
+        const result = await sendSmsBroadcastNow({ runId: draft.runId });
+        if (!result.ok) {
+          setToast({
+            tone: "error",
+            message: result.message,
+          });
+          return;
+        }
+
+        setRunState("scheduled");
+        setScheduledAt(new Date().toISOString());
+        setConfirmOpen(false);
+        setCurrentStep(5);
+        setToast({
+          tone: "success",
+          message: `Sending ${String(result.data.frozen)} messages; ${String(
+            Math.max(result.data.selected - result.data.frozen, 0),
+          )} suppressed or unreachable.`,
+        });
+        return;
+      }
+
       const result =
         sendMode === "later"
           ? await (() => {
@@ -883,11 +937,18 @@ export function NewCampaignWizard({
                 subject={subject}
                 preheader={preheader}
                 previewData={composePreview}
-                previewLoading={composePreviewPending}
+                smsPreviewData={smsPreview}
+                previewLoading={
+                  launchType === "sms"
+                    ? smsPreviewPending
+                    : composePreviewPending
+                }
                 warningDismissed={warningDismissed}
                 affectedContactsOpen={affectedContactsOpen}
                 testSendOpen={testSendOpen}
-                testRecipientEmail={testRecipientEmail}
+                testRecipientValue={
+                  launchType === "sms" ? testPhoneE164 : testRecipientEmail
+                }
                 testSendPending={testSendPending}
                 selectedSenderVerified={selectedSenderVerified}
                 frozen={frozen}
@@ -908,7 +969,14 @@ export function NewCampaignWizard({
                 }}
                 onAffectedContactsOpenChange={setAffectedContactsOpen}
                 onTestSendOpenChange={setTestSendOpen}
-                onTestRecipientEmailChange={setTestRecipientEmail}
+                onTestRecipientValueChange={(value) => {
+                  if (launchType === "sms") {
+                    setTestPhoneE164(value);
+                    return;
+                  }
+
+                  setTestRecipientEmail(value);
+                }}
                 onSendTest={() => {
                   void handleTestSend();
                 }}
@@ -917,6 +985,7 @@ export function NewCampaignWizard({
 
             {currentStep === 5 ? (
               <ReviewStep
+                launchType={launchType}
                 projectChipLabel={readProjectChipLabel(
                   kind,
                   criteria,
@@ -927,6 +996,7 @@ export function NewCampaignWizard({
                 subject={composePreview?.sample?.subject ?? subject}
                 selectedSenderVerified={selectedSenderVerified}
                 audienceSize={composePreview?.audienceSize ?? countState.count}
+                smsPreviewData={smsPreview}
                 sendMode={sendMode}
                 scheduleDate={scheduleDate}
                 scheduleTime={scheduleTime}

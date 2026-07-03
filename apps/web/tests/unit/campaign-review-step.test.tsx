@@ -50,12 +50,14 @@ vi.mock("@/components/ui/dialog", () => ({
 import { ReviewStep } from "../../app/broadcasts/new/_components/review-step";
 
 const baseProps: React.ComponentProps<typeof ReviewStep> = {
+  launchType: "normal_email",
   projectChipLabel: "Forests",
   runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",
   subject: "Gear pickup for Sam",
   selectedSenderVerified: true,
   audienceSize: 1247,
+  smsPreviewData: null,
   sendMode: "now",
   scheduleDate: "2026-05-20",
   scheduleTime: "09:30",
@@ -108,5 +110,37 @@ describe("ReviewStep sender gating", () => {
 
     expect(markup).toContain("Choose a verified sender");
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>[^<]*Send now[^<]*<\/button>/);
+  });
+
+  it("renders SMS review without scheduling controls", () => {
+    const markup = renderToStaticMarkup(
+      <ReviewStep
+        {...baseProps}
+        launchType="sms"
+        fromEmail={null}
+        confirmOpen
+        smsPreviewData={{
+          selected: 12,
+          reachable: 9,
+          deduplicatedByPhone: 1,
+          frozen: 8,
+          unreachable: {
+            no_consent: 1,
+            revoked: 1,
+            no_phone: 1,
+          },
+          totalSegments: 14,
+          estCostUsd: 0.1106,
+          sampleBody: "Hi Sam Reply STOP to opt out.",
+        }}
+      />,
+    );
+
+    expect(markup).toContain("reachable of");
+    expect(markup).toContain("selected contacts in");
+    expect(markup).toContain("≈ 14 segments · ~$0.1106");
+    expect(markup).toContain("Send 9 of 12 selected contacts (~14 segments, ~$0.1106)?");
+    expect(markup).not.toContain("Schedule for later");
+    expect(markup).not.toContain("Choose a verified sender");
   });
 });

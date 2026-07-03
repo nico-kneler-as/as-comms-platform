@@ -9,6 +9,10 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   searchProjectVolunteersAction: vi.fn(),
 }));
 
+vi.mock("../../app/broadcasts/actions", () => ({
+  previewSmsBroadcast: vi.fn(),
+}));
+
 import { readAllowedAudienceModesForSenderType } from "../../app/broadcasts/new/_components/use-new-campaign-wizard-state";
 
 describe("use-new-campaign-wizard-state audience mode gating", () => {

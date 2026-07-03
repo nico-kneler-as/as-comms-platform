@@ -28,6 +28,7 @@ import {
   planSmsBroadcastFreeze,
   renderSmsBroadcast,
   renderBroadcastEmail,
+  type SmsBroadcastAudienceMember,
 } from "@as-comms/domain";
 import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { createPostmarkClient } from "@as-comms/integrations";
@@ -38,6 +39,7 @@ import type { UiError, UiSuccess } from "@/src/server/ui-result";
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import { readWebEnv } from "@/src/server/env";
+import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
@@ -72,6 +74,17 @@ interface SmsBroadcastSendNowData {
   readonly selected: number;
   readonly deduplicatedByPhone: number;
   readonly unreachable: Readonly<Record<string, number>>;
+}
+
+interface SmsBroadcastPreviewData {
+  readonly selected: number;
+  readonly reachable: number;
+  readonly deduplicatedByPhone: number;
+  readonly frozen: number;
+  readonly unreachable: Readonly<Record<string, number>>;
+  readonly totalSegments: number;
+  readonly estCostUsd: number;
+  readonly sampleBody: string | null;
 }
 
 interface SmsBroadcastTestSendData {
@@ -537,57 +550,13 @@ async function freezeSmsBroadcastAudienceForSend(input: {
     readonly projectName: string | null;
   }[];
 }) {
-  const latestConsentByContactId =
-    await input.transaction.repositories.consentRecords.findLatestByContactIds(
-      input.run.audienceCriteria.contactIds,
-    );
   const plan = await planSmsBroadcastFreeze({
     bodyTemplate: input.run.bodyTextTemplate,
-    deps: {
-      resolveAudience: () => Promise.resolve(input.audience),
-      loadLatestConsentByContactIds: async (contactIds) => {
-        const missingContactIds = contactIds.filter(
-          (contactId) => !latestConsentByContactId.has(contactId),
-        );
-        const consentByContactId =
-          missingContactIds.length === 0
-            ? latestConsentByContactId
-            : new Map([
-                ...latestConsentByContactId,
-                ...(
-                  await input.transaction.repositories.consentRecords.findLatestByContactIds(
-                    missingContactIds,
-                  )
-                ),
-              ]);
-
-        return new Map(
-          [...consentByContactId].map(([contactId, consent]) => [
-            contactId,
-            {
-              status: consent.status,
-              phoneE164: consent.phoneE164,
-            },
-          ]),
-        );
-      },
-      resolveActiveSmsSenderId: async () => {
-        const activeSenders =
-          await input.transaction.repositories.smsSenders.listActive();
-        if (activeSenders.length !== 1) {
-          throw new Error(
-            `expected exactly one active SMS sender, found ${String(activeSenders.length)}`,
-          );
-        }
-
-        const [activeSender] = activeSenders;
-        if (activeSender === undefined) {
-          throw new Error("Expected exactly one active SMS sender.");
-        }
-
-        return activeSender.id;
-      },
-    },
+    deps: createSmsBroadcastFreezeDeps({
+      audience: input.audience,
+      repositories: input.transaction.repositories,
+      selectedContactIds: input.run.audienceCriteria.contactIds,
+    }),
   });
 
   await input.transaction.repositories.smsMessages.bulkInsert(
@@ -626,6 +595,111 @@ async function freezeSmsBroadcastAudienceForSend(input: {
   );
 
   return plan;
+}
+
+function mapSmsAudienceMembers(
+  members: Awaited<ReturnType<typeof resolveStoredCampaignAudience>>,
+): readonly SmsBroadcastAudienceMember[] {
+  return members.flatMap((member) =>
+    member.contactId === null
+      ? []
+      : [
+          {
+            contactId: member.contactId,
+            firstName: member.frozenFirstName,
+            email: member.frozenEmail,
+            projectName: member.frozenProjectName,
+          },
+        ],
+  );
+}
+
+async function resolveSmsBroadcastAudienceForRun(input: {
+  readonly kind: CampaignRunRecord["kind"];
+  readonly criteria: CampaignRunRecord["audienceCriteria"];
+  readonly at: Date;
+}): Promise<readonly SmsBroadcastAudienceMember[]> {
+  return mapSmsAudienceMembers(
+    await resolveStoredCampaignAudience({
+      kind: input.kind,
+      criteria: input.criteria,
+      at: input.at,
+    }),
+  );
+}
+
+function createSmsBroadcastFreezeDeps(input: {
+  readonly audience: readonly SmsBroadcastAudienceMember[];
+  readonly repositories: Pick<
+    Stage1WebRuntime["repositories"],
+    "consentRecords" | "smsSenders"
+  >;
+  readonly selectedContactIds: readonly string[];
+}) {
+  return {
+    resolveAudience: () => Promise.resolve(input.audience),
+    loadLatestConsentByContactIds: async (contactIds: readonly string[]) => {
+      const latestConsentByContactId =
+        await input.repositories.consentRecords.findLatestByContactIds(
+          input.selectedContactIds,
+        );
+      const missingContactIds = contactIds.filter(
+        (contactId) => !latestConsentByContactId.has(contactId),
+      );
+      const consentByContactId =
+        missingContactIds.length === 0
+          ? latestConsentByContactId
+          : new Map([
+              ...latestConsentByContactId,
+              ...(
+                await input.repositories.consentRecords.findLatestByContactIds(
+                  missingContactIds,
+                )
+              ),
+            ]);
+
+      return new Map(
+        [...consentByContactId].map(([contactId, consent]) => [
+          contactId,
+          {
+            status: consent.status,
+            phoneE164: consent.phoneE164,
+          },
+        ]),
+      );
+    },
+    resolveActiveSmsSenderId: async () => {
+      const activeSenders = await input.repositories.smsSenders.listActive();
+      if (activeSenders.length !== 1) {
+        throw new Error(
+          `expected exactly one active SMS sender, found ${String(activeSenders.length)}`,
+        );
+      }
+
+      const [activeSender] = activeSenders;
+      if (activeSender === undefined) {
+        throw new Error("Expected exactly one active SMS sender.");
+      }
+
+      return activeSender.id;
+    },
+  };
+}
+
+async function validateSingleActiveSmsSender(input: {
+  readonly repositories: Pick<Stage1WebRuntime["repositories"], "smsSenders">;
+}): Promise<UiError | null> {
+  const activeSenders = await input.repositories.smsSenders.listActive();
+  if (activeSenders.length === 1) {
+    return null;
+  }
+
+  return errorResult(
+    "campaign_sms_preview_missing_sender",
+    activeSenders.length === 0
+      ? "Activate an SMS sender before loading the preview."
+      : "Resolve the SMS sender configuration before loading the preview.",
+  );
 }
 
 async function readRequestOrigin(): Promise<string> {
@@ -857,23 +931,11 @@ export async function sendSmsBroadcastNow(rawInput: {
     }
 
     const queuedAt = new Date();
-    const audience = (
-      await resolveStoredCampaignAudience({
-        kind: run.kind,
-        criteria: run.audienceCriteria,
-        at: queuedAt,
-      })
-    )
-      .flatMap((member) =>
-        member.contactId === null
-          ? []
-          : [{
-              contactId: member.contactId,
-              firstName: member.frozenFirstName,
-              email: member.frozenEmail,
-              projectName: member.frozenProjectName,
-            }],
-      );
+    const audience = await resolveSmsBroadcastAudienceForRun({
+      kind: run.kind,
+      criteria: run.audienceCriteria,
+      at: queuedAt,
+    });
     const frozen = await withStage1WebTransaction((transaction) =>
       freezeSmsBroadcastAudienceForSend({
         transaction,
@@ -924,6 +986,97 @@ export async function sendSmsBroadcastNow(rawInput: {
       error instanceof Error
         ? error.message
         : "Unable to start the SMS broadcast send.",
+      true,
+    );
+  }
+}
+
+export async function previewSmsBroadcast(rawInput: {
+  readonly runId: string;
+}): Promise<UiSuccess<SmsBroadcastPreviewData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const parsed = z
+      .object({
+        runId: z.string().trim().min(1),
+      })
+      .parse(rawInput);
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.launchType !== "sms") {
+      return errorResult(
+        "campaign_sms_preview_invalid_launch_type",
+        "This broadcast is not an SMS broadcast.",
+      );
+    }
+    if (
+      run.bodyTextTemplate === null ||
+      run.bodyTextTemplate.trim().length === 0
+    ) {
+      return errorResult(
+        "campaign_sms_preview_missing_body",
+        "Add SMS body copy before loading the preview.",
+      );
+    }
+
+    const activeSenderError = await validateSingleActiveSmsSender({
+      repositories: runtime.repositories,
+    });
+    if (activeSenderError !== null) {
+      return activeSenderError;
+    }
+
+    const previewAt = new Date();
+    const audience = await resolveSmsBroadcastAudienceForRun({
+      kind: run.kind,
+      criteria: run.audienceCriteria,
+      at: previewAt,
+    });
+    const plan = await planSmsBroadcastFreeze({
+      bodyTemplate: run.bodyTextTemplate,
+      deps: createSmsBroadcastFreezeDeps({
+        audience,
+        repositories: runtime.repositories,
+        selectedContactIds: run.audienceCriteria.contactIds,
+      }),
+    });
+    const env = readWebEnv();
+    const totalSegments = plan.messages.reduce(
+      (sum, message) => sum + message.segments,
+      0,
+    );
+
+    return {
+      ok: true,
+      data: {
+        selected: plan.selectedContacts,
+        reachable: plan.reachable,
+        deduplicatedByPhone: plan.deduplicatedByPhone,
+        frozen: plan.frozen,
+        unreachable: plan.unreachable,
+        totalSegments,
+        estCostUsd: estimateSmsCostUsd(
+          totalSegments,
+          env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT,
+        ),
+        sampleBody: plan.messages[0]?.body ?? null,
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_sms_preview_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to load the SMS broadcast preview.",
       true,
     );
   }

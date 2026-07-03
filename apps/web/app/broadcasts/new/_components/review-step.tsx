@@ -14,19 +14,31 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
+import { formatSmsEstimatedCostUsd } from "@/src/lib/sms-pricing";
 import { cn } from "@/lib/utils";
 
-import type { CampaignRunRecord } from "@as-comms/contracts";
+import type { CampaignRunRecord, LaunchType } from "@as-comms/contracts";
 
 import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface ReviewStepProps {
+  readonly launchType: LaunchType;
   readonly projectChipLabel: string;
   readonly runName: string | null;
   readonly fromEmail: string | null;
   readonly subject: string;
   readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
+  readonly smsPreviewData: {
+    readonly selected: number;
+    readonly reachable: number;
+    readonly deduplicatedByPhone: number;
+    readonly frozen: number;
+    readonly unreachable: Readonly<Record<string, number>>;
+    readonly totalSegments: number;
+    readonly estCostUsd: number;
+    readonly sampleBody: string | null;
+  } | null;
   readonly sendMode: "now" | "later";
   readonly scheduleDate: string;
   readonly scheduleTime: string;
@@ -73,12 +85,14 @@ function SummaryRow({
 }
 
 export function ReviewStep({
+  launchType,
   projectChipLabel,
   runName,
   fromEmail,
   subject,
   selectedSenderVerified,
   audienceSize,
+  smsPreviewData,
   sendMode,
   scheduleDate,
   scheduleTime,
@@ -94,9 +108,20 @@ export function ReviewStep({
   onConfirmOpenChange,
   onSubmit,
 }: ReviewStepProps) {
-  const submitLabel = sendMode === "later" ? "Schedule send" : "Send now";
-  const confirmationLine =
-    sendMode === "later"
+  const isSmsLaunch = launchType === "sms";
+  const submitLabel =
+    !isSmsLaunch && sendMode === "later" ? "Schedule send" : "Send now";
+  const confirmationLine = isSmsLaunch
+    ? `Send ${smsPreviewData?.reachable.toLocaleString() ?? "0"} of ${
+        smsPreviewData?.selected.toLocaleString() ?? "0"
+      } selected contacts (~${
+        smsPreviewData === null
+          ? "0"
+          : `${smsPreviewData.totalSegments.toLocaleString()} segments, ~$${formatSmsEstimatedCostUsd(
+              smsPreviewData.estCostUsd,
+            )}`
+      })?`
+    : sendMode === "later"
       ? `Send ${audienceSize?.toLocaleString() ?? "0"} emails from ${
           fromEmail ?? "the selected sender"
         } at ${scheduleDate} ${scheduleTime} Denver?`
@@ -108,47 +133,81 @@ export function ReviewStep({
     <section className="flex h-full flex-col">
       <StepHeader
         title="Review and send"
-        description="Final check before launch. Content and audience freeze after this point."
+        description={
+          isSmsLaunch
+            ? "Final check before launch. SMS sends go out immediately once confirmed."
+            : "Final check before launch. Content and audience freeze after this point."
+        }
       />
 
       <div className="space-y-4">
         <SectionPanel label="Final check">
           <dl className="divide-y divide-slate-100">
             <SummaryRow label="Name" value={runName ?? "Untitled broadcast"} />
-            <SummaryRow
-              label="From"
-              value={
-                <span className="font-mono">
-                  {fromEmail ?? "Choose a verified sender"}
-                </span>
-              }
-            />
+            {isSmsLaunch ? null : (
+              <SummaryRow
+                label="From"
+                value={
+                  <span className="font-mono">
+                    {fromEmail ?? "Choose a verified sender"}
+                  </span>
+                }
+              />
+            )}
             <SummaryRow
               label="To"
               value={
-                <span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    {(audienceSize ?? 0).toLocaleString()}
-                  </span>{" "}
-                  recipients in{" "}
-                  <span className="text-slate-900">{projectChipLabel}</span>
-                </span>
-              }
-            />
-            <SummaryRow
-              label="Subject"
-              value={
-                subject.trim().length > 0 ? (
-                  <span className="font-medium text-slate-900">{subject}</span>
+                isSmsLaunch ? (
+                  <span>
+                    <span className="font-semibold tabular-nums text-slate-900">
+                      {smsPreviewData?.reachable.toLocaleString() ?? "0"}
+                    </span>{" "}
+                    reachable of{" "}
+                    <span className="font-semibold tabular-nums text-slate-900">
+                      {smsPreviewData?.selected.toLocaleString() ?? "0"}
+                    </span>{" "}
+                    selected contacts in{" "}
+                    <span className="text-slate-900">{projectChipLabel}</span>
+                  </span>
                 ) : (
-                  <span className="italic text-slate-500">(no subject)</span>
+                  <span>
+                    <span className="font-semibold tabular-nums text-slate-900">
+                      {(audienceSize ?? 0).toLocaleString()}
+                    </span>{" "}
+                    recipients in{" "}
+                    <span className="text-slate-900">{projectChipLabel}</span>
+                  </span>
                 )
               }
             />
+            {isSmsLaunch ? (
+              <SummaryRow
+                label="Send"
+                value={
+                  <span className="text-slate-900">
+                    ≈ {smsPreviewData?.totalSegments.toLocaleString() ?? "0"}{" "}
+                    segments · ~$
+                    {formatSmsEstimatedCostUsd(smsPreviewData?.estCostUsd ?? 0)}
+                  </span>
+                }
+              />
+            ) : (
+              <SummaryRow
+                label="Subject"
+                value={
+                  subject.trim().length > 0 ? (
+                    <span className="font-medium text-slate-900">{subject}</span>
+                  ) : (
+                    <span className="italic text-slate-500">(no subject)</span>
+                  )
+                }
+              />
+            )}
           </dl>
           <div className="border-t border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] leading-relaxed text-slate-500">
-            Audience freezes at launch. Auto-excludes unsubscribed,
-            hard-bounced, and contacts without an email on file.
+            {isSmsLaunch
+              ? "Audience freezes at launch. The SMS preview already accounts for consent, missing phones, and duplicate phone numbers."
+              : "Audience freezes at launch. Auto-excludes unsubscribed, hard-bounced, and contacts without an email on file."}
           </div>
         </SectionPanel>
 
@@ -162,75 +221,79 @@ export function ReviewStep({
               aria-hidden="true"
             />
             <p>
-              This broadcast is {frozenState} for{" "}
-              {formatDenverTimestamp(frozenScheduledAt)}. Content and audience
-              are locked. To edit, cancel and start a new draft.
+              {isSmsLaunch
+                ? `This SMS broadcast is ${frozenState}. Content and audience are locked.`
+                : `This broadcast is ${frozenState} for ${formatDenverTimestamp(
+                    frozenScheduledAt,
+                  )}. Content and audience are locked. To edit, cancel and start a new draft.`}
             </p>
           </section>
         ) : (
-          <SectionPanel label="When to send">
-            <div
-              role="radiogroup"
-              aria-label="Send timing"
-              className="grid gap-3 p-4 md:grid-cols-2"
-            >
-              <SendModeOption
-                selected={sendMode === "now"}
-                title="Send now"
-                description="Recipients start receiving immediately."
-                Icon={Send}
-                onSelect={() => {
-                  onSendModeChange("now");
-                }}
-              />
-              <SendModeOption
-                selected={sendMode === "later"}
-                title="Schedule for later"
-                description="Pick a date and time. Locked to America/Denver."
-                Icon={Clock}
-                onSelect={() => {
-                  onSendModeChange("later");
-                }}
-              />
-            </div>
-
-            {sendMode === "later" ? (
-              <div className="grid gap-3 border-t border-slate-200 px-4 py-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="campaign-send-date"
-                    className="text-[12px] font-medium text-slate-900"
-                  >
-                    Date
-                  </label>
-                  <Input
-                    id="campaign-send-date"
-                    type="date"
-                    value={scheduleDate}
-                    onChange={(event) => {
-                      onScheduleDateChange(event.currentTarget.value);
-                    }}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="campaign-send-time"
-                    className="text-[12px] font-medium text-slate-900"
-                  >
-                    Time
-                  </label>
-                  <Input
-                    id="campaign-send-time"
-                    type="time"
-                    value={scheduleTime}
-                    onChange={(event) => {
-                      onScheduleTimeChange(event.currentTarget.value);
-                    }}
-                  />
-                </div>
+          isSmsLaunch ? null : (
+            <SectionPanel label="When to send">
+              <div
+                role="radiogroup"
+                aria-label="Send timing"
+                className="grid gap-3 p-4 md:grid-cols-2"
+              >
+                <SendModeOption
+                  selected={sendMode === "now"}
+                  title="Send now"
+                  description="Recipients start receiving immediately."
+                  Icon={Send}
+                  onSelect={() => {
+                    onSendModeChange("now");
+                  }}
+                />
+                <SendModeOption
+                  selected={sendMode === "later"}
+                  title="Schedule for later"
+                  description="Pick a date and time. Locked to America/Denver."
+                  Icon={Clock}
+                  onSelect={() => {
+                    onSendModeChange("later");
+                  }}
+                />
               </div>
-            ) : null}
-          </SectionPanel>
+
+              {sendMode === "later" ? (
+                <div className="grid gap-3 border-t border-slate-200 px-4 py-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="campaign-send-date"
+                      className="text-[12px] font-medium text-slate-900"
+                    >
+                      Date
+                    </label>
+                    <Input
+                      id="campaign-send-date"
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(event) => {
+                        onScheduleDateChange(event.currentTarget.value);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="campaign-send-time"
+                      className="text-[12px] font-medium text-slate-900"
+                    >
+                      Time
+                    </label>
+                    <Input
+                      id="campaign-send-time"
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(event) => {
+                        onScheduleTimeChange(event.currentTarget.value);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </SectionPanel>
+          )
         )}
       </div>
 
@@ -241,9 +304,11 @@ export function ReviewStep({
         primaryAction={() => {
           onConfirmOpenChange(true);
         }}
-        primaryDisabled={!fromEmail || !selectedSenderVerified}
+        primaryDisabled={
+          (!isSmsLaunch && !fromEmail) || !selectedSenderVerified
+        }
         primaryIcon={
-          sendMode === "later" ? (
+          !isSmsLaunch && sendMode === "later" ? (
             <Clock className="size-3.5" aria-hidden="true" />
           ) : (
             <Send className="size-3.5" aria-hidden="true" />
@@ -273,7 +338,10 @@ export function ReviewStep({
             </Button>
             <Button
               onClick={onSubmit}
-              disabled={submitPending || !fromEmail || !selectedSenderVerified}
+              disabled={
+                submitPending ||
+                ((!isSmsLaunch && !fromEmail) || !selectedSenderVerified)
+              }
             >
               {submitPending ? "Working..." : submitLabel}
             </Button>
