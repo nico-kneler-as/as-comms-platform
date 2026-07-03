@@ -14,9 +14,12 @@ const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
 const searchNewsletterSubscribersActionMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
+const previewSmsBroadcastMock = vi.hoisted(() => vi.fn());
 const testSendMock = vi.hoisted(() => vi.fn());
 const scheduleMock = vi.hoisted(() => vi.fn());
 const sendNowMock = vi.hoisted(() => vi.fn());
+const sendSmsBroadcastNowMock = vi.hoisted(() => vi.fn());
+const sendSmsBroadcastTestMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadComposePreviewAction: loadComposePreviewActionMock,
@@ -30,8 +33,11 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
 }));
 
 vi.mock("../../app/broadcasts/actions", () => ({
+  previewSmsBroadcast: previewSmsBroadcastMock,
   schedule: scheduleMock,
   sendNow: sendNowMock,
+  sendSmsBroadcastNow: sendSmsBroadcastNowMock,
+  sendSmsBroadcastTest: sendSmsBroadcastTestMock,
   testSend: testSendMock,
 }));
 
@@ -65,6 +71,15 @@ vi.mock("../../app/broadcasts/new/_components/launch-type-step", () => ({
         }}
       >
         Set html
+      </button>
+      <button
+        type="button"
+        aria-label="set-launch-sms"
+        onClick={() => {
+          onChange("sms");
+        }}
+      >
+        Set sms
       </button>
       <button type="button" aria-label="launch-continue" onClick={onContinue}>
         Continue
@@ -319,14 +334,42 @@ vi.mock("../../app/broadcasts/new/_components/compose-step", () => ({
 
 vi.mock("../../app/broadcasts/new/_components/preview-step", () => ({
   PreviewStep: ({
+    launchType,
     onBack,
     onContinue,
+    onSendTest,
+    onTestRecipientValueChange,
+    testRecipientValue,
   }: {
+    readonly launchType: string;
     readonly onBack: () => void;
     readonly onContinue: () => void;
+    readonly onSendTest: () => void;
+    readonly onTestRecipientValueChange: (value: string) => void;
+    readonly testRecipientValue: string;
   }) => (
     <section data-testid="preview-step">
       <div>PreviewStep</div>
+      <div data-testid="preview-launch-type">{launchType}</div>
+      <input
+        aria-label="preview-test-recipient"
+        value={testRecipientValue}
+        onChange={(event) => {
+          onTestRecipientValueChange(event.currentTarget.value);
+        }}
+      />
+      <button
+        type="button"
+        aria-label="set-preview-test-recipient"
+        onClick={() => {
+          onTestRecipientValueChange("+14065550123");
+        }}
+      >
+        Set preview recipient
+      </button>
+      <button type="button" aria-label="preview-send-test" onClick={onSendTest}>
+        Send test
+      </button>
       <button type="button" aria-label="preview-back" onClick={onBack}>
         Back
       </button>
@@ -339,25 +382,55 @@ vi.mock("../../app/broadcasts/new/_components/preview-step", () => ({
 
 vi.mock("../../app/broadcasts/new/_components/review-step", () => ({
   ReviewStep: ({
+    launchType,
+    confirmOpen,
     fromEmail,
     frozen,
     frozenState,
+    onConfirmOpenChange,
+    onSubmit,
     projectChipLabel,
+    smsPreviewData,
     subject,
   }: {
+    readonly launchType: string;
+    readonly confirmOpen: boolean;
     readonly fromEmail: string | null;
     readonly frozen: boolean;
     readonly frozenState: string;
+    readonly onConfirmOpenChange: (open: boolean) => void;
+    readonly onSubmit: () => void;
     readonly projectChipLabel: string;
+    readonly smsPreviewData: {
+      readonly reachable: number;
+      readonly totalSegments: number;
+    } | null;
     readonly subject: string;
   }) => (
     <section data-testid="review-step">
       <div>ReviewStep</div>
+      <div data-testid="review-launch-type">{launchType}</div>
       <div data-testid="review-from-email">{fromEmail ?? "none"}</div>
       <div data-testid="review-frozen">{String(frozen)}</div>
       <div data-testid="review-state">{frozenState}</div>
       <div data-testid="review-scope">{projectChipLabel}</div>
       <div data-testid="review-subject">{subject}</div>
+      <div data-testid="review-confirm-open">{String(confirmOpen)}</div>
+      <div data-testid="review-sms-reachable">
+        {String(smsPreviewData?.reachable ?? 0)}
+      </div>
+      <button
+        type="button"
+        aria-label="review-open-confirm"
+        onClick={() => {
+          onConfirmOpenChange(true);
+        }}
+      >
+        Open confirm
+      </button>
+      <button type="button" aria-label="review-submit" onClick={onSubmit}>
+        Submit
+      </button>
     </section>
   ),
 }));
@@ -527,6 +600,23 @@ function buildComposePreviewData(
     affectedContacts: [],
     footerAddress: "123 Main St",
     ...overrides,
+  };
+}
+
+function buildSmsPreviewData() {
+  return {
+    selected: 12,
+    reachable: 9,
+    deduplicatedByPhone: 1,
+    frozen: 8,
+    unreachable: {
+      no_consent: 1,
+      revoked: 1,
+      no_phone: 1,
+    },
+    totalSegments: 14,
+    estCostUsd: 0.1106,
+    sampleBody: "Hi Alice Reply STOP to opt out.",
   };
 }
 
@@ -750,9 +840,31 @@ beforeEach(() => {
     ok: true,
     data: { scheduledAt: null },
   });
+  sendSmsBroadcastNowMock.mockResolvedValue({
+    ok: true,
+    data: {
+      frozen: 8,
+      reachable: 9,
+      selected: 12,
+      deduplicatedByPhone: 1,
+      unreachable: {
+        no_consent: 1,
+        revoked: 1,
+        no_phone: 1,
+      },
+    },
+  });
   testSendMock.mockResolvedValue({
     ok: true,
     data: { recipientEmail: "operator@example.org" },
+  });
+  sendSmsBroadcastTestMock.mockResolvedValue({
+    ok: true,
+    data: { segments: 2 },
+  });
+  previewSmsBroadcastMock.mockResolvedValue({
+    ok: true,
+    data: buildSmsPreviewData(),
   });
 });
 
@@ -1045,5 +1157,63 @@ describe("NewCampaignWizard", () => {
         newsletterSubscriberIds: ["11111111-1111-1111-1111-111111111111"],
       },
     });
+  });
+
+  it("calls sendSmsBroadcastTest with the entered E.164 number for SMS launches", async () => {
+    vi.useFakeTimers();
+
+    await renderWizard({
+      draft: buildDraft({
+        launchType: "sms",
+        kind: "project",
+        fromEmail: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Hello {{firstName}}",
+        preheader: null,
+      }),
+    });
+
+    await click("set-launch-sms");
+    await goToComposeStep();
+    await click("compose-continue");
+    await advanceTimersBy(200);
+    await click("set-preview-test-recipient");
+    await click("preview-send-test");
+
+    expect(sendSmsBroadcastTestMock).toHaveBeenCalledWith({
+      runId: "run-1",
+      toPhoneE164: "+14065550123",
+    });
+    expect(testSendMock).not.toHaveBeenCalled();
+  });
+
+  it("calls sendSmsBroadcastNow on SMS review submit without hitting email send actions", async () => {
+    vi.useFakeTimers();
+
+    await renderWizard({
+      draft: buildDraft({
+        launchType: "sms",
+        kind: "project",
+        fromEmail: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Hello {{firstName}}",
+        preheader: null,
+      }),
+    });
+
+    await click("set-launch-sms");
+    await goToComposeStep();
+    await click("compose-continue");
+    await advanceTimersBy(200);
+    await click("preview-continue");
+    await click("review-submit");
+
+    expect(sendSmsBroadcastNowMock).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(sendNowMock).not.toHaveBeenCalled();
+    expect(scheduleMock).not.toHaveBeenCalled();
   });
 });

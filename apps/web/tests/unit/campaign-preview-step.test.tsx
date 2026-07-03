@@ -83,11 +83,12 @@ const baseProps: React.ComponentProps<typeof PreviewStep> = {
       text: "Hi Sam",
     },
   },
+  smsPreviewData: null,
   previewLoading: false,
   warningDismissed: false,
   affectedContactsOpen: false,
   testSendOpen: false,
-  testRecipientEmail: "nico@adventurescientists.org",
+  testRecipientValue: "nico@adventurescientists.org",
   testSendPending: false,
   selectedSenderVerified: true,
   frozen: false,
@@ -98,7 +99,7 @@ const baseProps: React.ComponentProps<typeof PreviewStep> = {
   onDismissWarning: () => undefined,
   onAffectedContactsOpenChange: () => undefined,
   onTestSendOpenChange: () => undefined,
-  onTestRecipientEmailChange: () => undefined,
+  onTestRecipientValueChange: () => undefined,
   onSendTest: () => undefined,
 };
 
@@ -144,5 +145,36 @@ describe("PreviewStep", () => {
     expect(markup).toContain("<iframe");
     expect(markup).toContain('title="Email body preview"');
     expect(markup).toContain('sandbox="allow-same-origin"');
+  });
+
+  it("renders SMS reachability, cost, and sample body for sms", () => {
+    const markup = renderToStaticMarkup(
+      <PreviewStep
+        {...baseProps}
+        launchType="sms"
+        previewData={null}
+        smsPreviewData={{
+          selected: 12,
+          reachable: 9,
+          deduplicatedByPhone: 1,
+          frozen: 8,
+          unreachable: {
+            no_consent: 1,
+            revoked: 1,
+            no_phone: 1,
+          },
+          totalSegments: 14,
+          estCostUsd: 0.1106,
+          sampleBody: "Hi Sam Reply STOP to opt out.",
+        }}
+        testRecipientValue="+14065550123"
+      />,
+    );
+
+    expect(markup).toContain("SMS preview");
+    expect(markup).toContain("9 reachable of 12 selected");
+    expect(markup).toContain("≈ 14 segments · ~$0.1106");
+    expect(markup).toContain("Hi Sam Reply STOP to opt out.");
+    expect(markup).toContain("Send test SMS to");
   });
 });

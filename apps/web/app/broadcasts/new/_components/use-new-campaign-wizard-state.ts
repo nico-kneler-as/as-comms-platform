@@ -28,12 +28,23 @@ import {
   searchNewsletterSubscribersAction,
   searchProjectVolunteersAction,
 } from "../../_lib/audience-data-source";
+import { previewSmsBroadcast } from "../../actions";
 import type {
   AudienceInitialFilter,
   CampaignAudienceCriteria,
 } from "./audience-builder-step";
 
 type AutosavePersistDraft = (successMessage: string) => Promise<boolean>;
+interface SmsPreviewData {
+  readonly selected: number;
+  readonly reachable: number;
+  readonly deduplicatedByPhone: number;
+  readonly frozen: number;
+  readonly unreachable: Readonly<Record<string, number>>;
+  readonly totalSegments: number;
+  readonly estCostUsd: number;
+  readonly sampleBody: string | null;
+}
 
 function normalizeProjectIds(projectIds: readonly string[]): string[] {
   return projectIds.filter(
@@ -423,6 +434,7 @@ export function useNewCampaignWizardState({
     useState<string | null>(null);
   const [composePreview, setComposePreview] =
     useState<ComposePreviewData | null>(null);
+  const [smsPreview, setSmsPreview] = useState<SmsPreviewData | null>(null);
   const [sampleIndex, setSampleIndex] = useState(0);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -435,6 +447,7 @@ export function useNewCampaignWizardState({
   const [testRecipientEmail, setTestRecipientEmail] = useState(
     draft.operatorEmail,
   );
+  const [testPhoneE164, setTestPhoneE164] = useState("");
   const [affectedContactsOpen, setAffectedContactsOpen] = useState(false);
   const [sendMode, setSendMode] = useState<"now" | "later">("now");
   const [scheduleDate, setScheduleDate] = useState(initialSchedule.date);
@@ -451,6 +464,7 @@ export function useNewCampaignWizardState({
   const [, startCountTransition] = useTransition();
   const [composePreviewPending, startComposePreviewTransition] =
     useTransition();
+  const [smsPreviewPending, startSmsPreviewTransition] = useTransition();
   const [, startStatusCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
@@ -914,6 +928,40 @@ export function useNewCampaignWizardState({
   ]);
 
   useEffect(() => {
+    if (launchType === "sms") {
+      if (currentStep < 4) {
+        setSmsPreview(null);
+        return;
+      }
+
+      const requestId = ++composePreviewRequestRef.current;
+      const timer = setTimeout(() => {
+        startSmsPreviewTransition(async () => {
+          const result = await previewSmsBroadcast({
+            runId: draft.runId,
+          });
+          if (requestId !== composePreviewRequestRef.current) {
+            return;
+          }
+
+          if (!result.ok) {
+            setSmsPreview(null);
+            setToast({
+              tone: "error",
+              message: result.message,
+            });
+            return;
+          }
+
+          setSmsPreview(result.data);
+        });
+      }, 150);
+
+      return () => {
+        clearTimeout(timer);
+      };
+    }
+
     if (currentStep < 3) {
       return;
     }
@@ -925,10 +973,10 @@ export function useNewCampaignWizardState({
           launchType,
           kind,
           criteria: toActionCriteria(criteria),
-          fromEmail: launchType === "sms" ? null : fromEmail,
-          subjectTemplate: launchType === "sms" ? "" : subject,
-          preheader: launchType === "sms" ? "" : preheader,
-          bodyHtmlTemplate: launchType === "sms" ? "" : bodyHtml,
+          fromEmail,
+          subjectTemplate: subject,
+          preheader,
+          bodyHtmlTemplate: bodyHtml,
           bodyTextTemplate: bodyPlaintext,
           sampleIndex,
         });
@@ -958,6 +1006,7 @@ export function useNewCampaignWizardState({
     criteria,
     currentStep,
     fromEmail,
+    launchType,
     kind,
     preheader,
     sampleIndex,
@@ -1063,7 +1112,9 @@ export function useNewCampaignWizardState({
     volunteerSearchErrorMessage,
     setVolunteerSearchErrorMessage,
     composePreview,
+    smsPreview,
     composePreviewPending,
+    smsPreviewPending,
     setSampleIndex,
     setSaveState,
     setSaveMessage,
@@ -1072,6 +1123,8 @@ export function useNewCampaignWizardState({
     setTestSendOpen,
     testRecipientEmail,
     setTestRecipientEmail,
+    testPhoneE164,
+    setTestPhoneE164,
     affectedContactsOpen,
     setAffectedContactsOpen,
     sendMode,
