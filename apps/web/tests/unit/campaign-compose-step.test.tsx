@@ -277,9 +277,9 @@ describe("ComposeStep snapshots", () => {
     );
 
     expect(markup).toContain("Write your SMS");
-    expect(markup).toContain(
-      "Supported merge tokens: {{firstName}}, {{email}}",
-    );
+    // Merge tokens are insertable chips, not typed hint text.
+    expect(markup).toContain("Insert:");
+    expect(markup).toContain("{{email}}");
     expect(markup).toContain("Reply STOP to opt out");
     expect(markup).toContain("GSM-7");
     expect(markup).toContain("chars");
