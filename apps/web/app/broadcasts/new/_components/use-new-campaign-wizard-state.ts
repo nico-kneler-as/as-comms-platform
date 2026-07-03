@@ -119,6 +119,49 @@ function kindForSenderType(
   return fallback;
 }
 
+function flattenProjectGroups(
+  groups: readonly {
+    readonly host: CampaignProjectOption;
+    readonly connectedSubs: readonly CampaignProjectOption[];
+  }[],
+): readonly CampaignProjectOption[] {
+  return groups.flatMap((group) => [group.host, ...group.connectedSubs]);
+}
+
+function buildDraftFingerprint(input: {
+  readonly launchType: LaunchType;
+  readonly kind: CampaignKind;
+  readonly name: string | null;
+  readonly fromEmail: string | null;
+  readonly replyToEmail: string | null;
+  readonly subject: string;
+  readonly preheader: string;
+  readonly bodyPlaintext: string;
+  readonly bodyHtml: string;
+  readonly bodyDesignJsonFingerprint: string;
+  readonly criteria: CampaignAudienceCriteria;
+  readonly audienceSize: number | null;
+}): string {
+  const isSmsLaunch = input.launchType === "sms";
+
+  return JSON.stringify({
+    launchType: input.launchType,
+    kind: isSmsLaunch ? "project" : input.kind,
+    name: input.name,
+    fromEmail: isSmsLaunch ? null : input.fromEmail,
+    replyToEmail: isSmsLaunch ? null : input.replyToEmail,
+    subject: isSmsLaunch ? "" : input.subject,
+    preheader: isSmsLaunch ? "" : input.preheader,
+    bodyPlaintext: input.bodyPlaintext,
+    bodyHtml: isSmsLaunch ? "" : input.bodyHtml,
+    bodyDesignJson: isSmsLaunch
+      ? JSON.stringify(null)
+      : input.bodyDesignJsonFingerprint,
+    criteria: input.criteria,
+    audienceSize: input.audienceSize,
+  });
+}
+
 function readTimeZoneParts(
   date: Date,
   timeZone: string,
@@ -452,19 +495,32 @@ export function useNewCampaignWizardState({
     () => readAliasProjectsForSender(bootstrap, selectedSenderOption),
     [bootstrap, selectedSenderOption],
   );
-  const selectedSenderType = selectedSenderOption?.senderType ?? null;
+  const allProjectOptions = useMemo(
+    () => flattenProjectGroups(bootstrap.projects),
+    [bootstrap.projects],
+  );
+  const selectedSenderType =
+    launchType === "sms"
+      ? "project"
+      : (selectedSenderOption?.senderType ?? null);
+  const effectiveProjectOptions =
+    launchType === "sms" ? allProjectOptions : aliasProjects;
   const aliasProjectIds = useMemo(
-    () => normalizeProjectIds(aliasProjects.map((project) => project.id)),
-    [aliasProjects],
+    () =>
+      normalizeProjectIds(effectiveProjectOptions.map((project) => project.id)),
+    [effectiveProjectOptions],
   );
   const availableAudienceModes = useMemo(
     () => readAllowedAudienceModesForSenderType(selectedSenderType),
     [selectedSenderType],
   );
-  const kind = kindForSenderType(selectedSenderType, draft.kind);
+  const kind =
+    launchType === "sms"
+      ? "project"
+      : kindForSenderType(selectedSenderType, draft.kind);
   const fingerprint = useMemo(
     () =>
-      JSON.stringify({
+      buildDraftFingerprint({
         launchType,
         kind,
         name: name.trim() || null,
@@ -474,7 +530,7 @@ export function useNewCampaignWizardState({
         preheader,
         bodyPlaintext,
         bodyHtml,
-        bodyDesignJson: bodyDesignJsonFingerprint,
+        bodyDesignJsonFingerprint,
         criteria,
         audienceSize: countState.hasAppliedFilters ? countState.count : null,
       }),
@@ -497,7 +553,9 @@ export function useNewCampaignWizardState({
   const dirty = fingerprint !== savedFingerprintRef.current;
   const selectedSenderVerified = frozen
     ? true
-    : selectedSenderOption?.status === "verified";
+    : launchType === "sms"
+      ? bootstrap.activeSmsSender !== null
+      : selectedSenderOption?.status === "verified";
   const suggestedSenderEmail = useMemo(
     () => deriveSuggestedSenderEmail({ kind, criteria, bootstrap }),
     [bootstrap, criteria, kind],
@@ -510,9 +568,8 @@ export function useNewCampaignWizardState({
 
   useEffect(() => {
     const initialSenderType =
-      bootstrap.senderOptions.find(
-        (option) => option.email === draft.fromEmail,
-      )?.senderType ?? null;
+      bootstrap.senderOptions.find((option) => option.email === draft.fromEmail)
+        ?.senderType ?? null;
     const initialCriteria = {
       ...draft.audienceCriteria,
       projectId:
@@ -524,9 +581,12 @@ export function useNewCampaignWizardState({
         draft.audienceCriteria.newsletterSubscriberIds ?? [],
       initialFilter: initialAudienceMode,
     };
-    savedFingerprintRef.current = JSON.stringify({
+    savedFingerprintRef.current = buildDraftFingerprint({
       launchType: draft.launchType,
-      kind: kindForSenderType(initialSenderType, draft.kind),
+      kind:
+        draft.launchType === "sms"
+          ? "project"
+          : kindForSenderType(initialSenderType, draft.kind),
       name: draft.name,
       fromEmail: draft.fromEmail,
       replyToEmail: draft.replyToEmail,
@@ -534,27 +594,30 @@ export function useNewCampaignWizardState({
       preheader: draft.preheader ?? "",
       bodyPlaintext: draft.bodyTextTemplate ?? "",
       bodyHtml: draft.bodyHtmlTemplate ?? "",
-      bodyDesignJson: JSON.stringify(draft.bodyDesignJson ?? null),
+      bodyDesignJsonFingerprint: JSON.stringify(draft.bodyDesignJson ?? null),
       criteria: initialCriteria,
       audienceSize: draft.audienceSize,
     });
   }, [bootstrap.senderOptions, draft, initialAudienceMode]);
 
   useEffect(() => {
-    if (fromEmail === null && suggestedSenderEmail !== null) {
+    if (
+      launchType !== "sms" &&
+      fromEmail === null &&
+      suggestedSenderEmail !== null
+    ) {
       setFromEmail(suggestedSenderEmail);
       setReplyToEmail(suggestedSenderEmail);
     }
-  }, [fromEmail, suggestedSenderEmail]);
+  }, [fromEmail, launchType, suggestedSenderEmail]);
 
   useEffect(() => {
     const currentMode = criteria.initialFilter;
     if (
       !hasPickedAudienceMode ||
-      selectedSenderOption === null ||
       currentMode === undefined ||
       selectedSenderType !== "project" ||
-      aliasProjects.length === 0
+      effectiveProjectOptions.length === 0
     ) {
       return;
     }
@@ -568,15 +631,14 @@ export function useNewCampaignWizardState({
       buildCriteriaForMode({
         current,
         mode: currentMode,
-        aliasProjects,
+        aliasProjects: effectiveProjectOptions,
       }),
     );
   }, [
-    aliasProjects,
     criteria,
     criteria.initialFilter,
+    effectiveProjectOptions,
     hasPickedAudienceMode,
-    selectedSenderOption,
     selectedSenderType,
   ]);
 
@@ -586,10 +648,32 @@ export function useNewCampaignWizardState({
     }
 
     previousLaunchTypeRef.current = launchType;
+    if (launchType === "sms") {
+      setCriteria((current) => {
+        if (current.initialFilter === "specific") {
+          return {
+            ...current,
+            newsletterSubscriberIds: [],
+          };
+        }
+
+        if (current.initialFilter === "project_status") {
+          return current;
+        }
+
+        return clearAudienceCriteria(current);
+      });
+      if (
+        criteria.initialFilter !== "specific" &&
+        criteria.initialFilter !== "project_status"
+      ) {
+        setHasPickedAudienceMode(false);
+      }
+    }
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
-  }, [launchType]);
+  }, [criteria.initialFilter, launchType]);
 
   useEffect(() => {
     if (previousFromEmailRef.current === fromEmail) {
@@ -609,15 +693,15 @@ export function useNewCampaignWizardState({
       return buildCriteriaForMode({
         current,
         mode: nextMode,
-        aliasProjects,
+        aliasProjects: effectiveProjectOptions,
       });
     });
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
   }, [
-    aliasProjects,
     availableAudienceModes,
+    effectiveProjectOptions,
     fromEmail,
     hasPickedAudienceMode,
     selectedSenderType,
@@ -682,7 +766,8 @@ export function useNewCampaignWizardState({
           (status) => (result.data[status] ?? 0) > 0,
         );
         const selectedStatuses = current.statuses.filter(
-          (status: ExpeditionMemberStatus) => availableStatuses.includes(status),
+          (status: ExpeditionMemberStatus) =>
+            availableStatuses.includes(status),
         );
 
         return selectedStatuses.length === current.statuses.length
@@ -840,10 +925,10 @@ export function useNewCampaignWizardState({
           launchType,
           kind,
           criteria: toActionCriteria(criteria),
-          fromEmail,
-          subjectTemplate: subject,
-          preheader,
-          bodyHtmlTemplate: bodyHtml,
+          fromEmail: launchType === "sms" ? null : fromEmail,
+          subjectTemplate: launchType === "sms" ? "" : subject,
+          preheader: launchType === "sms" ? "" : preheader,
+          bodyHtmlTemplate: launchType === "sms" ? "" : bodyHtml,
           bodyTextTemplate: bodyPlaintext,
           sampleIndex,
         });

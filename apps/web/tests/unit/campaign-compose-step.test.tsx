@@ -129,7 +129,7 @@ const { JSDOM } = workerRequire("jsdom") as {
     options?: {
       readonly url?: string;
       readonly pretendToBeVisual?: boolean;
-    }
+    },
   ) => {
     readonly window: Window & typeof globalThis;
   };
@@ -158,8 +158,9 @@ function setupDom() {
   globalThis.InputEvent = dom.window.InputEvent;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.DOMParser = dom.window.DOMParser;
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = document.createElement("div");
   document.body.append(container);
@@ -194,10 +195,8 @@ function readReactProps(element: Element): Record<string, unknown> {
     throw new Error("React props handle not found on element.");
   }
 
-  return ((element as unknown as Record<string, unknown>)[propsKey] ?? {}) as Record<
-    string,
-    unknown
-  >;
+  return ((element as unknown as Record<string, unknown>)[propsKey] ??
+    {}) as Record<string, unknown>;
 }
 
 const baseProps: React.ComponentProps<typeof ComposeStep> = {
@@ -257,11 +256,55 @@ describe("ComposeStep snapshots", () => {
 
   it("renders the markdown composer for normal_email", () => {
     const markup = renderToStaticMarkup(
-      <ComposeStep {...baseProps} launchType="normal_email" bodyPlaintext="Hi" />,
+      <ComposeStep
+        {...baseProps}
+        launchType="normal_email"
+        bodyPlaintext="Hi"
+      />,
     );
 
     expect(markup).toContain('data-editor="true"');
     expect(markup).not.toContain('data-unlayer-host="true"');
+  });
+
+  it("renders the SMS composer without email-only fields", () => {
+    const markup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="sms"
+        bodyPlaintext="Hi {{firstName}}"
+      />,
+    );
+
+    expect(markup).toContain("Write your SMS");
+    expect(markup).toContain(
+      "Supported merge tokens: {{firstName}}, {{email}}",
+    );
+    expect(markup).toContain("Reply STOP to opt out");
+    expect(markup).toContain("GSM-7");
+    expect(markup).toContain("chars");
+    expect(markup).not.toContain('id="campaign-subject"');
+    expect(markup).not.toContain('id="campaign-preheader"');
+  });
+
+  it("gates SMS continue on a non-empty body only", () => {
+    const emptyMarkup = renderToStaticMarkup(
+      <ComposeStep {...baseProps} launchType="sms" bodyPlaintext="   " />,
+    );
+    const validMarkup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="sms"
+        bodyPlaintext="Hello there"
+      />,
+    );
+
+    expect(emptyMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+    expect(validMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
   });
 
   it("renders the Unlayer host for html_email", () => {
@@ -359,9 +402,7 @@ describe("ComposeStep HTML upload mode", () => {
       uploadTab.click();
     });
 
-    const textarea = document.querySelector(
-      "textarea#campaign-html-paste",
-    );
+    const textarea = document.querySelector("textarea#campaign-html-paste");
     if (!(textarea instanceof HTMLTextAreaElement)) {
       throw new Error("HTML paste textarea not found");
     }
@@ -434,7 +475,8 @@ describe("ComposeStep HTML upload mode", () => {
     });
     Object.defineProperty(file, "text", {
       configurable: true,
-      value: () => Promise.resolve("<html><body><p>File upload</p></body></html>"),
+      value: () =>
+        Promise.resolve("<html><body><p>File upload</p></body></html>"),
     });
     Object.defineProperty(fileInput, "files", {
       configurable: true,

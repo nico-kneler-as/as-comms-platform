@@ -577,6 +577,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
           senderType: "project",
         },
       ],
+      activeSmsSender: {
+        id: "sms-sender-1",
+        displayName: "Adventure Scientists",
+        phoneE164: "+14065550199",
+      },
     };
     const draft: CampaignWizardDraftData = {
       runId: "run-1",
@@ -821,6 +826,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
           senderType: "project",
         },
       ],
+      activeSmsSender: {
+        id: "sms-sender-1",
+        displayName: "Adventure Scientists",
+        phoneE164: "+14065550199",
+      },
     };
     const draft: CampaignWizardDraftData = {
       runId: "run-1",
@@ -1064,6 +1074,11 @@ describe("AudienceBuilderStep initial filter gate", () => {
           senderType: "project",
         },
       ],
+      activeSmsSender: {
+        id: "sms-sender-1",
+        displayName: "Adventure Scientists",
+        phoneE164: "+14065550199",
+      },
     };
     const draft: CampaignWizardDraftData = {
       runId: "run-1",
