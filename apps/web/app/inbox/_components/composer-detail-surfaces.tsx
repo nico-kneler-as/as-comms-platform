@@ -1055,14 +1055,23 @@ export function ComposerSmsSurface({
             />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-8 gap-1.5 border-sky-200 bg-white px-2.5 text-[12px] font-medium text-sky-700 hover:bg-sky-50 hover:text-sky-800"
-            >
-              <ImageIcon className="size-3.5" />
-              Add MMS
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled
+                    aria-disabled
+                    className="h-8 gap-1.5 border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-400"
+                  >
+                    <ImageIcon className="size-3.5" />
+                    Add MMS
+                  </Button>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top">MMS not available yet</TooltipContent>
+            </Tooltip>
             <Button
               type="button"
               variant="outline"
