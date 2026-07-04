@@ -52,7 +52,8 @@ export function renderSmsBroadcast(input: {
 }): RenderedSmsBroadcast {
   const merged = renderSmsTemplate(input.template, input.context);
   const footer = input.optOutFooter ?? DEFAULT_SMS_OPT_OUT_FOOTER;
-  const body = footer === "" ? merged : `${merged} ${footer}`;
+  // Separate the opt-out footer from the body with a blank line.
+  const body = footer === "" ? merged : `${merged}\n\n${footer}`;
 
   return {
     body,

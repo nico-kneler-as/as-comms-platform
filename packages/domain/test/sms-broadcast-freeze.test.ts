@@ -111,9 +111,9 @@ describe("planSmsBroadcastFreeze", () => {
     });
 
     const expectedBodies: [string, string, string] = [
-      `Hi Ada, reply to ada@example.com ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
-      `Hi Grace, reply to grace@example.com ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
-      `Hi Linus, reply to linus@example.com ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `Hi Ada, reply to ada@example.com\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `Hi Grace, reply to grace@example.com\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `Hi Linus, reply to linus@example.com\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
     ];
 
     expect(plan).toEqual({
@@ -180,7 +180,7 @@ describe("planSmsBroadcastFreeze", () => {
     expect(plan.messages[0]).toMatchObject({
       contactId: "contact-1",
       phoneE164: "+14065550142",
-      body: `Hi Ada ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      body: `Hi Ada\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
     });
     expect(plan.reachable).toBe(2);
     expect(plan.deduplicatedByPhone).toBe(1);
@@ -218,7 +218,7 @@ describe("planSmsBroadcastFreeze", () => {
     expect(plan.selectedContacts).toBe(1);
     expect(plan.messages).toHaveLength(1);
     expect(plan.messages[0]?.body).toBe(
-      `Hi Ada ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `Hi Ada\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
     );
   });
 
@@ -328,8 +328,8 @@ describe("planSmsBroadcastFreeze", () => {
     });
 
     expect(plan.messages.map((message) => message.body)).toEqual([
-      "Hi Ada Txt STOP to quit",
-      "Hi Grace Txt STOP to quit",
+      "Hi Ada\n\nTxt STOP to quit",
+      "Hi Grace\n\nTxt STOP to quit",
     ]);
   });
 });

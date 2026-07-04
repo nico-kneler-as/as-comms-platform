@@ -176,7 +176,7 @@ export function ComposeStep({
   const wordCount = bodyPlaintext.trim()
     ? bodyPlaintext.trim().split(/\s+/u).length
     : 0;
-  const smsBodyWithFooter = `${bodyPlaintext} ${DEFAULT_SMS_OPT_OUT_FOOTER}`;
+  const smsBodyWithFooter = `${bodyPlaintext}\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`;
   const smsSegmentMetrics = smsMetrics(smsBodyWithFooter);
   const canContinue = isSmsLaunch
     ? bodyPlaintext.trim().length > 0
