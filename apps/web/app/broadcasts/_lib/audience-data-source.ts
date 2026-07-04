@@ -377,18 +377,23 @@ function filterAudienceMembersBySelection<
       | "all_available";
   },
 ): readonly T[] {
-  if (readAudienceMode(criteria) !== "specific") {
-    return rows;
+  // Defense-in-depth: whenever specific individuals are selected, restrict to
+  // them regardless of the (client-supplied, sometimes-missing) mode marker.
+  // contactIds is only populated by the "specific" picker, so this fails safe —
+  // it can never widen the audience beyond the explicit selection.
+  if ((criteria.contactIds?.length ?? 0) > 0) {
+    const selectedContactIds = new Set(criteria.contactIds ?? []);
+    return rows.filter(
+      (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
+    );
   }
 
-  if ((criteria.contactIds?.length ?? 0) === 0) {
+  // "specific" mode with no selection resolves to nobody (not everybody).
+  if (readAudienceMode(criteria) === "specific") {
     return [];
   }
 
-  const selectedContactIds = new Set(criteria.contactIds ?? []);
-  return rows.filter(
-    (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
-  );
+  return rows;
 }
 
 function readPrimaryEmail(input: {
