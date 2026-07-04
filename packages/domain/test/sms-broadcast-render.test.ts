@@ -18,7 +18,7 @@ describe("renderSmsBroadcast", () => {
           email: "ada@example.com",
         },
       },
-      `Hi Ada, reply to ada@example.com ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `Hi Ada, reply to ada@example.com\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
     ],
     [
       "substitutes tokens with surrounding whitespace inside the braces",
@@ -30,7 +30,7 @@ describe("renderSmsBroadcast", () => {
         },
         optOutFooter: "Text STOP",
       },
-      "Hi Ada Text STOP",
+      "Hi Ada\n\nText STOP",
     ],
     [
       "renders null supported token values as empty strings",
@@ -42,7 +42,7 @@ describe("renderSmsBroadcast", () => {
         },
         optOutFooter: "STOP",
       },
-      "Hi  at  STOP",
+      "Hi  at \n\nSTOP",
     ],
     [
       "renders unsupported well-formed tokens as empty strings",
@@ -54,7 +54,7 @@ describe("renderSmsBroadcast", () => {
         },
         optOutFooter: "STOP",
       },
-      "Hi  STOP",
+      "Hi \n\nSTOP",
     ],
     [
       "uses a custom footer when one is provided",
@@ -66,7 +66,7 @@ describe("renderSmsBroadcast", () => {
         },
         optOutFooter: "Txt STOP",
       },
-      "Hello Txt STOP",
+      "Hello\n\nTxt STOP",
     ],
     [
       "omits the footer and trailing separator when optOutFooter is empty",
@@ -98,7 +98,7 @@ describe("renderSmsBroadcast", () => {
 
     expect(smsMetrics("a".repeat(140)).segments).toBe(1);
     expect(rendered.body).toBe(
-      `${"a".repeat(140)} ${DEFAULT_SMS_OPT_OUT_FOOTER}`,
+      `${"a".repeat(140)}\n\n${DEFAULT_SMS_OPT_OUT_FOOTER}`,
     );
     expect(rendered.metrics).toEqual(smsMetrics(rendered.body));
     expect(rendered.metrics.segments).toBe(2);
