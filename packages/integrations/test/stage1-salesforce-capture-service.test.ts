@@ -770,7 +770,7 @@ describe("Salesforce capture service", () => {
     );
   });
 
-  it("keeps the default-off capture path unchanged when the extra Salesforce fields are unset", async () => {
+  it("always includes Text_Opt_In__c and Contact.Phone_Number__c in the capture SOQL", async () => {
     const queries: string[] = [];
     const baseApiClient = createFakeSalesforceApiClient();
     const service = createSalesforceCaptureService(
@@ -784,13 +784,13 @@ describe("Salesforce capture service", () => {
       },
     );
 
-    const result = await service.captureLiveBatch({
+    await service.captureLiveBatch({
       version: 1,
-      jobId: "job:salesforce:live:default-off-extra-fields",
-      correlationId: "corr:salesforce:live:default-off-extra-fields",
+      jobId: "job:salesforce:live:extra-fields",
+      correlationId: "corr:salesforce:live:extra-fields",
       traceId: null,
-      batchId: "batch:salesforce:live:default-off-extra-fields",
-      syncStateId: "sync:salesforce:live:default-off-extra-fields",
+      batchId: "batch:salesforce:live:extra-fields",
+      syncStateId: "sync:salesforce:live:extra-fields",
       attempt: 1,
       maxAttempts: 3,
       provider: "salesforce",
@@ -804,41 +804,25 @@ describe("Salesforce capture service", () => {
       maxRecords: 25,
     });
 
-    expect(queries.some((query) => query.includes("Text_Opt_In__c"))).toBe(
-      false,
-    );
-    expect(queries.some((query) => query.includes("Phone_Number__c"))).toBe(
-      false,
-    );
-    expect(queries).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          "SELECT CreatedDate, Email, Id, LastModifiedDate, Name, Phone, Volunteer_ID_Plain__c FROM Contact",
-        ),
-        expect.stringContaining(
-          "SELECT Contact__c, CreatedDate, Date_First_Sample_Collected__c, Date_Training_Completed__c, Date_Training_Sent__c, Expedition__c, Expedition__r.Name, Id, LastModifiedDate, Project__c, Project__r.Name, Status__c FROM Expedition_Members__c",
-        ),
-      ]),
-    );
-    expect(result.records).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          recordType: "contact_snapshot",
-          salesforceContactId: "003-stage1",
-          primaryPhone: null,
-          normalizedPhones: [],
-          memberships: [
-            expect.objectContaining({
-              salesforceId: "a01-membership-1",
-              textOptIn: null,
-            }),
-          ],
-        }),
-      ]),
-    );
+    // Fixed known custom fields — always captured (like the milestone dates),
+    // not env-gated.
+    expect(
+      queries.some(
+        (query) =>
+          query.includes(" FROM Contact ") &&
+          query.includes("Phone_Number__c"),
+      ),
+    ).toBe(true);
+    expect(
+      queries.some(
+        (query) =>
+          query.includes(" FROM Expedition_Members__c ") &&
+          query.includes("Text_Opt_In__c"),
+      ),
+    ).toBe(true);
   });
 
-  it("captures membership text opt-in only when the field is configured", async () => {
+  it("captures membership Text_Opt_In__c into the membership snapshot", async () => {
     async function captureWithTextOptIn(
       recordId: string,
       textOptIn: boolean,
@@ -856,10 +840,7 @@ describe("Salesforce capture service", () => {
         LastModifiedDate: "2026-01-05T00:01:00.000Z",
       };
       const service = createSalesforceCaptureService(
-        {
-          ...createSalesforceServiceConfig(),
-          membershipTextOptInField: "Text_Opt_In__c",
-        },
+        createSalesforceServiceConfig(),
         {
           apiClient: createStubSalesforceApiClient((soql) => {
             queries.push(soql);
@@ -947,13 +928,10 @@ describe("Salesforce capture service", () => {
     );
   });
 
-  it("uses the custom Salesforce contact phone field only when configured", async () => {
+  it("captures Contact.Phone_Number__c into the contact snapshot phone", async () => {
     const queries: string[] = [];
     const service = createSalesforceCaptureService(
-      {
-        ...createSalesforceServiceConfig(),
-        contactPhoneNumberField: "Phone_Number__c",
-      },
+      createSalesforceServiceConfig(),
       {
         apiClient: createStubSalesforceApiClient((soql) => {
           queries.push(soql);
