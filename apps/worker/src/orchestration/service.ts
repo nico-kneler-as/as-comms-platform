@@ -58,6 +58,11 @@ import {
   Stage1NonRetryableJobError,
   Stage1RetryableJobError
 } from "./errors.js";
+import {
+  createCapturedSmsConsentReconciler,
+  type CapturedSalesforceContactForConsentReconcile,
+  type ReconcileCapturedSmsConsentBatch
+} from "./reconcile-captured-sms-consent.js";
 import { createMailchimpTransitionScheduler } from "./mailchimp-transition-scheduler.js";
 import { projectionSeedPolicyCode, recordProjectionSeedOnce } from "./projection-seed.js";
 import { recordSyncFailureAudit } from "./sync-failure-audit.js";
@@ -1052,10 +1057,23 @@ export function createStage1WorkerOrchestrationService(input: {
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
+  readonly reconcileCapturedSmsConsent?: ReconcileCapturedSmsConsentBatch;
+  readonly now?: () => Date;
   readonly logger?: Pick<Console, "info">;
 }): Stage1WorkerOrchestrationService {
   const syncState = createStage1SyncStateService(input.persistence);
   const logger = input.logger ?? console;
+  const reconcileCapturedSmsConsent =
+    input.reconcileCapturedSmsConsent ??
+    createCapturedSmsConsentReconciler({
+      consentRecords: input.persistence.repositories.consentRecords,
+      logger,
+      ...(input.now === undefined
+        ? {}
+        : {
+            now: input.now
+          })
+    });
   const livePolling: Stage1LivePollingConfig = {
     gmailPollIntervalSeconds:
       input.livePolling?.gmailPollIntervalSeconds ??
@@ -1203,6 +1221,7 @@ export function createStage1WorkerOrchestrationService(input: {
     try {
       const captured = await params.capture(params.payload);
       const ingestResults: Stage1IngestResult[] = [];
+      const capturedSalesforceContacts: CapturedSalesforceContactForConsentReconcile[] = [];
       const prioritizedRecords = prioritizeCapturedRecordsForIngest(
         captured.records,
         params.mapRecord
@@ -1213,8 +1232,21 @@ export function createStage1WorkerOrchestrationService(input: {
         ingestResults.push(ingestResult);
 
         if (payload.provider === "salesforce") {
+          const salesforceRecord = record as SalesforceRecord;
+
+          if (
+            salesforceRecord.recordType === "contact_snapshot" &&
+            "contactId" in ingestResult &&
+            typeof ingestResult.contactId === "string"
+          ) {
+            capturedSalesforceContacts.push({
+              contactId: ingestResult.contactId,
+              record: salesforceRecord as CapturedSalesforceContactForConsentReconcile["record"]
+            });
+          }
+
           await recordDeferredSalesforceTaskAuditIfNeeded(input.persistence, {
-            record: record as SalesforceRecord,
+            record: salesforceRecord,
             ingestResult
           });
         }
@@ -1307,6 +1339,12 @@ export function createStage1WorkerOrchestrationService(input: {
             });
           }
         }
+      }
+
+      if (payload.provider === "salesforce") {
+        await reconcileCapturedSmsConsent({
+          capturedContacts: capturedSalesforceContacts
+        });
       }
 
       const summary = summarizeIngestResults(ingestResults);

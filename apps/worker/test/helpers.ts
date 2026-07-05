@@ -131,6 +131,7 @@ export async function createTestWorkerContext(input?: {
     readonly enabled?: boolean;
     readonly discoverySeed?: string;
   };
+  readonly now?: () => Date;
   readonly revalidateInboxViews?: (input: {
     readonly contactIds: readonly string[];
   }) => Promise<void>;
@@ -230,6 +231,11 @@ export async function createTestWorkerContext(input?: {
         "2026-01-01T00:00:00.000Z",
       tailState: mailchimpTailState,
     },
+    ...(input?.now === undefined
+      ? {}
+      : {
+          now: input.now
+        }),
     ...(input?.revalidateInboxViews === undefined
       ? {}
       : {
