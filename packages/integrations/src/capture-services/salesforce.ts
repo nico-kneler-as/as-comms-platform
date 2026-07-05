@@ -73,8 +73,10 @@ const salesforceCaptureServiceConfigSchema = z.object({
     .string()
     .min(1)
     .default("Expedition__r.Name"),
+  membershipTextOptInField: z.string().min(1).nullable().default(null),
   membershipRoleField: z.string().min(1).nullable().default(null),
   membershipStatusField: z.string().min(1).default("Status__c"),
+  contactPhoneNumberField: z.string().min(1).nullable().default(null),
   taskContactField: z.string().min(1).default("WhoId"),
   taskChannelField: z.string().min(1).default("TaskSubtype"),
   taskEmailChannelValues: z.array(z.string().min(1)).min(1).default(["Email"]),
@@ -631,6 +633,18 @@ function getPhoneField(row: SalesforceRow, fieldName: string): string | null {
   return normalizePhone(getStringField(row, fieldName));
 }
 
+function getBooleanField(
+  row: SalesforceRow,
+  fieldName: string | null,
+): boolean | null {
+  if (fieldName === null) {
+    return null;
+  }
+
+  const value = getPathValue(row, fieldName);
+  return typeof value === "boolean" ? value : null;
+}
+
 function buildSalesforceCursorMarker(record: SalesforceRecord): CursorMarker {
   if (isContactSnapshotRecord(record)) {
     return {
@@ -826,16 +840,21 @@ export function createSalesforceApiClient(
   };
 }
 
-function buildContactFields(): string[] {
-  return [
+function buildContactFields(
+  config: ResolvedSalesforceCaptureServiceConfig,
+): string[] {
+  return uniqueValues([
     "Id",
     "Name",
     "Email",
     "Phone",
+    ...(config.contactPhoneNumberField === null
+      ? []
+      : [config.contactPhoneNumberField]),
     "Volunteer_ID_Plain__c",
     "CreatedDate",
     "LastModifiedDate",
-  ];
+  ]);
 }
 
 function buildMembershipFields(
@@ -853,6 +872,9 @@ function buildMembershipFields(
     config.membershipProjectNameField,
     config.membershipExpeditionField,
     config.membershipExpeditionNameField,
+    ...(config.membershipTextOptInField === null
+      ? []
+      : [config.membershipTextOptInField]),
     ...(config.membershipRoleField === null
       ? []
       : [config.membershipRoleField]),
@@ -1039,15 +1061,21 @@ function buildContactSnapshotRecordWithConfig(input: {
     };
   }
 
+  const primaryPhone = getPhoneField(input.contact, "Phone");
+  const fallbackPhone =
+    input.config.contactPhoneNumberField === null
+      ? null
+      : getPhoneField(input.contact, input.config.contactPhoneNumberField);
+
   return salesforceContactSnapshotRecordSchema.parse({
     recordType: "contact_snapshot",
     recordId: salesforceContactId,
     salesforceContactId,
     displayName: getStringField(input.contact, "Name") ?? salesforceContactId,
     primaryEmail: getEmailField(input.contact, "Email"),
-    primaryPhone: getPhoneField(input.contact, "Phone"),
+    primaryPhone: primaryPhone ?? fallbackPhone,
     normalizedEmails: uniqueValues([getEmailField(input.contact, "Email")]),
-    normalizedPhones: uniqueValues([getPhoneField(input.contact, "Phone")]),
+    normalizedPhones: uniqueValues([primaryPhone, fallbackPhone]),
     volunteerIdPlainValues: uniqueValues([
       getStringField(input.contact, "Volunteer_ID_Plain__c"),
     ]),
@@ -1070,6 +1098,10 @@ function buildContactSnapshotRecordWithConfig(input: {
       expeditionName: getStringField(
         membership,
         input.config.membershipExpeditionNameField,
+      ),
+      textOptIn: getBooleanField(
+        membership,
+        input.config.membershipTextOptInField,
       ),
       role:
         input.config.membershipRoleField === null
@@ -1506,7 +1538,7 @@ export function createSalesforceCaptureService(
 
     const membershipFields = buildMembershipFields(parsedConfig);
     const taskFields = buildTaskFields(parsedConfig);
-    const contactFields = buildContactFields();
+    const contactFields = buildContactFields(parsedConfig);
 
     const [membershipRows, directTaskRows] = await Promise.all([
       input.recordIds.length > 0

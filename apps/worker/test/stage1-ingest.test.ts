@@ -198,6 +198,7 @@ describe("Stage 1 worker ingest service", () => {
           projectName: "Project Antarctica",
           expeditionId: "expedition_1",
           expeditionName: "Expedition Antarctica",
+          textOptIn: null,
           role: "volunteer",
           status: "active"
         }
