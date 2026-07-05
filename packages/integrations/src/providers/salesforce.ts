@@ -58,6 +58,7 @@ const salesforceMembershipSchema = z.object({
   projectName: nullableStringSchema.default(null),
   expeditionId: nullableStringSchema.default(null),
   expeditionName: nullableStringSchema.default(null),
+  textOptIn: z.boolean().nullable().default(null),
   role: nullableStringSchema.default(null),
   status: nullableStringSchema.default(null),
 });

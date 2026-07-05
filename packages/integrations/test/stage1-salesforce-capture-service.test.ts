@@ -770,6 +770,269 @@ describe("Salesforce capture service", () => {
     );
   });
 
+  it("keeps the default-off capture path unchanged when the extra Salesforce fields are unset", async () => {
+    const queries: string[] = [];
+    const baseApiClient = createFakeSalesforceApiClient();
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+          return baseApiClient.queryAll(soql);
+        }),
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:default-off-extra-fields",
+      correlationId: "corr:salesforce:live:default-off-extra-fields",
+      traceId: null,
+      batchId: "batch:salesforce:live:default-off-extra-fields",
+      syncStateId: "sync:salesforce:live:default-off-extra-fields",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-1"],
+      maxRecords: 25,
+    });
+
+    expect(queries.some((query) => query.includes("Text_Opt_In__c"))).toBe(
+      false,
+    );
+    expect(queries.some((query) => query.includes("Phone_Number__c"))).toBe(
+      false,
+    );
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "SELECT CreatedDate, Email, Id, LastModifiedDate, Name, Phone, Volunteer_ID_Plain__c FROM Contact",
+        ),
+        expect.stringContaining(
+          "SELECT Contact__c, CreatedDate, Date_First_Sample_Collected__c, Date_Training_Completed__c, Date_Training_Sent__c, Expedition__c, Expedition__r.Name, Id, LastModifiedDate, Project__c, Project__r.Name, Status__c FROM Expedition_Members__c",
+        ),
+      ]),
+    );
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-stage1",
+          primaryPhone: null,
+          normalizedPhones: [],
+          memberships: [
+            expect.objectContaining({
+              salesforceId: "a01-membership-1",
+              textOptIn: null,
+            }),
+          ],
+        }),
+      ]),
+    );
+  });
+
+  it("captures membership text opt-in only when the field is configured", async () => {
+    async function captureWithTextOptIn(
+      recordId: string,
+      textOptIn: boolean,
+    ): Promise<{ readonly queries: string[]; readonly result: Awaited<ReturnType<SalesforceCaptureService["captureLiveBatch"]>> }> {
+      const queries: string[] = [];
+      const membershipRow = {
+        Id: recordId,
+        Contact__c: "003-opt-in",
+        Project__c: "project-opt-in",
+        Expedition__c: "expedition-opt-in",
+        Role__c: "volunteer",
+        Status__c: "active",
+        Text_Opt_In__c: textOptIn,
+        CreatedDate: "2026-01-02T00:00:00.000Z",
+        LastModifiedDate: "2026-01-05T00:01:00.000Z",
+      };
+      const service = createSalesforceCaptureService(
+        {
+          ...createSalesforceServiceConfig(),
+          membershipTextOptInField: "Text_Opt_In__c",
+        },
+        {
+          apiClient: createStubSalesforceApiClient((soql) => {
+            queries.push(soql);
+
+            if (soql.includes(" FROM Contact ")) {
+              return Promise.resolve([
+                {
+                  Id: "003-opt-in",
+                  Name: "Opt In Volunteer",
+                  Email: "opt-in@example.org",
+                  Phone: "+15555550130",
+                  Volunteer_ID_Plain__c: "VOL-130",
+                  CreatedDate: "2026-01-01T00:00:00.000Z",
+                  LastModifiedDate: "2026-01-05T00:00:00.000Z",
+                },
+              ]);
+            }
+
+            if (soql.includes(" FROM Expedition_Members__c ")) {
+              return Promise.resolve(
+                soql.includes(recordId) || soql.includes("Contact__c IN ('003-opt-in')")
+                  ? [membershipRow]
+                  : [],
+              );
+            }
+
+            if (soql.includes(" FROM Task ")) {
+              return Promise.resolve([]);
+            }
+
+            return Promise.resolve([]);
+          }),
+          now: () => new Date("2026-01-05T00:05:00.000Z"),
+        },
+      );
+
+      const result = await service.captureLiveBatch({
+        version: 1,
+        jobId: `job:salesforce:live:${recordId}`,
+        correlationId: `corr:salesforce:live:${recordId}`,
+        traceId: null,
+        batchId: `batch:salesforce:live:${recordId}`,
+        syncStateId: `sync:salesforce:live:${recordId}`,
+        attempt: 1,
+        maxAttempts: 3,
+        provider: "salesforce",
+        mode: "live",
+        jobType: "live_ingest",
+        cursor: null,
+        checkpoint: null,
+        windowStart: null,
+        windowEnd: null,
+        recordIds: [recordId],
+        maxRecords: 25,
+      });
+
+      return { queries, result };
+    }
+
+    const { queries: trueQueries, result: trueResult } =
+      await captureWithTextOptIn("a01-membership-opt-in-true", true);
+    const { queries: falseQueries, result: falseResult } =
+      await captureWithTextOptIn("a01-membership-opt-in-false", false);
+
+    expect(
+      [...trueQueries, ...falseQueries].some((query) =>
+        query.includes("Text_Opt_In__c"),
+      ),
+    ).toBe(true);
+    expect(trueResult.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          memberships: [expect.objectContaining({ textOptIn: true })],
+        }),
+      ]),
+    );
+    expect(falseResult.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          memberships: [expect.objectContaining({ textOptIn: false })],
+        }),
+      ]),
+    );
+  });
+
+  it("uses the custom Salesforce contact phone field only when configured", async () => {
+    const queries: string[] = [];
+    const service = createSalesforceCaptureService(
+      {
+        ...createSalesforceServiceConfig(),
+        contactPhoneNumberField: "Phone_Number__c",
+      },
+      {
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+
+          if (soql.includes(" FROM Contact ")) {
+            return Promise.resolve([
+              {
+                Id: "003-custom-phone",
+                Name: "Custom Phone Volunteer",
+                Email: "custom-phone@example.org",
+                Phone: null,
+                Phone_Number__c: "+14155552671",
+                Volunteer_ID_Plain__c: "VOL-131",
+                CreatedDate: "2026-01-01T00:00:00.000Z",
+                LastModifiedDate: "2026-01-05T00:00:00.000Z",
+              },
+            ]);
+          }
+
+          if (soql.includes(" FROM Expedition_Members__c ")) {
+            return Promise.resolve([
+              {
+                Id: "a01-membership-custom-phone",
+                Contact__c: "003-custom-phone",
+                Project__c: "project-custom-phone",
+                Expedition__c: "expedition-custom-phone",
+                Role__c: "volunteer",
+                Status__c: "active",
+                CreatedDate: "2026-01-02T00:00:00.000Z",
+                LastModifiedDate: "2026-01-05T00:01:00.000Z",
+              },
+            ]);
+          }
+
+          if (soql.includes(" FROM Task ")) {
+            return Promise.resolve([]);
+          }
+
+          return Promise.resolve([]);
+        }),
+        now: () => new Date("2026-01-05T00:05:00.000Z"),
+      },
+    );
+
+    const result = await service.captureLiveBatch({
+      version: 1,
+      jobId: "job:salesforce:live:custom-phone",
+      correlationId: "corr:salesforce:live:custom-phone",
+      traceId: null,
+      batchId: "batch:salesforce:live:custom-phone",
+      syncStateId: "sync:salesforce:live:custom-phone",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "live",
+      jobType: "live_ingest",
+      cursor: null,
+      checkpoint: null,
+      windowStart: null,
+      windowEnd: null,
+      recordIds: ["a01-membership-custom-phone"],
+      maxRecords: 25,
+    });
+
+    expect(queries.some((query) => query.includes("Phone_Number__c"))).toBe(
+      true,
+    );
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: "003-custom-phone",
+          primaryPhone: "+14155552671",
+          normalizedPhones: ["+14155552671"],
+        }),
+      ]),
+    );
+  });
+
   it("maps expedition-linked auto email tasks to task_communication with routing context", async () => {
     const contactRow = {
       Id: "003-auto",

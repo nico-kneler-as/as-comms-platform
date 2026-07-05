@@ -35,8 +35,10 @@ export const salesforceCaptureRuntimeConfigSchema = z.object({
     membershipContactField: z.string().min(1).default("Contact__c"),
     membershipProjectField: z.string().min(1).default("Project__c"),
     membershipExpeditionField: z.string().min(1).default("Expedition__c"),
+    membershipTextOptInField: z.string().min(1).nullable().default(null),
     membershipRoleField: z.string().min(1).nullable().default(null),
     membershipStatusField: z.string().min(1).default("Status__c"),
+    contactPhoneNumberField: z.string().min(1).nullable().default(null),
     taskContactField: z.string().min(1).default("WhoId"),
     taskChannelField: z.string().min(1).default("TaskSubtype"),
     taskEmailChannelValues: z
@@ -185,12 +187,18 @@ export function readSalesforceCaptureRuntimeConfig(
         env.SALESFORCE_EXPEDITION_MEMBER_EXPEDITION_FIELD,
         "Expedition__c",
       ),
+      membershipTextOptInField: parseOptionalNullableStringEnv(
+        env.SALESFORCE_EXPEDITION_MEMBER_TEXT_OPT_IN_FIELD,
+      ),
       membershipRoleField: parseOptionalNullableStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_ROLE_FIELD,
       ),
       membershipStatusField: parseOptionalStringEnv(
         env.SALESFORCE_EXPEDITION_MEMBER_STATUS_FIELD,
         "Status__c",
+      ),
+      contactPhoneNumberField: parseOptionalNullableStringEnv(
+        env.SALESFORCE_CONTACT_PHONE_NUMBER_FIELD,
       ),
       taskContactField: parseOptionalStringEnv(
         env.SALESFORCE_TASK_CONTACT_FIELD,

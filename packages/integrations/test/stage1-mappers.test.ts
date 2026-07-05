@@ -360,6 +360,7 @@ describe("Stage 1 provider-close mappers", () => {
           projectName: "Project Antarctica",
           expeditionId: "expedition_1",
           expeditionName: "Expedition Antarctica",
+          textOptIn: null,
           role: "volunteer",
           status: "active"
         }
@@ -429,6 +430,7 @@ describe("Stage 1 provider-close mappers", () => {
           projectName: null,
           expeditionId: "sf-expedition-X",
           expeditionName: null,
+          textOptIn: null,
           role: "volunteer",
           status: "active"
         }
