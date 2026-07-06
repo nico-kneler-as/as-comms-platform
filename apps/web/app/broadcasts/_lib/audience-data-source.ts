@@ -297,13 +297,7 @@ async function resolvePrimaryAliasEmail(
 }
 
 function hasAppliedAudienceFilters(
-  criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  },
+  criteria: AudienceCriteria,
 ): boolean {
   switch (readAudienceMode(criteria)) {
     case "all_approved":
@@ -315,13 +309,7 @@ function hasAppliedAudienceFilters(
 }
 
 function readAudienceMode(
-  criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  },
+  criteria: AudienceCriteria,
 ): "project_status" | "specific" | "all_approved" | "all_available" {
   return criteria.initialFilter ?? "project_status";
 }
@@ -362,6 +350,9 @@ function toStoredAudienceCriteria(
     statuses: criteria.statuses,
     contactIds: criteria.contactIds ?? [],
     newsletterSubscriberIds: criteria.newsletterSubscriberIds ?? [],
+    ...(criteria.initialFilter === undefined
+      ? {}
+      : { initialFilter: criteria.initialFilter }),
   };
 }
 
@@ -369,13 +360,7 @@ function filterAudienceMembersBySelection<
   T extends { readonly contactId: string | null },
 >(
   rows: readonly T[],
-  criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  },
+  criteria: AudienceCriteria,
 ): readonly T[] {
   // Defense-in-depth: whenever specific individuals are selected, restrict to
   // them regardless of the (client-supplied, sometimes-missing) mode marker.
@@ -819,13 +804,7 @@ export async function resolveStoredCampaignAudience(input: {
 
 async function resolveWizardAudience(
   kind: CampaignKind,
-  criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  },
+  criteria: AudienceCriteria,
   at: Date,
 ): Promise<readonly AudienceMember[]> {
   const parsedCriteria = audienceCriteriaSchema.parse(criteria);
@@ -1060,13 +1039,7 @@ async function readRequestOrigin(): Promise<string> {
 
 export async function resolveAudienceCountAction(input: {
   readonly kind: CampaignKind;
-  readonly criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  };
+  readonly criteria: AudienceCriteria;
 }): Promise<UiResult<AudienceCountData>> {
   await requireSession();
 
@@ -1100,13 +1073,7 @@ export async function resolveAudienceCountAction(input: {
 
 export async function previewAudienceAction(input: {
   readonly kind: CampaignKind;
-  readonly criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  };
+  readonly criteria: AudienceCriteria;
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireSession();
 
@@ -1162,13 +1129,7 @@ export async function previewAudienceAction(input: {
 export async function loadComposePreviewAction(input: {
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
-  readonly criteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  };
+  readonly criteria: AudienceCriteria;
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
   readonly preheader: string;
@@ -1529,13 +1490,7 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
   readonly preheader: string | null;
-  readonly audienceCriteria: AudienceCriteria & {
-    readonly initialFilter?:
-      | "project_status"
-      | "specific"
-      | "all_approved"
-      | "all_available";
-  };
+  readonly audienceCriteria: AudienceCriteria;
   readonly audienceSize: number | null;
 }): Promise<UiResult<CampaignWizardDraftData>> {
   const session = await requireSession();
