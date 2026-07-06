@@ -93,6 +93,10 @@ function hasAppliedAudienceFilters(
 function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
+  if (draft.audienceCriteria.initialFilter !== undefined) {
+    return draft.audienceCriteria.initialFilter;
+  }
+
   if (
     (draft.audienceCriteria.contactIds?.length ?? 0) > 0 ||
     (draft.audienceCriteria.newsletterSubscriberIds?.length ?? 0) > 0
@@ -343,9 +347,7 @@ function clearAudienceCriteria(
 
 function toActionCriteria(
   criteria: CampaignAudienceCriteria,
-): AudienceCriteria & {
-  readonly initialFilter?: AudienceInitialFilter;
-} {
+): AudienceCriteria {
   if (criteria.initialFilter === undefined) {
     const rest = { ...criteria };
     delete rest.initialFilter;

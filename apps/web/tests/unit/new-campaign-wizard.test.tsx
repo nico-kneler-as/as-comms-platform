@@ -466,7 +466,10 @@ vi.mock("../../app/broadcasts/new/_components/wizard-rail", () => ({
   ),
 }));
 
-import { NewCampaignWizard } from "../../app/broadcasts/new/_components/new-campaign-wizard";
+import {
+  deriveInitialFilter,
+  NewCampaignWizard,
+} from "../../app/broadcasts/new/_components/new-campaign-wizard";
 import type {
   AudienceBuilderBootstrap,
   CampaignWizardDraftData,
@@ -897,6 +900,28 @@ describe("NewCampaignWizard", () => {
 
     expect(getByTestId("current-step").textContent).toBe("5");
     expect(getByTestId("review-step").textContent).toContain("ReviewStep");
+  });
+
+  it("restores a persisted audience mode from the draft criteria", () => {
+    expect(
+      deriveInitialFilter(
+        buildDraft({
+          audienceCriteria: {
+            projectId: null,
+            projectIds: [],
+            statuses: [],
+            contactIds: [],
+            newsletterSubscriberIds: [],
+            expeditionIds: [],
+            lastActivityWindow: "all_time",
+            hasReplied: "either",
+            hasClicked: "either",
+            initialFilter: "all_approved",
+          },
+          audienceSize: 0,
+        }),
+      ),
+    ).toBe("all_approved");
   });
 
   it("keeps frozen campaigns on the current step when the rail is clicked", async () => {

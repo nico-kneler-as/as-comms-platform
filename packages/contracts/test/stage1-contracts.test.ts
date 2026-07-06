@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  audienceCriteriaSchema,
   canonicalEventSchema,
   canonicalEventTypeValues,
   identityResolutionReasonCodeValues,
@@ -154,5 +155,26 @@ describe("Stage 1 contracts", () => {
     expect(providerScoped.success).toBe(true);
     expect(orchestrationScoped.success).toBe(true);
     expect(invalid.success).toBe(false);
+  });
+
+  it("preserves the audience mode when provided and omits it otherwise", () => {
+    const parsedWithMode = audienceCriteriaSchema.parse({
+      projectIds: ["project-1"],
+      statuses: ["Approved"],
+      initialFilter: "specific",
+    });
+    const parsedWithoutMode = audienceCriteriaSchema.parse({
+      projectIds: ["project-1"],
+      statuses: ["Approved"],
+    });
+    const parsedUnknownMode = audienceCriteriaSchema.safeParse({
+      projectIds: ["project-1"],
+      statuses: ["Approved"],
+      initialFilter: "invalid_mode",
+    });
+
+    expect(parsedWithMode.initialFilter).toBe("specific");
+    expect(parsedWithoutMode.initialFilter).toBeUndefined();
+    expect(parsedUnknownMode.success).toBe(false);
   });
 });

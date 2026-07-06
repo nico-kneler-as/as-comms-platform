@@ -244,6 +244,9 @@ export const audienceCriteriaSchema = z
     hasClicked: audienceTriStateSchema.default(
       audienceCriteriaDefaults.hasClicked,
     ),
+    initialFilter: z
+      .enum(["project_status", "specific", "all_approved", "all_available"])
+      .optional(),
   }))
   .transform((value) => ({
     ...value,

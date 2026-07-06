@@ -40,9 +40,7 @@ export type AudienceInitialFilter =
   | "all_approved"
   | "all_available";
 
-export type CampaignAudienceCriteria = AudienceCriteria & {
-  readonly initialFilter?: AudienceInitialFilter | undefined;
-};
+export type CampaignAudienceCriteria = AudienceCriteria;
 
 const MODE_META: Record<
   AudienceInitialFilter,
