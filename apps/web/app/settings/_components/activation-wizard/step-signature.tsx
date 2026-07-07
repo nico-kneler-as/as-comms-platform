@@ -1,9 +1,13 @@
+import { useRef } from "react";
 import { Mail } from "lucide-react";
 
 import {
+  buildSignaturePreview,
   PROJECT_ALIAS_SIGNATURE_MAX_LENGTH,
+  PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN,
   buildProjectEmailPreview,
-  getSignatureValidationError
+  getSignatureValidationError,
+  insertProjectAliasSignatureToken,
 } from "./shared";
 
 export function StepSignature({
@@ -18,6 +22,27 @@ export function StepSignature({
   readonly onSignatureChange: (nextValue: string) => void;
 }) {
   const validationError = getSignatureValidationError(signatureDraft);
+  const signatureTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const signaturePreview = buildSignaturePreview(signatureDraft);
+
+  function handleInsertOperatorToken() {
+    const textarea = signatureTextareaRef.current;
+    const { nextValue, nextCaret } = insertProjectAliasSignatureToken({
+      value: signatureDraft,
+      selectionStart: textarea?.selectionStart ?? signatureDraft.length,
+      selectionEnd: textarea?.selectionEnd ?? signatureDraft.length,
+    });
+
+    onSignatureChange(nextValue);
+    requestAnimationFrame(() => {
+      const current = signatureTextareaRef.current;
+
+      if (current !== null) {
+        current.focus();
+        current.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,7 +68,18 @@ export function StepSignature({
             {String(signatureDraft.length)}/{String(PROJECT_ALIAS_SIGNATURE_MAX_LENGTH)}
           </span>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11.5px] text-slate-500">
+          <span>Insert:</span>
+          <button
+            type="button"
+            onClick={handleInsertOperatorToken}
+            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-[11px] text-slate-700 transition-colors hover:bg-slate-100"
+          >
+            {PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN}
+          </button>
+        </div>
         <textarea
+          ref={signatureTextareaRef}
           value={signatureDraft}
           onChange={(event) => {
             onSignatureChange(event.target.value);
@@ -59,9 +95,14 @@ export function StepSignature({
       </div>
 
       <div>
-        <p className="text-[10px] font-semibold uppercase text-slate-500">
-          Preview
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] font-semibold uppercase text-slate-500">
+            Preview
+          </p>
+          <span className="text-[11px] text-slate-500">
+            Resolves to each sender&apos;s first name
+          </span>
+        </div>
         <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2 text-[11.5px]">
             <Mail className="size-3 text-slate-400" aria-hidden="true" />
@@ -74,8 +115,8 @@ export function StepSignature({
             <p>Hi {"{firstName}"},</p>
             <p className="mt-2 italic text-slate-400">...message body preview...</p>
             <div className="mt-3 whitespace-pre-wrap border-t border-slate-100 pt-3 font-mono text-[12px] leading-relaxed text-slate-600">
-              {signatureDraft.trim().length > 0 ? (
-                signatureDraft
+              {signaturePreview.trim().length > 0 ? (
+                signaturePreview
               ) : (
                 <span className="not-italic text-slate-400">
                   Your signature appears here.

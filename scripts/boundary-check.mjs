@@ -15,6 +15,7 @@ const workspaceRules = {
       "@as-comms/domain/phone",
       "@as-comms/domain/html-import",
       "@as-comms/domain/sms-segments",
+      "@as-comms/domain/signature-template",
       "@as-comms/db/parse-source-url",
       "@as-comms/ui"
     ])
