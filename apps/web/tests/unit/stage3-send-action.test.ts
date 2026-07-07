@@ -26,15 +26,18 @@ import {
   type Stage1WebTestRuntime,
 } from "../../src/server/stage1-runtime.test-support";
 
-function buildCurrentUser(role: "operator" | "admin" = "operator") {
+function buildCurrentUser(input?: {
+  readonly role?: "operator" | "admin";
+  readonly name?: string | null;
+}) {
   const now = new Date("2026-04-21T12:00:00.000Z");
   return {
     id: "user:operator",
-    name: "Operator",
+    name: input?.name === undefined ? "Operator" : input.name,
     email: "operator@example.org",
     emailVerified: now,
     image: null,
-    role,
+    role: input?.role ?? "operator",
     deactivatedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -296,6 +299,106 @@ describe("sendComposerAction", () => {
       }),
       expect.objectContaining({ resolveThreadIdViaRfc822: true }),
     );
+  });
+
+  it("resolves the operator first-name signature token in both plaintext and HTML", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    requireSession.mockResolvedValueOnce(
+      buildCurrentUser({ name: "Nico Kneler" }),
+    );
+    await runtime.context.settings.aliases.updateSignature({
+      aliasId: "alias:antarctica",
+      signature: "Best,\n{{operatorFirstName}}\nAdventure Scientists",
+      actorId: "user:operator",
+    });
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-signature",
+      gmailThreadId: "gmail-thread-signature",
+      rfc822MessageId: "<gmail-message-signature@example.org>",
+    });
+
+    const result = await sendComposerAction(buildInput());
+
+    expect(result.ok).toBe(true);
+    expect(sendComposerGmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyPlaintext:
+          "Thanks again for confirming the field logistics.\n\nBest,\nNico\nAdventure Scientists",
+        bodyHtml:
+          "<p>Thanks again for confirming the field logistics.</p><p>Best,<br>Nico<br>Adventure Scientists</p>",
+      }),
+      expect.objectContaining({ resolveThreadIdViaRfc822: true }),
+    );
+
+    if (!result.ok) {
+      throw new Error("Expected success result.");
+    }
+
+    const pendingRows =
+      await runtime.context.repositories.pendingOutbounds.findForContact(
+        result.data.canonicalContactId,
+        { limit: 10 },
+      );
+
+    expect(pendingRows[0]).toMatchObject({
+      bodyPlaintext:
+        "Thanks again for confirming the field logistics.\n\nBest,\nNico\nAdventure Scientists",
+      bodyHtml:
+        "<p>Thanks again for confirming the field logistics.</p><p>Best,<br>Nico<br>Adventure Scientists</p>",
+    });
+  });
+
+  it("drops empty operator token lines when the operator has no name", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    requireSession.mockResolvedValueOnce(buildCurrentUser({ name: null }));
+    await runtime.context.settings.aliases.updateSignature({
+      aliasId: "alias:antarctica",
+      signature: "Best,\n{{operatorFirstName}}\nAdventure Scientists",
+      actorId: "user:operator",
+    });
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-no-name",
+      gmailThreadId: "gmail-thread-no-name",
+      rfc822MessageId: "<gmail-message-no-name@example.org>",
+    });
+
+    const result = await sendComposerAction(buildInput());
+
+    expect(result.ok).toBe(true);
+    expect(sendComposerGmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyPlaintext:
+          "Thanks again for confirming the field logistics.\n\nBest,\nAdventure Scientists",
+        bodyHtml:
+          "<p>Thanks again for confirming the field logistics.</p><p>Best,<br>Adventure Scientists</p>",
+      }),
+      expect.objectContaining({ resolveThreadIdViaRfc822: true }),
+    );
+
+    if (!result.ok) {
+      throw new Error("Expected success result.");
+    }
+
+    const pendingRows =
+      await runtime.context.repositories.pendingOutbounds.findForContact(
+        result.data.canonicalContactId,
+        { limit: 10 },
+      );
+
+    expect(pendingRows[0]).toMatchObject({
+      bodyPlaintext:
+        "Thanks again for confirming the field logistics.\n\nBest,\nAdventure Scientists",
+      bodyHtml:
+        "<p>Thanks again for confirming the field logistics.</p><p>Best,<br>Adventure Scientists</p>",
+    });
   });
 
   it("does not create a project knowledge entry when saveAsKnowledge is false", async () => {

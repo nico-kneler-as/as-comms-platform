@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useTransition } from "react";
 
 import { smsMetrics } from "@as-comms/domain/sms-segments";
+import {
+  firstNameFromName,
+  renderSignatureTemplate,
+} from "@as-comms/domain/signature-template";
 
 import {
   FOCUS_RING,
@@ -255,7 +259,12 @@ export function InboxComposerDetailPane({
         null);
   const selectedAliasAiConfigured =
     selectedAliasRecord?.isAiConfigured ?? selectedAliasRecord?.isAiReady ?? false;
-  const selectedAliasSignature = selectedAliasRecord?.signature ?? "";
+  const selectedAliasSignature = renderSignatureTemplate(
+    selectedAliasRecord?.signature ?? "",
+    {
+      operatorFirstName: firstNameFromName(operatorDisplayName),
+    },
+  );
   const smsRecipientRequiresKnownContact =
     state.activeTab === "sms" && state.smsRecipient?.kind === "phone";
   const smsAiConfigured =

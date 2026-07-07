@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import * as React from "react";
-import { useOptimistic, useState, useTransition } from "react";
+import { useOptimistic, useRef, useState, useTransition } from "react";
 import { ArrowLeft, Link2Off, Mail, Pencil, Trash2 } from "lucide-react";
+import { renderSignatureTemplate } from "@as-comms/domain/signature-template";
 
 import {
   FOCUS_RING,
@@ -40,7 +41,10 @@ import {
 } from "../actions";
 import {
   getProjectAliasSignatureValidationError,
-  normalizeProjectAliasSignature
+  insertProjectAliasSignatureToken,
+  normalizeProjectAliasSignature,
+  PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN,
+  PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME,
 } from "../_lib/project-alias-signature";
 import { PostmarkSenderStatusSection } from "./postmark-sender-status";
 import { ProjectAiKnowledgeSection } from "./project-ai-knowledge-section";
@@ -202,6 +206,9 @@ export function ProjectDetail({
 }: {
   readonly project: ProjectSettingsDetailViewModel;
 }) {
+  const signatureTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>(
+    {}
+  );
   const [projectState, setProjectState] = useState(() => buildProjectState(project));
   const [optimisticProject, applyOptimisticProject] = useOptimistic(
     projectState,
@@ -366,6 +373,29 @@ export function ProjectDetail({
       ...current,
       [aliasId]: undefined
     }));
+  }
+
+  function handleInsertOperatorToken(aliasId: string) {
+    const textarea = signatureTextareaRefs.current[aliasId] ?? null;
+    const currentDraft =
+      signatureDrafts[aliasId] ??
+      optimisticProject.emails.find((email) => email.id === aliasId)?.signature ??
+      "";
+    const { nextValue, nextCaret } = insertProjectAliasSignatureToken({
+      value: currentDraft,
+      selectionStart: textarea?.selectionStart ?? currentDraft.length,
+      selectionEnd: textarea?.selectionEnd ?? currentDraft.length
+    });
+
+    handleSignatureDraftChange(aliasId, nextValue);
+    requestAnimationFrame(() => {
+      const current = signatureTextareaRefs.current[aliasId];
+
+      if (current !== null && current !== undefined) {
+        current.focus();
+        current.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
   }
 
   function handleSaveSignature(email: ProjectEmailMutationData) {
@@ -844,6 +874,9 @@ export function ProjectDetail({
               const signatureError = signatureErrors[email.id];
               const signatureDirty =
                 normalizeProjectAliasSignature(signatureDraft) !== email.signature;
+              const signaturePreview = renderSignatureTemplate(signatureDraft, {
+                operatorFirstName: PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME
+              });
 
               return (
                 <div
@@ -918,6 +951,9 @@ export function ProjectDetail({
                         </label>
                         <textarea
                           id={`project-email-signature-${email.id}`}
+                          ref={(element) => {
+                            signatureTextareaRefs.current[email.id] = element;
+                          }}
                           value={signatureDraft}
                           onChange={(event) => {
                             handleSignatureDraftChange(
@@ -934,6 +970,18 @@ export function ProjectDetail({
                           )}
                           placeholder={`Warmly,\nThe ${signaturePlaceholderProjectName} Team\nAdventure Scientists`}
                         />
+                        <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-slate-500">
+                          <span>Insert:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleInsertOperatorToken(email.id);
+                            }}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-[11px] text-slate-700 transition-colors hover:bg-slate-100"
+                          >
+                            {PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN}
+                          </button>
+                        </div>
                         <span className={cn(TYPE.caption, "text-slate-500")}>
                           Appended to every outbound email from this alias.
                         </span>
@@ -942,6 +990,33 @@ export function ProjectDetail({
                             {signatureError}
                           </p>
                         ) : null}
+                      </div>
+                      <div className="rounded-md border border-slate-200 bg-white">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2 text-[11px] text-slate-500">
+                          <span>Preview</span>
+                          <span>Resolves to each sender&apos;s first name</span>
+                        </div>
+                        <div className="border-b border-slate-100 px-3 py-2 text-[11.5px]">
+                          <span className="text-slate-500">From</span>{" "}
+                          <span className="font-mono text-slate-700">
+                            {email.address}
+                          </span>
+                        </div>
+                        <div className="px-3 py-3 text-[12.5px] text-slate-700">
+                          <p>Hi {"{firstName}"},</p>
+                          <p className="mt-2 italic text-slate-400">
+                            ...message body preview...
+                          </p>
+                          <div className="mt-3 whitespace-pre-wrap border-t border-slate-100 pt-3 font-mono text-[12px] leading-relaxed text-slate-600">
+                            {signaturePreview.trim().length > 0 ? (
+                              signaturePreview
+                            ) : (
+                              <span className="not-italic text-slate-400">
+                                Your signature appears here.
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>

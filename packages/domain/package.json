@@ -21,6 +21,10 @@
     "./html-import": {
       "types": "./src/html-import.ts",
       "default": "./dist/html-import.js"
+    },
+    "./signature-template": {
+      "types": "./src/signature-template.ts",
+      "default": "./dist/signature-template.js"
     }
   },
   "files": [

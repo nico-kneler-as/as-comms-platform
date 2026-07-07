@@ -1,10 +1,14 @@
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
+import { renderSignatureTemplate } from "@as-comms/domain/signature-template";
 import { parseSourceUrl } from "@as-comms/db/parse-source-url";
 
 import {
   getProjectAliasSignatureValidationError,
+  insertProjectAliasSignatureToken,
   normalizeProjectAliasSignature,
-  PROJECT_ALIAS_SIGNATURE_MAX_LENGTH
+  PROJECT_ALIAS_SIGNATURE_MAX_LENGTH,
+  PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN,
+  PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME,
 } from "../../_lib/project-alias-signature";
 
 export interface AliasDraft {
@@ -200,6 +204,12 @@ export function normalizeSignatureDraft(value: string): string {
   return normalizeProjectAliasSignature(value);
 }
 
+export function buildSignaturePreview(signatureDraft: string): string {
+  return renderSignatureTemplate(signatureDraft, {
+    operatorFirstName: PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME,
+  });
+}
+
 export function slugifyProjectAlias(value: string): string {
   return value
     .trim()
@@ -219,3 +229,7 @@ export function truncateSignatureSummary(value: string): string {
 }
 
 export { PROJECT_ALIAS_SIGNATURE_MAX_LENGTH };
+export {
+  insertProjectAliasSignatureToken,
+  PROJECT_ALIAS_SIGNATURE_OPERATOR_FIRST_NAME_TOKEN,
+};
