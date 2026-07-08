@@ -352,6 +352,61 @@ describe("sendComposerAction", () => {
     });
   });
 
+  it("uses signatureOverride instead of the alias default in both plaintext and HTML", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    requireSession.mockResolvedValueOnce(
+      buildCurrentUser({ name: "Nico Kneler" }),
+    );
+    await runtime.context.settings.aliases.updateSignature({
+      aliasId: "alias:antarctica",
+      signature: "Best,\nProject Antarctica",
+      actorId: "user:operator",
+    });
+    sendComposerGmailMessage.mockResolvedValue({
+      kind: "success",
+      gmailMessageId: "gmail-message-override",
+      gmailThreadId: "gmail-thread-override",
+      rfc822MessageId: "<gmail-message-override@example.org>",
+    });
+
+    const result = await sendComposerAction(
+      buildInput({
+        signatureOverride: "Warmly,\n{{operatorFirstName}}\nCustom Reply",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(sendComposerGmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyPlaintext:
+          "Thanks again for confirming the field logistics.\n\nWarmly,\nNico\nCustom Reply",
+        bodyHtml:
+          "<p>Thanks again for confirming the field logistics.</p><p>Warmly,<br>Nico<br>Custom Reply</p>",
+      }),
+      expect.objectContaining({ resolveThreadIdViaRfc822: true }),
+    );
+
+    if (!result.ok) {
+      throw new Error("Expected success result.");
+    }
+
+    const pendingRows =
+      await runtime.context.repositories.pendingOutbounds.findForContact(
+        result.data.canonicalContactId,
+        { limit: 10 },
+      );
+
+    expect(pendingRows[0]).toMatchObject({
+      bodyPlaintext:
+        "Thanks again for confirming the field logistics.\n\nWarmly,\nNico\nCustom Reply",
+      bodyHtml:
+        "<p>Thanks again for confirming the field logistics.</p><p>Warmly,<br>Nico<br>Custom Reply</p>",
+    });
+  });
+
   it("drops empty operator token lines when the operator has no name", async () => {
     if (!runtime) {
       throw new Error("Expected runtime.");
