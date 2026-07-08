@@ -394,6 +394,113 @@ describe("captured Salesforce SMS consent reconcile", () => {
     }
   });
 
+  it("restores a Salesforce-revoked contact when live capture reports text opt-in true", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          buildContactSnapshotRecord({
+            memberships: [
+              {
+                salesforceId: "membership-stage1",
+                projectId: "project-stage1",
+                projectName: "Project Stage 1",
+                expeditionId: "expedition-stage1",
+                expeditionName: "Expedition Stage 1",
+                textOptIn: true,
+                role: "volunteer",
+                status: "active"
+              }
+            ]
+          })
+        ])
+      );
+    const context = await createTestWorkerContext({
+      capture,
+      now: () => fixedNow
+    });
+
+    try {
+      await seedContact(context);
+      await insertConsent(context, {
+        status: "revoked",
+        source: "salesforce_field",
+        createdAt: "2026-07-04T12:00:00.000Z"
+      });
+
+      const result = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload("sync:salesforce:sms-consent:restore")
+      );
+
+      expect(result.outcome).toBe("succeeded");
+      await expect(
+        context.repositories.consentRecords.findLatestByContact(contactId)
+      ).resolves.toMatchObject({
+        status: "opted_in",
+        source: "salesforce_field",
+        notes:
+          "salesforce text opt-in re-enabled; prior revocation originated from a salesforce sync, so restoring is safe",
+        consentedAt: fixedNow,
+        revokedAt: null
+      });
+      await expect(countConsentRecords(context, contactId)).resolves.toBe(2);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("does not restore an operator-revoked contact when live capture reports text opt-in true", async () => {
+    const capture = createEmptyCapturePorts();
+    capture.salesforce.captureLiveBatch = () =>
+      Promise.resolve(
+        buildCapturedBatch([
+          buildContactSnapshotRecord({
+            memberships: [
+              {
+                salesforceId: "membership-stage1",
+                projectId: "project-stage1",
+                projectName: "Project Stage 1",
+                expeditionId: "expedition-stage1",
+                expeditionName: "Expedition Stage 1",
+                textOptIn: true,
+                role: "volunteer",
+                status: "active"
+              }
+            ]
+          })
+        ])
+      );
+    const context = await createTestWorkerContext({
+      capture,
+      now: () => fixedNow
+    });
+
+    try {
+      await seedContact(context);
+      await insertConsent(context, {
+        status: "revoked",
+        source: "operator_attestation",
+        createdAt: "2026-07-04T12:00:00.000Z"
+      });
+
+      const result = await context.orchestration.runSalesforceLiveCaptureBatch(
+        buildSalesforceLivePayload("sync:salesforce:sms-consent:protected")
+      );
+
+      expect(result.outcome).toBe("succeeded");
+      await expect(
+        context.repositories.consentRecords.findLatestByContact(contactId)
+      ).resolves.toMatchObject({
+        status: "revoked",
+        source: "operator_attestation",
+        notes: "revoked seed"
+      });
+      await expect(countConsentRecords(context, contactId)).resolves.toBe(1);
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("skips opted-in Salesforce snapshots without a phone and counts the skip", async () => {
     const capture = createEmptyCapturePorts();
     capture.salesforce.captureLiveBatch = () =>

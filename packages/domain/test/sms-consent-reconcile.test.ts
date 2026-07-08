@@ -6,18 +6,22 @@ import {
   type SmsConsentReconcileAction,
 } from "../src/index.js";
 
-function consent(status: ConsentRecord["status"]): ConsentRecord {
+function consent(input: {
+  readonly status: ConsentRecord["status"];
+  readonly source?: ConsentRecord["source"];
+}): ConsentRecord {
+  const { status, source = "operator_attestation" } = input;
   const createdAt =
     status === "opted_in"
       ? new Date("2026-07-01T12:00:00Z")
       : new Date("2026-07-02T12:00:00Z");
 
   return {
-    id: `consent-${status}`,
+    id: `consent-${status}-${source}`,
     contactId: "contact-1",
     phoneE164: "+14065550142",
     status,
-    source: "operator_attestation",
+    source,
     sourceDetail: null,
     consentedAt: status === "opted_in" ? createdAt : null,
     revokedAt: status === "revoked" ? createdAt : null,
@@ -73,15 +77,57 @@ describe("reconcileSmsConsent", () => {
       "returns none when Salesforce is true and latest consent is opted_in",
       {
         sfTextOptIn: true,
-        latestConsent: consent("opted_in"),
+        latestConsent: consent({ status: "opted_in", source: "salesforce_field" }),
       },
       { kind: "none" },
     ],
     [
-      "returns none when Salesforce is true and latest consent is revoked",
+      "appends opted_in when Salesforce is true and latest consent is Salesforce-revoked",
       {
         sfTextOptIn: true,
-        latestConsent: consent("revoked"),
+        latestConsent: consent({
+          status: "revoked",
+          source: "salesforce_field",
+        }),
+      },
+      {
+        kind: "append",
+        status: "opted_in",
+        source: "salesforce_field",
+        reason:
+          "salesforce text opt-in re-enabled; prior revocation originated from a salesforce sync, so restoring is safe",
+      },
+    ],
+    [
+      "returns none when Salesforce is true and latest consent is operator-revoked",
+      {
+        sfTextOptIn: true,
+        latestConsent: consent({
+          status: "revoked",
+          source: "operator_attestation",
+        }),
+      },
+      { kind: "none" },
+    ],
+    [
+      "returns none when Salesforce is true and latest consent is inbound-thread revoked",
+      {
+        sfTextOptIn: true,
+        latestConsent: consent({
+          status: "revoked",
+          source: "inbound_thread",
+        }),
+      },
+      { kind: "none" },
+    ],
+    [
+      "returns none when Salesforce is true and latest consent is sms-reply revoked",
+      {
+        sfTextOptIn: true,
+        latestConsent: consent({
+          status: "revoked",
+          source: "sms_reply_yes",
+        }),
       },
       { kind: "none" },
     ],
@@ -89,7 +135,7 @@ describe("reconcileSmsConsent", () => {
       "appends revoked when Salesforce is false and latest consent is opted_in",
       {
         sfTextOptIn: false,
-        latestConsent: consent("opted_in"),
+        latestConsent: consent({ status: "opted_in" }),
       },
       {
         kind: "append",
@@ -103,7 +149,7 @@ describe("reconcileSmsConsent", () => {
       "returns none when Salesforce is false and latest consent is revoked",
       {
         sfTextOptIn: false,
-        latestConsent: consent("revoked"),
+        latestConsent: consent({ status: "revoked" }),
       },
       { kind: "none" },
     ],
@@ -116,24 +162,18 @@ describe("reconcileSmsConsent", () => {
       { kind: "none" },
     ],
     [
-      "appends revoked when Salesforce is null and latest consent is opted_in",
+      "returns none when Salesforce is null and latest consent is opted_in",
       {
         sfTextOptIn: null,
-        latestConsent: consent("opted_in"),
+        latestConsent: consent({ status: "opted_in", source: "salesforce_field" }),
       },
-      {
-        kind: "append",
-        status: "revoked",
-        source: "salesforce_field",
-        reason:
-          "salesforce text opt-in absent so latest opted-in consent must be revoked",
-      },
+      { kind: "none" },
     ],
     [
       "returns none when Salesforce is null and latest consent is revoked",
       {
         sfTextOptIn: null,
-        latestConsent: consent("revoked"),
+        latestConsent: consent({ status: "revoked" }),
       },
       { kind: "none" },
     ],
@@ -171,13 +211,10 @@ describe("reconcileSmsConsent", () => {
   it("is idempotent after appending revoked from an absent Salesforce value", () => {
     const first = reconcileSmsConsent({
       sfTextOptIn: null,
-      latestConsent: consent("opted_in"),
+      latestConsent: consent({ status: "opted_in" }),
     });
 
-    expect(first).toMatchObject({
-      kind: "append",
-      status: "revoked",
-    });
+    expect(first).toEqual({ kind: "none" });
 
     expect(
       reconcileSmsConsent({
@@ -187,53 +224,59 @@ describe("reconcileSmsConsent", () => {
     ).toEqual({ kind: "none" });
   });
 
-  it("never re-subscribes a revoked contact from the Salesforce field alone", () => {
+  it("never re-subscribes a human or inbound revoked contact from the Salesforce field alone", () => {
     expect(
       reconcileSmsConsent({
         sfTextOptIn: true,
-        latestConsent: consent("revoked"),
+        latestConsent: consent({
+          status: "revoked",
+          source: "inbound_thread",
+        }),
       }),
     ).toEqual({ kind: "none" });
   });
 
-  it("treats false and null Salesforce values identically", () => {
-    const latestOptedIn = consent("opted_in");
-    const latestRevoked = consent("revoked");
+  it("is idempotent after restoring a Salesforce-sourced revocation", () => {
+    const first = reconcileSmsConsent({
+      sfTextOptIn: true,
+      latestConsent: consent({
+        status: "revoked",
+        source: "salesforce_field",
+      }),
+    });
+
+    expect(first).toMatchObject({
+      kind: "append",
+      status: "opted_in",
+      source: "salesforce_field",
+    });
+
+    expect(
+      reconcileSmsConsent({
+        sfTextOptIn: true,
+        latestConsent: applyAction(first),
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("distinguishes false from null Salesforce values", () => {
+    const latestOptedIn = consent({ status: "opted_in" });
 
     expect(
       reconcileSmsConsent({
         sfTextOptIn: false,
         latestConsent: latestOptedIn,
       }),
-    ).toEqual(
+    ).toMatchObject({
+      kind: "append",
+      status: "revoked",
+    });
+
+    expect(
       reconcileSmsConsent({
         sfTextOptIn: null,
         latestConsent: latestOptedIn,
       }),
-    );
-
-    expect(
-      reconcileSmsConsent({
-        sfTextOptIn: false,
-        latestConsent: latestRevoked,
-      }),
-    ).toEqual(
-      reconcileSmsConsent({
-        sfTextOptIn: null,
-        latestConsent: latestRevoked,
-      }),
-    );
-
-    expect(
-      reconcileSmsConsent({
-        sfTextOptIn: false,
-        latestConsent: null,
-      }),
-    ).toEqual(
-      reconcileSmsConsent({
-        sfTextOptIn: null,
-        latestConsent: null,
-      }),
-    );
+    ).toEqual({ kind: "none" });
   });
 });
