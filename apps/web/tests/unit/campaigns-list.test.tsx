@@ -404,6 +404,29 @@ describe("broadcasts list snapshots", () => {
     ).toBe("state=scheduled&q=whale&projectId=project-1");
   });
 
+  it("links a draft row to the compose wizard, not the run-detail report", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [
+        { ...makeCampaignRow(0), runId: "draft-1", name: null, state: "draft" },
+        { ...makeCampaignRow(1), runId: "sent-1", state: "complete" },
+      ],
+      totalCount: 2,
+    });
+
+    expect(
+      container
+        .querySelector('a[data-campaign-state="draft"]')
+        ?.getAttribute("href"),
+    ).toBe("/broadcasts/new?runId=draft-1");
+    expect(
+      container
+        .querySelector('a[data-campaign-state="complete"]')
+        ?.getAttribute("href"),
+    ).toBe("/broadcasts/sent-1");
+  });
+
   it("does not navigate when the active state tab is selected again", () => {
     const container = setupDom();
 
