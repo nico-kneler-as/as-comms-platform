@@ -891,10 +891,10 @@ function readAliasSignature(aliasRecord: Record<string, unknown>): string {
 }
 
 function resolveComposerSignature(input: {
-  readonly aliasRecord: Record<string, unknown>;
+  readonly signatureTemplate: string;
   readonly operatorName: string | null | undefined;
 }): string {
-  return renderSignatureTemplate(readAliasSignature(input.aliasRecord), {
+  return renderSignatureTemplate(input.signatureTemplate, {
     operatorFirstName: firstNameFromName(input.operatorName),
   });
 }
@@ -2100,8 +2100,11 @@ export async function sendComposerAction(
     return mapComposerProviderError(requestId, "invalid_recipient");
   }
 
+  const signatureTemplate =
+    parsedInput.data.signatureOverride ??
+    readAliasSignature(alias as unknown as Record<string, unknown>);
   const signature = resolveComposerSignature({
-    aliasRecord: alias as unknown as Record<string, unknown>,
+    signatureTemplate,
     operatorName: currentUser.name,
   });
   const cc = normalizeEmailAddresses(parsedInput.data.cc);

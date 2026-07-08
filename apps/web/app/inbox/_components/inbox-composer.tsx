@@ -259,12 +259,14 @@ export function InboxComposerDetailPane({
         null);
   const selectedAliasAiConfigured =
     selectedAliasRecord?.isAiConfigured ?? selectedAliasRecord?.isAiReady ?? false;
-  const selectedAliasSignature = renderSignatureTemplate(
+  const selectedAliasDefaultSignature = renderSignatureTemplate(
     selectedAliasRecord?.signature ?? "",
     {
       operatorFirstName: firstNameFromName(operatorDisplayName),
     },
   );
+  const selectedAliasSignature =
+    state.signatureOverride ?? selectedAliasDefaultSignature;
   const smsRecipientRequiresKnownContact =
     state.activeTab === "sms" && state.smsRecipient?.kind === "phone";
   const smsAiConfigured =
@@ -558,6 +560,7 @@ export function InboxComposerDetailPane({
                 selectedAliasRecord?.projectName ?? null
               }
               selectedAliasSignature={selectedAliasSignature}
+              hasSignatureOverride={state.signatureOverride !== null}
               aiWarningMessage={aiWarningMessage}
               inlineError={state.inlineError}
               canSendAndSaveForAi={sendAndSaveAvailability.enabled}
@@ -591,6 +594,19 @@ export function InboxComposerDetailPane({
               }}
               onSubjectChange={(value) => {
                 dispatch({ type: "SET_SUBJECT", subject: value });
+              }}
+              onSignatureChange={(value) => {
+                dispatch({
+                  type: "SET_SIGNATURE_OVERRIDE",
+                  value:
+                    value === selectedAliasDefaultSignature ? null : value,
+                });
+              }}
+              onResetSignature={() => {
+                dispatch({
+                  type: "SET_SIGNATURE_OVERRIDE",
+                  value: null,
+                });
               }}
               onBodyChange={(nextBody) => {
                 dispatch({
