@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { requireSession } from "@/src/server/auth/session";
 
@@ -130,6 +130,13 @@ export default async function CampaignRunDetailPage({
 
   if (header === null) {
     notFound();
+  }
+
+  // A draft has no send report (no frozen audience, metrics, or replies yet).
+  // Send it to the compose wizard to continue editing. Safety net for the list
+  // link, bookmarks, and any other entry point into this run-detail route.
+  if (header.state === "draft") {
+    redirect(`/broadcasts/new?runId=${encodeURIComponent(decodedRunId)}`);
   }
 
   return (
