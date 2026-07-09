@@ -40,6 +40,20 @@ export interface ListNewsletterSubscribersInput {
   readonly changedSince?: string;
 }
 
+export interface NewsletterSubscriberSignupInput {
+  readonly email: string;
+  readonly firstName?: string | null;
+  readonly lastName?: string | null;
+  readonly optinTime: string;
+  readonly optinIp: string;
+  readonly source: string;
+}
+
+export interface NewsletterSubscriberSignupResult {
+  readonly subscriber: NewsletterSubscriberRecord;
+  readonly disposition: "created" | "already_subscribed" | "resubscribed";
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -78,6 +92,15 @@ function toNewsletterSuppressionRow(
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
+}
+
+async function clearNewsletterSuppressionByEmail(
+  db: NewsletterSubscribersDatabase,
+  email: string,
+): Promise<void> {
+  await db
+    .delete(newsletterSuppressions)
+    .where(eq(newsletterSuppressions.email, normalizeEmail(email)));
 }
 
 export async function upsertNewsletterSubscriber(
@@ -132,6 +155,104 @@ export async function getNewsletterSubscriberByEmail(
   return row === undefined
     ? null
     : mapNewsletterSubscriberRow(toNewsletterSubscriberRow(row));
+}
+
+export async function getNewsletterSubscriberById(
+  db: NewsletterSubscribersDatabase,
+  id: string,
+): Promise<NewsletterSubscriberRecord | null> {
+  const [row] = await db
+    .select()
+    .from(newsletterSubscribers)
+    .where(eq(newsletterSubscribers.id, id))
+    .limit(1);
+
+  return row === undefined
+    ? null
+    : mapNewsletterSubscriberRow(toNewsletterSubscriberRow(row));
+}
+
+export async function signUpNewsletterSubscriber(
+  db: NewsletterSubscribersDatabase,
+  input: NewsletterSubscriberSignupInput,
+): Promise<NewsletterSubscriberSignupResult> {
+  const normalizedEmail = normalizeEmail(input.email);
+  const existingSuppression = await getNewsletterSuppressionByEmail(
+    db,
+    normalizedEmail,
+  );
+  const insertedValues = mapNewsletterSubscriberInsert({
+    email: normalizedEmail,
+    firstName: input.firstName ?? null,
+    lastName: input.lastName ?? null,
+    status: "subscribed",
+    optinTime: input.optinTime,
+    optinIp: input.optinIp,
+    confirmTime: null,
+    confirmIp: null,
+    lastChangedAt: input.optinTime,
+    source: input.source,
+  });
+  const [insertedRow] = await db
+    .insert(newsletterSubscribers)
+    .values(insertedValues)
+    .onConflictDoNothing()
+    .returning();
+
+  if (insertedRow !== undefined) {
+    if (existingSuppression !== null) {
+      await clearNewsletterSuppressionByEmail(db, normalizedEmail);
+    }
+
+    return {
+      subscriber: mapNewsletterSubscriberRow(
+        toNewsletterSubscriberRow(insertedRow),
+      ),
+      disposition:
+        existingSuppression === null ? "created" : "resubscribed",
+    };
+  }
+
+  const existingSubscriber = await getNewsletterSubscriberByEmail(
+    db,
+    normalizedEmail,
+  );
+
+  if (
+    existingSubscriber !== null &&
+    existingSubscriber.status === "subscribed" &&
+    existingSuppression === null
+  ) {
+    return {
+      subscriber: existingSubscriber,
+      disposition: "already_subscribed",
+    };
+  }
+
+  const subscriber = await upsertNewsletterSubscriber(db, {
+    email: normalizedEmail,
+    firstName: input.firstName ?? existingSubscriber?.firstName ?? null,
+    lastName: input.lastName ?? existingSubscriber?.lastName ?? null,
+    status: "subscribed",
+    memberRating: existingSubscriber?.memberRating ?? null,
+    optinTime: input.optinTime,
+    optinIp: input.optinIp,
+    confirmTime: existingSubscriber?.confirmTime ?? null,
+    confirmIp: existingSubscriber?.confirmIp ?? null,
+    lastChangedAt: input.optinTime,
+    interests: existingSubscriber?.interests ?? null,
+    tags: existingSubscriber?.tags ?? null,
+    source: input.source,
+  });
+
+  if (existingSuppression !== null) {
+    await clearNewsletterSuppressionByEmail(db, normalizedEmail);
+  }
+
+  return {
+    subscriber,
+    disposition: "resubscribed",
+  };
 }
 
 export async function listNewsletterSubscribers(
