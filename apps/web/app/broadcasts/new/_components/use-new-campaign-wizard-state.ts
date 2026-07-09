@@ -35,6 +35,8 @@ import type {
 } from "./audience-builder-step";
 
 type AutosavePersistDraft = (successMessage: string) => Promise<boolean>;
+type ProjectSelectionMode = "multi" | "single";
+
 interface SmsPreviewData {
   readonly selected: number;
   readonly reachable: number;
@@ -280,9 +282,30 @@ function readAliasProjectsForSender(
 function buildCriteriaForMode(input: {
   readonly current: CampaignAudienceCriteria;
   readonly mode: AudienceInitialFilter;
-  readonly aliasProjects: readonly CampaignProjectOption[];
+  readonly projectOptions: readonly CampaignProjectOption[];
+  readonly projectSelectionMode: ProjectSelectionMode;
 }): CampaignAudienceCriteria {
-  const aliasProjectIds = input.aliasProjects.map((project) => project.id);
+  const availableProjectIds = normalizeProjectIds(
+    input.projectOptions.map((project) => project.id),
+  );
+  const projectSelection =
+    input.projectSelectionMode === "single"
+      ? (() => {
+          const selectedProjectId =
+            readProjectIds(input.current).find((projectId) =>
+              availableProjectIds.includes(projectId),
+            ) ?? null;
+
+          return {
+            projectId: selectedProjectId,
+            projectIds:
+              selectedProjectId === null ? [] : [selectedProjectId],
+          };
+        })()
+      : {
+          projectId: availableProjectIds[0] ?? null,
+          projectIds: availableProjectIds,
+        };
 
   if (input.mode === "all_approved") {
     return {
@@ -312,8 +335,7 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "specific",
-      projectId: aliasProjectIds[0] ?? null,
-      projectIds: aliasProjectIds,
+      ...projectSelection,
       statuses: [],
       contactIds: [],
       newsletterSubscriberIds: [],
@@ -323,8 +345,7 @@ function buildCriteriaForMode(input: {
   return {
     ...input.current,
     initialFilter: "project_status",
-    projectId: aliasProjectIds[0] ?? null,
-    projectIds: aliasProjectIds,
+    ...projectSelection,
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
@@ -519,6 +540,8 @@ export function useNewCampaignWizardState({
     launchType === "sms"
       ? "project"
       : (selectedSenderOption?.senderType ?? null);
+  const projectSelectionMode: ProjectSelectionMode =
+    launchType === "sms" ? "single" : "multi";
   const effectiveProjectOptions =
     launchType === "sms" ? allProjectOptions : aliasProjects;
   const aliasProjectIds = useMemo(
@@ -638,8 +661,18 @@ export function useNewCampaignWizardState({
       return;
     }
 
-    const currentProjectIds = readProjectIds(criteria);
-    if (currentProjectIds.length > 0) {
+    const availableProjectIds = new Set(
+      effectiveProjectOptions.map((project) => project.id),
+    );
+    const currentProjectIds = readProjectIds(criteria).filter((projectId) =>
+      availableProjectIds.has(projectId),
+    );
+    const hasRequiredProjectSelection =
+      projectSelectionMode === "single"
+        ? currentProjectIds.length <= 1 &&
+          currentProjectIds.length === readProjectIds(criteria).length
+        : currentProjectIds.length > 0;
+    if (hasRequiredProjectSelection) {
       return;
     }
 
@@ -647,7 +680,8 @@ export function useNewCampaignWizardState({
       buildCriteriaForMode({
         current,
         mode: currentMode,
-        aliasProjects: effectiveProjectOptions,
+        projectOptions: effectiveProjectOptions,
+        projectSelectionMode,
       }),
     );
   }, [
@@ -655,6 +689,7 @@ export function useNewCampaignWizardState({
     criteria.initialFilter,
     effectiveProjectOptions,
     hasPickedAudienceMode,
+    projectSelectionMode,
     selectedSenderType,
   ]);
 
@@ -714,7 +749,8 @@ export function useNewCampaignWizardState({
       return buildCriteriaForMode({
         current,
         mode: nextMode,
-        aliasProjects: effectiveProjectOptions,
+        projectOptions: effectiveProjectOptions,
+        projectSelectionMode,
       });
     });
     setVolunteerSearchQuery("");
@@ -725,6 +761,7 @@ export function useNewCampaignWizardState({
     effectiveProjectOptions,
     fromEmail,
     hasPickedAudienceMode,
+    projectSelectionMode,
     selectedSenderType,
   ]);
 
@@ -766,8 +803,10 @@ export function useNewCampaignWizardState({
     setStatusCountsLoading(true);
     setStatusCountsErrorMessage(null);
     startStatusCountsTransition(async () => {
-      const result =
-        await loadMemberStatusCountsForProjects(selectedProjectIds);
+      const result = await loadMemberStatusCountsForProjects(
+        selectedProjectIds,
+        launchType === "sms" ? "sms" : "email",
+      );
       if (requestId !== statusCountsRequestRef.current) {
         return;
       }
@@ -803,6 +842,7 @@ export function useNewCampaignWizardState({
     bootstrap.statuses,
     criteria.initialFilter,
     hasPickedAudienceMode,
+    launchType,
     selectedProjectIdsKey,
   ]);
 
@@ -896,6 +936,12 @@ export function useNewCampaignWizardState({
       return;
     }
 
+    if (launchType === "sms" && selectedProjectIds.length === 0) {
+      setVolunteerSearchRows([]);
+      setVolunteerSearchErrorMessage(null);
+      return;
+    }
+
     const requestId = ++volunteerSearchRequestRef.current;
     const timer = setTimeout(() => {
       startVolunteerSearchTransition(async () => {
@@ -905,7 +951,8 @@ export function useNewCampaignWizardState({
                 query: volunteerSearchQuery,
               })
             : await searchProjectVolunteersAction({
-                aliasProjectIds,
+                aliasProjectIds:
+                  launchType === "sms" ? selectedProjectIds : aliasProjectIds,
                 query: volunteerSearchQuery,
               });
         if (requestId !== volunteerSearchRequestRef.current) {
@@ -930,7 +977,9 @@ export function useNewCampaignWizardState({
     criteria.initialFilter,
     currentStep,
     hasPickedAudienceMode,
+    launchType,
     selectedSenderType,
+    selectedProjectIdsKey,
     volunteerSearchQuery,
   ]);
 
@@ -1166,6 +1215,8 @@ export function useNewCampaignWizardState({
     selectedSenderVerified,
     selectedSenderType,
     aliasProjects,
+    effectiveProjectOptions,
+    projectSelectionMode,
     previewFingerprint,
     warningDismissed,
     statusLabel,

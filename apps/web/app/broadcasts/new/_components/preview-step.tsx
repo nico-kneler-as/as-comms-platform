@@ -226,28 +226,6 @@ export function PreviewStep({
                     ? "No audience resolved yet."
                     : `${smsPreviewData.reachable.toLocaleString()} reachable of ${smsPreviewData.selected.toLocaleString()} selected`}
                 </p>
-                {smsPreviewData === null ? null : (
-                  <div className="mt-2 space-y-1 text-[11.5px] text-slate-500">
-                    <p>
-                      No consent:{" "}
-                      {(smsPreviewData.unreachable.no_consent ?? 0).toLocaleString()}
-                    </p>
-                    <p>
-                      Revoked:{" "}
-                      {(smsPreviewData.unreachable.revoked ?? 0).toLocaleString()}
-                    </p>
-                    <p>
-                      No phone:{" "}
-                      {(smsPreviewData.unreachable.no_phone ?? 0).toLocaleString()}
-                    </p>
-                    {smsPreviewData.deduplicatedByPhone > 0 ? (
-                      <p>
-                        Duplicate phones suppressed:{" "}
-                        {smsPreviewData.deduplicatedByPhone.toLocaleString()}
-                      </p>
-                    ) : null}
-                  </div>
-                )}
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">

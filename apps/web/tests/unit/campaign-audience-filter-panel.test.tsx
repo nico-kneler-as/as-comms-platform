@@ -29,6 +29,8 @@ const { JSDOM } = workerRequire("jsdom") as {
 };
 
 let root: Root | null = null;
+type AudienceFilterCriteria =
+  React.ComponentProps<typeof AudienceFilterPanel>["criteria"];
 
 function setupDom() {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -108,6 +110,18 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
   act(() => {
     root?.render(<AudienceFilterPanel {...props} />);
   });
+}
+
+function findProjectButton(projectName: string): HTMLButtonElement {
+  const button = Array.from(document.querySelectorAll("button")).find(
+    (candidate) =>
+      candidate.getAttribute("aria-label") === `Choose project ${projectName}`,
+  );
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Project button not found: ${projectName}`);
+  }
+
+  return button;
 }
 
 beforeEach(() => {
@@ -383,5 +397,187 @@ describe("AudienceFilterPanel", () => {
         '[aria-label="Project Saving American Beech is locked to this sender alias"]',
       ),
     ).toBeNull();
+  });
+
+  it("keeps additive multi-select behavior on the email path", () => {
+    const activeRoot = root;
+    if (activeRoot === null) {
+      throw new Error("root not initialized");
+    }
+
+    function Harness() {
+      const [criteria, setCriteria] = React.useState<AudienceFilterCriteria>({
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time" as const,
+        hasReplied: "either" as const,
+        hasClicked: "either" as const,
+      });
+
+      return (
+        <AudienceFilterPanel
+          criteria={criteria}
+          projectOptions={[
+            {
+              id: "project-a",
+              name: "Restoring Butternut Forest Health",
+              alias: null,
+              projectAlias: "Beech & Butternut",
+              aliasHint: "forests@",
+              connectedToProjectId: "host-project",
+              isSubProject: true,
+            },
+            {
+              id: "project-b",
+              name: "Saving American Beech",
+              alias: null,
+              projectAlias: "Beech & Butternut",
+              aliasHint: "forests@",
+              connectedToProjectId: "host-project",
+              isSubProject: true,
+            },
+          ]}
+          statusOptions={[]}
+          statusCounts={{}}
+          statusCountsLoading={false}
+          statusCountsErrorMessage={null}
+          showStatusSection={false}
+          onProjectChange={(projectId) => {
+            setCriteria((current) => {
+              const nextProjectIds = current.projectIds.includes(projectId)
+                ? current.projectIds.filter((value) => value !== projectId)
+                : [...current.projectIds, projectId];
+
+              return {
+                ...current,
+                projectId: nextProjectIds[0] ?? null,
+                projectIds: nextProjectIds,
+              };
+            });
+          }}
+          onToggleAllStatuses={() => undefined}
+          onStatusToggle={() => undefined}
+        />
+      );
+    }
+
+    act(() => {
+      activeRoot.render(<Harness />);
+    });
+
+    const firstButton = findProjectButton("Restoring Butternut Forest Health");
+    const secondButton = findProjectButton("Saving American Beech");
+
+    act(() => {
+      firstButton.click();
+    });
+    expect(
+      findProjectButton("Restoring Butternut Forest Health").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+
+    act(() => {
+      secondButton.click();
+    });
+
+    expect(
+      findProjectButton("Restoring Butternut Forest Health").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+    expect(
+      findProjectButton("Saving American Beech").getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("replaces the selected project in SMS single-select mode", () => {
+    const activeRoot = root;
+    if (activeRoot === null) {
+      throw new Error("root not initialized");
+    }
+
+    function Harness() {
+      const [criteria, setCriteria] = React.useState<AudienceFilterCriteria>({
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time" as const,
+        hasReplied: "either" as const,
+        hasClicked: "either" as const,
+      });
+
+      return (
+        <AudienceFilterPanel
+          criteria={criteria}
+          projectOptions={[
+            {
+              id: "project-a",
+              name: "Restoring Butternut Forest Health",
+              alias: null,
+              projectAlias: "Beech & Butternut",
+              aliasHint: "forests@",
+              connectedToProjectId: "host-project",
+              isSubProject: true,
+            },
+            {
+              id: "project-b",
+              name: "Saving American Beech",
+              alias: null,
+              projectAlias: "Beech & Butternut",
+              aliasHint: "forests@",
+              connectedToProjectId: "host-project",
+              isSubProject: true,
+            },
+          ]}
+          singleSelectProjects={true}
+          statusOptions={[]}
+          statusCounts={{}}
+          statusCountsLoading={false}
+          statusCountsErrorMessage={null}
+          showStatusSection={false}
+          onProjectChange={(projectId) => {
+            setCriteria((current) => ({
+              ...current,
+              projectId,
+              projectIds: [projectId],
+            }));
+          }}
+          onToggleAllStatuses={() => undefined}
+          onStatusToggle={() => undefined}
+        />
+      );
+    }
+
+    act(() => {
+      activeRoot.render(<Harness />);
+    });
+
+    act(() => {
+      findProjectButton("Restoring Butternut Forest Health").click();
+    });
+    expect(
+      findProjectButton("Restoring Butternut Forest Health").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+
+    act(() => {
+      findProjectButton("Saving American Beech").click();
+    });
+
+    expect(
+      findProjectButton("Restoring Butternut Forest Health").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("false");
+    expect(
+      findProjectButton("Saving American Beech").getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });

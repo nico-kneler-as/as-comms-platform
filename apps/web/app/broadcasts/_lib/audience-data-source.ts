@@ -20,6 +20,7 @@ import {
   createAudienceResolver,
   createMergeRenderer,
   formatOrgAddress,
+  intersectSmsAudience,
   normalizeAliasEmail,
   renderBroadcastEmail,
   type AudienceMember,
@@ -86,6 +87,8 @@ export interface AudienceCountData {
 export type AudienceStatusCounts = Partial<
   Record<ExpeditionMemberStatus, number>
 >;
+
+type MemberStatusCountChannel = "email" | "sms";
 
 export type CampaignSenderType = "project" | "org";
 
@@ -1412,6 +1415,7 @@ export async function searchNewsletterSubscribersAction(input: {
 
 export async function loadMemberStatusCountsForProjects(
   projectIds: readonly string[],
+  channel: MemberStatusCountChannel = "email",
 ): Promise<UiResult<AudienceStatusCounts>> {
   await requireSession();
 
@@ -1437,6 +1441,98 @@ export async function loadMemberStatusCountsForProjects(
       await runtime.repositories.contactMemberships.listByContactIds(
         contacts.map((contact) => contact.id),
       );
+
+    if (channel === "sms") {
+      const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
+      const projectContactIds = new Set<string>();
+      const statusesForSelectedProjects = new Set<ExpeditionMemberStatus>();
+
+      for (const membership of memberships) {
+        if (
+          membership.projectId === null ||
+          !selectedProjectIds.has(membership.projectId)
+        ) {
+          continue;
+        }
+
+        const normalizedStatus = normalizeExpeditionMemberStatus(
+          membership.status,
+        );
+        if (normalizedStatus === null) {
+          continue;
+        }
+
+        statusesForSelectedProjects.add(normalizedStatus);
+        projectContactIds.add(membership.contactId);
+      }
+
+      if (projectContactIds.size === 0) {
+        return successResult({});
+      }
+
+      const latestConsentByContactId =
+        await runtime.repositories.consentRecords.findLatestByContactIds(
+          [...projectContactIds],
+        );
+      const consentStatusByContactId = new Map(
+        [...projectContactIds].map((contactId) => [
+          contactId,
+          latestConsentByContactId.get(contactId)?.status ?? null,
+        ]),
+      );
+      const intersection = intersectSmsAudience({
+        candidates: [...projectContactIds].map((contactId) => {
+          const latestConsent = latestConsentByContactId.get(contactId);
+
+          return {
+            contactId,
+            phoneE164:
+              latestConsent?.status === "opted_in"
+                ? latestConsent.phoneE164
+                : null,
+            firstName: null,
+            email: contactsById.get(contactId)?.primaryEmail ?? null,
+            projectName: null,
+          };
+        }),
+        latestConsentByContactId: consentStatusByContactId,
+      });
+      const reachableContactIds = new Set(
+        intersection.reachable.map((recipient) => recipient.contactId),
+      );
+      const counts = new Map<ExpeditionMemberStatus, Set<string>>();
+
+      for (const membership of memberships) {
+        if (
+          membership.projectId === null ||
+          !selectedProjectIds.has(membership.projectId) ||
+          !reachableContactIds.has(membership.contactId)
+        ) {
+          continue;
+        }
+
+        const normalizedStatus = normalizeExpeditionMemberStatus(
+          membership.status,
+        );
+        if (normalizedStatus === null) {
+          continue;
+        }
+
+        const existing = counts.get(normalizedStatus) ?? new Set<string>();
+        existing.add(membership.contactId);
+        counts.set(normalizedStatus, existing);
+      }
+
+      return successResult(
+        Object.fromEntries(
+          [...statusesForSelectedProjects].map((status) => [
+            status,
+            counts.get(status)?.size ?? 0,
+          ]),
+        ) as AudienceStatusCounts,
+      );
+    }
+
     const counts = new Map<ExpeditionMemberStatus, Set<string>>();
 
     for (const membership of memberships) {

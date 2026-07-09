@@ -65,6 +65,7 @@ const PROJECT_PILL_TONES = [
 interface AudienceFilterPanelProps {
   readonly criteria: CampaignAudienceCriteria;
   readonly projectOptions: readonly CampaignProjectOption[];
+  readonly singleSelectProjects?: boolean;
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsLoading: boolean;
@@ -79,6 +80,7 @@ interface AudienceFilterPanelProps {
 export function AudienceFilterPanel({
   criteria,
   projectOptions,
+  singleSelectProjects = false,
   statusOptions,
   statusCounts,
   statusCountsLoading,
@@ -95,8 +97,15 @@ export function AudienceFilterPanel({
   ].filter((projectId, index, values) => values.indexOf(projectId) === index);
   const selectedProjectIdSet = new Set(selectedProjectIds);
   const knownStatuses = new Set(statusOptions);
-  const projectAliasHint = projectOptions[0]?.aliasHint ?? null;
-  const hasSingleLockedProject = projectOptions.length === 1;
+  const projectHelperText = singleSelectProjects
+    ? "Pick exactly one active project."
+    : (projectOptions[0]?.aliasHint ?? null) === null
+      ? null
+      : projectOptions.length === 1
+        ? `Inherited from ${projectOptions[0]?.aliasHint ?? ""}`
+        : `Inherited from ${projectOptions[0]?.aliasHint ?? ""} · pick one or more sub-projects`;
+  const hasSingleLockedProject =
+    !singleSelectProjects && projectOptions.length === 1;
   const shouldRenderStatusShell =
     selectedProjectIds.length > 0 && statusCountsLoading;
 
@@ -131,13 +140,7 @@ export function AudienceFilterPanel({
         {showProjectSection ? (
           <FilterSection
             title="Project"
-            aside={
-              projectAliasHint === null ? null : hasSingleLockedProject ? (
-                `Inherited from ${projectAliasHint}`
-              ) : (
-                `Inherited from ${projectAliasHint} · pick one or more sub-projects`
-              )
-            }
+            aside={projectHelperText}
           >
             <div className="flex flex-wrap gap-2">
               {projectOptions.map((project) =>
@@ -383,4 +386,3 @@ function readProjectTone(projectId: string): ToneClassesV2 {
   const toneName = PROJECT_PILL_TONES.at(hash % PROJECT_PILL_TONES.length) ?? "emerald";
   return TONE_CLASSES[toneName];
 }
-
