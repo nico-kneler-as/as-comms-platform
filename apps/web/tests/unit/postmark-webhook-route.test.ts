@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -28,14 +27,13 @@ function loadFixture(name: string): string {
 }
 
 function signRequest(rawBody: string): Request {
-  const signature = createHmac("sha256", SIGNING_SECRET)
-    .update(rawBody, "utf8")
-    .digest("base64");
+  // Postmark can't HMAC-sign payloads; the endpoint authenticates via a
+  // static shared-secret custom header equal to POSTMARK_WEBHOOK_SIGNING_SECRET.
   return new Request("http://localhost/api/webhooks/postmark", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-postmark-signature": signature,
+      "x-postmark-signature": SIGNING_SECRET,
     },
     body: rawBody,
   });

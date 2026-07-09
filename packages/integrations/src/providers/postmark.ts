@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 
 import {
   postmarkWebhookEventSchema,
@@ -67,7 +67,7 @@ export interface PostmarkSenderStatus {
 
 export interface PostmarkClient {
   sendBatch(req: PostmarkBatchSendRequest): Promise<PostmarkBatchSendResponse>;
-  verifyWebhookSignature(rawBody: string, signature: string): boolean;
+  verifyWebhookSignature(providedToken: string): boolean;
   getSenderDomainStatus(domain: string): Promise<PostmarkSenderStatus>;
 }
 
@@ -157,30 +157,6 @@ function createConcurrencyLimiter(maxConcurrent: number): <T>(
       release();
     }
   };
-}
-
-function computeWebhookSignature(
-  secret: string,
-  rawBody: string,
-): {
-  readonly base64: string;
-  readonly hex: string;
-} {
-  const digest = createHmac("sha256", secret).update(rawBody, "utf8").digest();
-  return {
-    base64: digest.toString("base64"),
-    hex: digest.toString("hex"),
-  };
-}
-
-function normalizeReceivedSignature(signature: string): string[] {
-  const trimmed = signature.trim();
-  if (trimmed.length === 0) {
-    return [];
-  }
-
-  const unprefixed = trimmed.replace(/^sha256=/iu, "");
-  return trimmed === unprefixed ? [trimmed] : [trimmed, unprefixed];
 }
 
 function signaturesMatch(expected: string, received: string): boolean {
@@ -406,23 +382,22 @@ export function createPostmarkClient(opts: {
       };
     },
 
-    verifyWebhookSignature(rawBody, signature) {
+    verifyWebhookSignature(providedToken) {
+      // Postmark does not sign webhook payloads (no HMAC); its only options
+      // are HTTP Basic Auth or a static custom header. We authenticate via a
+      // shared-secret custom header (`x-postmark-signature`) whose value must
+      // equal `POSTMARK_WEBHOOK_SIGNING_SECRET`. Compared in constant time.
       const secret = opts.webhookSigningSecret.trim();
       if (secret.length === 0) {
         return false;
       }
 
-      const receivedSignatures = normalizeReceivedSignature(signature);
-      if (receivedSignatures.length === 0) {
+      const received = providedToken.trim();
+      if (received.length === 0) {
         return false;
       }
 
-      const expected = computeWebhookSignature(secret, rawBody);
-      return receivedSignatures.some(
-        (received) =>
-          signaturesMatch(expected.base64, received) ||
-          signaturesMatch(expected.hex, received),
-      );
+      return signaturesMatch(secret, received);
     },
 
     async getSenderDomainStatus(domain) {
