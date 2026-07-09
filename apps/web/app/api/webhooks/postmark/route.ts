@@ -19,7 +19,10 @@ import {
 } from "@as-comms/integrations";
 
 import { readWebEnv } from "@/src/server/env";
-import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+import {
+  getStage1WebRuntime,
+  recordBroadcastLinkClick,
+} from "@/src/server/stage1-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -122,6 +125,19 @@ function buildIdempotencyKey(event: PostmarkWebhookEvent): string {
   ].join(":");
 }
 
+function buildClickIdempotencyKey(
+  event: Extract<PostmarkWebhookEvent, { RecordType: "Click" }>,
+): string {
+  return sha256(
+    JSON.stringify([
+      "postmark-click",
+      event.MessageID,
+      event.OriginalLink,
+      event.ReceivedAt,
+    ]),
+  );
+}
+
 function buildPayloadRef(event: PostmarkWebhookEvent): string {
   return `postmark://webhooks/${event.RecordType}/${encodeURIComponent(buildProviderRecordId(event))}`;
 }
@@ -171,6 +187,47 @@ function isRecipientUnsubscribe(event: PostmarkWebhookEvent): boolean {
     (event.Origin?.toLowerCase() === "recipient" ||
       event.SuppressionReason === "ManualSuppression")
   );
+}
+
+function readCampaignRunIdFromMetadata(event: PostmarkWebhookEvent): string | null {
+  const campaignRunId = event.Metadata.campaignRunId;
+  return typeof campaignRunId === "string" && campaignRunId.trim().length > 0
+    ? campaignRunId.trim()
+    : null;
+}
+
+async function recordClickEvent(input: {
+  readonly event: Extract<PostmarkWebhookEvent, { RecordType: "Click" }>;
+  readonly snapshot:
+    | {
+        readonly id: string;
+        readonly campaignRunId: string;
+        readonly contactId: string | null;
+      }
+    | null;
+}): Promise<boolean> {
+  const campaignRunId =
+    input.snapshot?.campaignRunId ?? readCampaignRunIdFromMetadata(input.event);
+
+  if (campaignRunId === null) {
+    return false;
+  }
+
+  return recordBroadcastLinkClick({
+    id: randomUUID(),
+    campaignRunId,
+    audienceSnapshotId: input.snapshot?.id ?? null,
+    contactId: input.snapshot?.contactId ?? null,
+    originalLink: input.event.OriginalLink,
+    clickedAt: input.event.ReceivedAt,
+    userAgent: input.event.UserAgent,
+    platform: input.event.Platform,
+    client: input.event.Client ?? null,
+    os: input.event.OS ?? null,
+    geo: input.event.Geo ?? null,
+    idempotencyKey: buildClickIdempotencyKey(input.event),
+    createdAt: new Date().toISOString(),
+  });
 }
 
 async function writeSpamComplaintReview(input: {
@@ -284,29 +341,36 @@ async function processEvent(
     return;
   }
 
-  if (snapshot === null) {
-    await runtime.campaigns.webhookDeadLetter.record({
-      recordType: event.RecordType,
-      messageId: event.MessageID,
-      sourceEvidenceId,
-      payloadJson: event,
-      failureKind: "snapshot_not_found",
-      failureMessage:
-        "Postmark MessageID has no matching audience snapshot",
-    });
+  try {
+    if (event.RecordType === "Click") {
+      await recordClickEvent({
+        event,
+        snapshot,
+      });
+    }
 
-    console.warn(
-      JSON.stringify({
-        event: "postmark.webhook.snapshot_not_found",
+    if (snapshot === null) {
+      await runtime.campaigns.webhookDeadLetter.record({
         recordType: event.RecordType,
         messageId: event.MessageID,
-        recipientHash: recipientLogId(event.Recipient),
-      }),
-    );
-    return;
-  }
+        sourceEvidenceId,
+        payloadJson: event,
+        failureKind: "snapshot_not_found",
+        failureMessage:
+          "Postmark MessageID has no matching audience snapshot",
+      });
 
-  try {
+      console.warn(
+        JSON.stringify({
+          event: "postmark.webhook.snapshot_not_found",
+          recordType: event.RecordType,
+          messageId: event.MessageID,
+          recipientHash: recipientLogId(event.Recipient),
+        }),
+      );
+      return;
+    }
+
     const run = await runtime.campaigns.campaignRuns.findById(
       snapshot.campaignRunId,
     );

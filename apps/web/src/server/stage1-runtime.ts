@@ -1,9 +1,11 @@
 import {
   accounts,
+  aggregateBroadcastLinkClicksByRunId,
   countMediaAssets,
   createOrgSender,
   createMediaAsset,
   createDatabaseConnection,
+  insertBroadcastLinkClick,
   listSendableNewsletterSubscribers as listSendableNewsletterSubscribersFromDb,
   searchNewsletterSubscribers as searchNewsletterSubscribersFromDb,
   getOrgSenderByEmail,
@@ -190,6 +192,26 @@ export async function countBroadcastMediaAssets() {
   }
 
   return countMediaAssets(runtime.connection.db);
+}
+
+export async function recordBroadcastLinkClick(
+  input: Parameters<typeof insertBroadcastLinkClick>[1],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return insertBroadcastLinkClick(runtime.connection.db, input);
+}
+
+export async function aggregateBroadcastLinkClicksForRun(runId: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return aggregateBroadcastLinkClicksByRunId(runtime.connection.db, runId);
 }
 
 export async function listEnabledOrgSenders() {

@@ -25,7 +25,9 @@ import {
 import {
   createOrgSender,
   createStage5RepositoryBundle,
+  insertBroadcastLinkClick,
   setOrgSenderEnabled,
+  upsertNewsletterSubscriber,
 } from "@as-comms/db";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
@@ -85,4 +87,18 @@ export async function setOrgSenderEnabledForTests(
   enabled: boolean,
 ): Promise<void> {
   await setOrgSenderEnabled(runtime.context.db, id, enabled);
+}
+
+export async function upsertNewsletterSubscriberForTests(
+  runtime: Stage1WebTestRuntime,
+  input: Parameters<typeof upsertNewsletterSubscriber>[1],
+) {
+  return upsertNewsletterSubscriber(runtime.context.db, input);
+}
+
+export async function insertBroadcastLinkClickForTests(
+  runtime: Stage1WebTestRuntime,
+  input: Parameters<typeof insertBroadcastLinkClick>[1],
+) {
+  return insertBroadcastLinkClick(runtime.context.db, input);
 }
