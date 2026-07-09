@@ -12,6 +12,7 @@ import {
 import {
   aiKnowledgeEntries,
   audienceSnapshots,
+  broadcastLinkClicks,
   canonicalEventAudience,
   canonicalEventLedger,
   campaignRuns,
@@ -44,6 +45,7 @@ describe("Stage 1 DB schema", () => {
       "aiKnowledgeEntries",
       "audienceSnapshots",
       "auditPolicyEvidence",
+      "broadcastLinkClicks",
       "broadcastMediaAssets",
       "campaignRuns",
       "canonicalEventAudience",
@@ -111,6 +113,7 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(campaignRuns)).toBe("campaign_runs");
     expect(getTableName(composerDrafts)).toBe("composer_drafts");
     expect(getTableName(audienceSnapshots)).toBe("audience_snapshots");
+    expect(getTableName(broadcastLinkClicks)).toBe("broadcast_link_clicks");
     expect(getTableName(contactConsent)).toBe("contact_consent");
     expect(getTableName(suppressionList)).toBe("suppression_list");
     expect(getTableName(orgSettings)).toBe("org_settings");

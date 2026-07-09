@@ -770,7 +770,7 @@ describe("Salesforce capture service", () => {
     );
   });
 
-  it("always includes Text_Opt_In__c and Contact.Phone_Number__c in the capture SOQL", async () => {
+  it("always includes Text_Opt_In__c and every supported contact phone field in the capture SOQL", async () => {
     const queries: string[] = [];
     const baseApiClient = createFakeSalesforceApiClient();
     const service = createSalesforceCaptureService(
@@ -810,6 +810,7 @@ describe("Salesforce capture service", () => {
       queries.some(
         (query) =>
           query.includes(" FROM Contact ") &&
+          query.includes("MobilePhone") &&
           query.includes("Phone_Number__c"),
       ),
     ).toBe(true);
@@ -923,6 +924,123 @@ describe("Salesforce capture service", () => {
         expect.objectContaining({
           recordType: "contact_snapshot",
           memberships: [expect.objectContaining({ textOptIn: false })],
+        }),
+      ]),
+    );
+  });
+
+  it("captures additionalContacts phones on historical membership-id replays and falls back to MobilePhone", async () => {
+    const queries: string[] = [];
+    const membershipId = "a01-membership-keegan";
+    const contactId = "003-keegan";
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: createStubSalesforceApiClient((soql) => {
+          queries.push(soql);
+
+          if (soql.includes(" FROM Contact ")) {
+            const ids = extractQuotedIds(soql);
+
+            if (ids.includes(membershipId)) {
+              return Promise.resolve([]);
+            }
+
+            if (ids.includes(contactId)) {
+              return Promise.resolve([
+                {
+                  Id: contactId,
+                  Name: "Keegan-Like Volunteer",
+                  Email: "keegan@example.org",
+                  Phone: null,
+                  MobilePhone: "14012199367",
+                  Phone_Number__c: null,
+                  Volunteer_ID_Plain__c: "VOL-KEEGAN",
+                  CreatedDate: "2026-01-01T00:00:00.000Z",
+                  LastModifiedDate: "2026-07-05T00:00:00.000Z",
+                },
+              ]);
+            }
+
+            return Promise.resolve([]);
+          }
+
+          if (soql.includes(" FROM Expedition_Members__c ")) {
+            const ids = extractQuotedIds(soql);
+
+            if (ids.includes(membershipId) || ids.includes(contactId)) {
+              return Promise.resolve([
+                {
+                  Id: membershipId,
+                  Contact__c: contactId,
+                  Project__c: "project-keegan",
+                  Project__r: { Name: "Project Keegan" },
+                  Expedition__c: "expedition-keegan",
+                  Expedition__r: { Name: "Expedition Keegan" },
+                  Role__c: "volunteer",
+                  Status__c: "active",
+                  Text_Opt_In__c: true,
+                  CreatedDate: "2026-01-02T00:00:00.000Z",
+                  LastModifiedDate: "2026-07-05T00:01:00.000Z",
+                },
+              ]);
+            }
+
+            return Promise.resolve([]);
+          }
+
+          if (soql.includes(" FROM Task ")) {
+            return Promise.resolve([]);
+          }
+
+          return Promise.resolve([]);
+        }),
+        now: () => new Date("2026-07-05T00:05:00.000Z"),
+      },
+    );
+
+    const result = await service.captureHistoricalBatch({
+      version: 1,
+      jobId: "job:salesforce:historical:keegan-mobile",
+      correlationId: "corr:salesforce:historical:keegan-mobile",
+      traceId: null,
+      batchId: "batch:salesforce:historical:keegan-mobile",
+      syncStateId: "sync:salesforce:historical:keegan-mobile",
+      attempt: 1,
+      maxAttempts: 3,
+      provider: "salesforce",
+      mode: "historical",
+      jobType: "historical_backfill",
+      cursor: null,
+      checkpoint: null,
+      windowStart: "2026-07-01T00:00:00.000Z",
+      windowEnd: "2026-07-06T00:00:00.000Z",
+      recordIds: [membershipId],
+      maxRecords: 25,
+    });
+
+    expect(
+      queries.some(
+        (query) =>
+          query.includes(" FROM Contact ") &&
+          query.includes(`Id IN ('${membershipId}')`),
+      ),
+    ).toBe(true);
+    expect(
+      queries.some(
+        (query) =>
+          query.includes(" FROM Contact ") &&
+          query.includes(`Id IN ('${contactId}')`),
+      ),
+    ).toBe(true);
+    expect(result.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          recordType: "contact_snapshot",
+          salesforceContactId: contactId,
+          primaryPhone: "+14012199367",
+          normalizedPhones: ["+14012199367"],
+          memberships: [expect.objectContaining({ textOptIn: true })],
         }),
       ]),
     );
