@@ -686,6 +686,26 @@ describe("broadcast run detail", () => {
     expect(emptyHtml).toContain("No link clicks recorded yet.");
   });
 
+  it("renders email HTML visually and falls back to plain text", () => {
+    const htmlModel = buildPostmarkModel("complete");
+    const htmlOut = renderToStaticMarkup(<EmailContentPanel model={htmlModel} />);
+    expect(htmlOut).toContain("<iframe");
+    expect(htmlOut).toContain('title="Email body"');
+    expect(htmlOut).toContain("appear unrendered");
+
+    const textModel: RunDetailModel = {
+      ...htmlModel,
+      run: {
+        ...htmlModel.run,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Plain text body only",
+      },
+    };
+    const textOut = renderToStaticMarkup(<EmailContentPanel model={textModel} />);
+    expect(textOut).not.toContain("<iframe");
+    expect(textOut).toContain("Plain text body only");
+  });
+
   it("renders the Mailchimp placeholder panels", () => {
     const html = renderShell(buildMailchimpModel());
 

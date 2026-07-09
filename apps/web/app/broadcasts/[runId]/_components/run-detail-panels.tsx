@@ -60,9 +60,8 @@ export function EmailContentPanel({
 
   const subject = model.run.subjectTemplate?.trim() ?? "";
   const preheader = model.run.preheader?.trim() ?? "";
-  const body =
-    model.run.bodyTextTemplate?.trim() ??
-    (model.run.bodyHtmlTemplate === null ? "" : "HTML content available.");
+  const bodyHtml = model.run.bodyHtmlTemplate?.trim() ?? "";
+  const bodyText = model.run.bodyTextTemplate?.trim() ?? "";
 
   return (
     <Panel title="Email content">
@@ -80,9 +79,33 @@ export function EmailContentPanel({
         {preheader.length > 0 ? (
           <SummaryRow label="Preheader" value={preheader} />
         ) : null}
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12.5px] leading-6 text-slate-700 whitespace-pre-wrap">
-          {body.length > 0 ? body : "No message body was saved for this run."}
-        </div>
+        {bodyHtml.length > 0 ? (
+          <div className="space-y-1.5">
+            {/*
+              Render the stored HTML visually in a sandboxed iframe (same
+              approach as the compose preview step). Merge tags like
+              {{firstName}} are the send-time template, so they show
+              unrendered here — layout/styling is what matters on this view.
+            */}
+            <iframe
+              title="Email body"
+              srcDoc={bodyHtml}
+              className="block w-full rounded-lg border border-slate-200 bg-white"
+              style={{ height: 640 }}
+              sandbox="allow-same-origin"
+            />
+            <p className="text-[11px] text-slate-400">
+              Rendered from the sent HTML. Merge tags (e.g. {"{{firstName}}"})
+              appear unrendered.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12.5px] leading-6 text-slate-700 whitespace-pre-wrap">
+            {bodyText.length > 0
+              ? bodyText
+              : "No message body was saved for this run."}
+          </div>
+        )}
       </div>
     </Panel>
   );
