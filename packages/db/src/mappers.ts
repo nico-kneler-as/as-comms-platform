@@ -3,6 +3,8 @@ import {
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
   broadcastLinkClickRecordSchema,
+  broadcastUploadedRecipientInputSchema,
+  broadcastUploadedRecipientRecordSchema,
   createMediaAssetInputSchema,
   canonicalEventSchema,
   canonicalEventAudienceSchema,
@@ -25,6 +27,8 @@ import {
   type BroadcastLinkClickClient,
   type BroadcastLinkClickGeo,
   type BroadcastLinkClickRecord as BroadcastLinkClickContractRecord,
+  type BroadcastUploadedRecipientInput,
+  type BroadcastUploadedRecipientRecord as BroadcastUploadedRecipientContractRecord,
   newsletterSubscriberRecordSchema,
   newsletterSuppressionRecordSchema,
   upsertNewsletterSubscriberInputSchema,
@@ -93,6 +97,7 @@ import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   broadcastLinkClicks,
+  broadcastUploadedRecipients,
   canonicalEventLedger,
   canonicalEventAudience,
   broadcastMediaAssets,
@@ -171,6 +176,8 @@ type SalesforceReconciliationRunRow =
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
 type BroadcastLinkClickDbRowInsert = typeof broadcastLinkClicks.$inferInsert;
+type BroadcastUploadedRecipientDbRowInsert =
+  typeof broadcastUploadedRecipients.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
 type NewsletterSubscriberTableRowInsert =
   typeof newsletterSubscribers.$inferInsert;
@@ -328,6 +335,26 @@ export type BroadcastLinkClickInsert = z.input<
 >;
 
 export type BroadcastLinkClickRecord = BroadcastLinkClickContractRecord;
+
+export type BroadcastUploadedRecipientRow = Readonly<{
+  id: string;
+  campaign_run_id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  created_at: Date;
+}>;
+
+export type BroadcastUploadedRecipientRowInsert =
+  Omit<
+    BroadcastUploadedRecipientDbRowInsert,
+    "id" | "campaignRunId" | "createdAt"
+  >;
+
+export type BroadcastUploadedRecipientInsert = BroadcastUploadedRecipientInput;
+
+export type BroadcastUploadedRecipientRecord =
+  BroadcastUploadedRecipientContractRecord;
 
 export type NewsletterSubscriberRow = Readonly<{
   id: string;
@@ -526,6 +553,31 @@ export function mapBroadcastLinkClickInsert(
     geo: parsed.geo,
     idempotencyKey: parsed.idempotencyKey,
     createdAt: toDate(parsed.createdAt),
+  };
+}
+
+export function mapBroadcastUploadedRecipientRow(
+  row: BroadcastUploadedRecipientRow,
+): BroadcastUploadedRecipientRecord {
+  return broadcastUploadedRecipientRecordSchema.parse({
+    id: row.id,
+    campaignRunId: row.campaign_run_id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    createdAt: row.created_at.toISOString(),
+  });
+}
+
+export function mapBroadcastUploadedRecipientInsert(
+  record: BroadcastUploadedRecipientInsert,
+): BroadcastUploadedRecipientRowInsert {
+  const parsed = broadcastUploadedRecipientInputSchema.parse(record);
+
+  return {
+    email: parsed.email,
+    firstName: parsed.firstName,
+    lastName: parsed.lastName,
   };
 }
 

@@ -29,3 +29,4 @@ export * from "./sms-segments.js";
 export * from "./source-evidence-supersede-policy.js";
 export * from "./signature-template.js";
 export * from "./timeline.js";
+export * from "./uploaded-audience.js";

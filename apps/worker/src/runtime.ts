@@ -8,6 +8,7 @@ import {
   createStage1RepositoryBundleFromConnection,
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
+  listBroadcastUploadedRecipientsForRun,
   type DatabaseConnection,
   type Stage1Database,
 } from "@as-comms/db";
@@ -18,6 +19,7 @@ import {
   createMergeRenderer,
   createStage1NormalizationService,
   createStage1PersistenceService,
+  resolveUploadedAudienceForRun,
 } from "@as-comms/domain";
 import {
   capturePortHttpConfigSchema,
@@ -273,6 +275,7 @@ function readOptionalPositiveIntegerEnv(
 }
 
 function buildCampaignSendDependencies(input: {
+  readonly connection: DatabaseConnection;
   readonly env: NodeJS.ProcessEnv;
   readonly campaigns: ReturnType<typeof createStage5RepositoryBundleFromConnection>;
   readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
@@ -341,6 +344,28 @@ function buildCampaignSendDependencies(input: {
         auditEvidence: input.repositories.auditEvidence,
       },
       audienceResolver,
+      resolveUploadedAudience: (run, at) => {
+        void at;
+        return resolveUploadedAudienceForRun(
+          {
+            uploadedRecipients: {
+              listForRun: (runId) =>
+                listBroadcastUploadedRecipientsForRun(
+                  input.connection.db,
+                  runId,
+                ),
+            },
+            contacts: input.repositories.contacts,
+            settingsProjects: input.settings.projects,
+            settingsAliases: input.settings.aliases,
+          },
+          {
+            runId: run.id,
+            fromEmail: run.fromEmail,
+            projectId: run.projectId,
+          },
+        );
+      },
       exclusionFilter,
       mergeRenderer,
       postmarkClient,
@@ -822,6 +847,7 @@ export async function createStage1WorkerRuntimeServices(
     repositories,
   });
   const campaignSend = buildCampaignSendDependencies({
+    connection,
     env: input?.env ?? process.env,
     campaigns,
     repositories,

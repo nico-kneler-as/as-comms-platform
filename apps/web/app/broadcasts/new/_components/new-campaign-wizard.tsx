@@ -14,7 +14,10 @@ import type {
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
-import { saveCampaignWizardDraftAction } from "../../_lib/audience-data-source";
+import {
+  saveCampaignWizardDraftAction,
+  uploadBroadcastAudienceCsvAction,
+} from "../../_lib/audience-data-source";
 import {
   schedule,
   sendNow,
@@ -107,6 +110,7 @@ export function hasAppliedAudienceFilters(
   switch (criteria.initialFilter) {
     case "all_approved":
     case "all_available":
+    case "csv_upload":
     case "project_status":
     case "specific":
       return true;
@@ -348,6 +352,18 @@ function buildCriteriaForMode(input: {
     };
   }
 
+  if (input.mode === "csv_upload") {
+    return {
+      ...input.current,
+      initialFilter: "csv_upload",
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    };
+  }
+
   return {
     ...input.current,
     initialFilter: "project_status",
@@ -457,8 +473,17 @@ export function NewCampaignWizard({
     hasPickedAudienceMode,
     setHasPickedAudienceMode,
     countState,
+    setCountState,
     previewRows,
+    setPreviewRows,
     previewErrorMessage,
+    csvUploadSummary,
+    setCsvUploadSummary,
+    csvUploadErrorMessage,
+    setCsvUploadErrorMessage,
+    csvUploadPending,
+    startCsvUploadTransition,
+    setCsvUploadVersion,
     statusCounts,
     statusCountsLoading,
     statusCountsErrorMessage,
@@ -636,6 +661,7 @@ export function NewCampaignWizard({
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }
 
   function toggleProject(projectId: string) {
@@ -669,6 +695,7 @@ export function NewCampaignWizard({
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }
 
   function toggleAllStatuses(selectAll: boolean) {
@@ -714,6 +741,33 @@ export function NewCampaignWizard({
               : [...(current.contactIds ?? []), contactId],
           }),
     }));
+  }
+
+  async function handleCsvUpload(csvText: string) {
+    await new Promise<void>((resolve) => {
+      startCsvUploadTransition(async () => {
+        const result = await uploadBroadcastAudienceCsvAction({
+          runId: draft.runId,
+          csvText,
+        });
+
+        if (!result.ok) {
+          setCsvUploadErrorMessage(result.message);
+          resolve();
+          return;
+        }
+
+        setCsvUploadSummary(result.data);
+        setCsvUploadErrorMessage(null);
+        setCountState({
+          count: result.data.importedCount,
+          hasAppliedFilters: true,
+        });
+        setPreviewRows(result.data.sample);
+        setCsvUploadVersion((current) => current + 1);
+        resolve();
+      });
+    });
   }
 
   async function continueTo(step: number) {
@@ -921,6 +975,9 @@ export function NewCampaignWizard({
                   volunteerSearchRows={volunteerSearchRows}
                   volunteerSearchLoading={volunteerSearchPending}
                   volunteerSearchErrorMessage={volunteerSearchErrorMessage}
+                  csvUploadSummary={csvUploadSummary}
+                  csvUploadPending={csvUploadPending}
+                  csvUploadErrorMessage={csvUploadErrorMessage}
                   projectOptions={effectiveProjectOptions}
                   singleSelectProjects={singleSelectProjects}
                   statusOptions={bootstrap.statuses}
@@ -933,6 +990,7 @@ export function NewCampaignWizard({
                   onStatusToggle={toggleStatus}
                   onVolunteerSearchQueryChange={setVolunteerSearchQuery}
                   onVolunteerToggle={toggleVolunteer}
+                  onCsvUpload={handleCsvUpload}
                   onBack={() => {
                     setCurrentStep(1);
                   }}

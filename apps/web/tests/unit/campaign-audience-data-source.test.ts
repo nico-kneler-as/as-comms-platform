@@ -12,10 +12,12 @@ vi.mock("@/src/server/auth/session", () => ({
 import {
   getAudienceBuilderBootstrap,
   loadMemberStatusCountsForProjects,
+  previewAudienceAction,
   resolveAudienceCountAction,
   resolveStoredCampaignAudience,
   searchNewsletterSubscribersAction,
   searchProjectVolunteersAction,
+  uploadBroadcastAudienceCsvAction,
 } from "../../app/broadcasts/_lib/audience-data-source";
 import {
   createOrgSenderForTests,
@@ -213,6 +215,46 @@ async function seedNewsletterSuppression(
       ${new Date("2026-06-01T12:00:00.000Z").toISOString()}::timestamptz
     )
   `);
+}
+
+async function createProjectBroadcastDraft(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly runId: string;
+    readonly projectId: string;
+    readonly fromEmail: string;
+  },
+) {
+  return runtime.runtime.campaigns.campaignRuns.create({
+    id: input.runId,
+    kind: "project",
+    launchType: "normal_email",
+    projectId: input.projectId,
+    name: "CSV audience import",
+    fromEmail: input.fromEmail,
+    fromName: "Adventure Scientists",
+    replyToEmail: input.fromEmail,
+    subjectTemplate: "Subject",
+    bodyHtmlTemplate: "<p>Hello</p>",
+    bodyTextTemplate: "Hello",
+    bodyDesignJson: null,
+    preheader: null,
+    audienceCriteria: {
+      projectId: input.projectId,
+      projectIds: [input.projectId],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
+      hasClicked: "either",
+      initialFilter: "csv_upload",
+    },
+    audienceSize: null,
+    createdByUserId: "user:operator",
+    lastEditedByUserId: "user:operator",
+  });
 }
 
 describe("campaign audience data source", () => {
@@ -555,6 +597,7 @@ describe("campaign audience data source", () => {
     });
 
     const result = await resolveAudienceCountAction({
+      runId: "newsletter-preview",
       kind: "newsletter",
       criteria: {
         projectId: null,
@@ -616,5 +659,150 @@ describe("campaign audience data source", () => {
         },
       ],
     });
+  });
+
+  it("imports a CSV audience, returns counts plus preview, and persists the stored rows", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-csv",
+      projectName: "Corals",
+      email: "corals@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-csv",
+      displayName: "Existing Contact",
+      email: "existing@example.org",
+    });
+    await createProjectBroadcastDraft(runtime, {
+      runId: "run-csv",
+      projectId: "project-csv",
+      fromEmail: "corals@example.org",
+    });
+
+    const upload = await uploadBroadcastAudienceCsvAction({
+      runId: "run-csv",
+      csvText: [
+        "email,firstName,lastName",
+        "existing@example.org,Existing,Contact",
+        "new@example.org,New,Recipient",
+        "existing@example.org,Duplicate,Ignored",
+        "bad-email,Bad,Row",
+      ].join("\n"),
+    });
+
+    expect(upload).toMatchObject({
+      ok: true,
+      data: {
+        importedCount: 2,
+        invalidSkippedCount: 1,
+        duplicatesRemovedCount: 1,
+        sample: [
+          {
+            email: "existing@example.org",
+            name: "Existing Contact",
+          },
+          {
+            email: "new@example.org",
+            name: "New Recipient",
+          },
+        ],
+      },
+    });
+
+    const count = await resolveAudienceCountAction({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    const preview = await previewAudienceAction({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    const audience = await resolveStoredCampaignAudience({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+      at: new Date("2026-06-01T12:00:00.000Z"),
+      fromEmail: "corals@example.org",
+      projectId: "project-csv",
+    });
+
+    expect(count).toMatchObject({
+      ok: true,
+      data: {
+        count: 2,
+        hasAppliedFilters: true,
+      },
+    });
+    expect(preview).toMatchObject({
+      ok: true,
+      data: [
+        {
+          email: "existing@example.org",
+          name: "Existing Contact",
+        },
+        {
+          email: "new@example.org",
+          name: "New Recipient",
+        },
+      ],
+    });
+    expect(audience).toEqual([
+      {
+        contactId: "contact-csv",
+        newsletterSubscriberId: null,
+        frozenEmail: "existing@example.org",
+        frozenFirstName: "Existing",
+        frozenProjectName: "Corals",
+        frozenProjectId: "project-csv",
+        frozenAliasEmail: "corals@example.org",
+      },
+      {
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "new@example.org",
+        frozenFirstName: "New",
+        frozenProjectName: "Corals",
+        frozenProjectId: "project-csv",
+        frozenAliasEmail: "corals@example.org",
+      },
+    ]);
   });
 });

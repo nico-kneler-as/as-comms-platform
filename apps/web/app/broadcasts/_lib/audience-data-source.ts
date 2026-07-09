@@ -8,6 +8,7 @@ import {
   audienceCriteriaSchema,
   expeditionMemberStatusValues,
   normalizeExpeditionMemberStatus,
+  type BroadcastUploadedRecipientInput,
   type AudienceCriteria,
   type CampaignKind,
   type CampaignRunRecord,
@@ -22,6 +23,7 @@ import {
   formatOrgAddress,
   intersectSmsAudience,
   normalizeAliasEmail,
+  resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   type AudienceMember,
 } from "@as-comms/domain";
@@ -30,11 +32,15 @@ import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin, requireSession } from "@/src/server/auth/session";
 import {
+  countBroadcastUploadedRecipients,
   getStage1WebRuntime,
+  listBroadcastUploadedRecipients,
   listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
+  replaceBroadcastUploadedRecipients,
   searchNewsletterSubscribers,
 } from "@/src/server/stage1-runtime";
+import { parseRecipientCsv } from "@/src/lib/parse-recipient-csv";
 
 import { deriveInitials } from "./campaign-preview";
 
@@ -82,6 +88,13 @@ export interface AudiencePreviewRow {
 export interface AudienceCountData {
   readonly count: number;
   readonly hasAppliedFilters: boolean;
+}
+
+export interface CsvUploadSummary {
+  readonly importedCount: number;
+  readonly invalidSkippedCount: number;
+  readonly duplicatesRemovedCount: number;
+  readonly sample: readonly AudiencePreviewRow[];
 }
 
 export type AudienceStatusCounts = Partial<
@@ -299,12 +312,46 @@ async function resolvePrimaryAliasEmail(
   return task;
 }
 
+function formatPreviewName(input: {
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly fallback: string;
+}): string {
+  const name = [input.firstName, input.lastName]
+    .filter((value): value is string => (value?.trim().length ?? 0) > 0)
+    .join(" ")
+    .trim();
+
+  return name.length > 0 ? name : input.fallback;
+}
+
+function mapUploadedRecipientPreviewRow(input: {
+  readonly id: string;
+  readonly email: string;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+}): AudiencePreviewRow {
+  return {
+    contactId: input.id,
+    name: formatPreviewName({
+      firstName: input.firstName,
+      lastName: input.lastName,
+      fallback: input.email,
+    }),
+    email: input.email,
+    project: null,
+    projectAlias: null,
+    projectAliasHint: null,
+  };
+}
+
 function hasAppliedAudienceFilters(
   criteria: AudienceCriteria,
 ): boolean {
   switch (readAudienceMode(criteria)) {
     case "all_approved":
     case "all_available":
+    case "csv_upload":
     case "project_status":
     case "specific":
       return true;
@@ -313,7 +360,12 @@ function hasAppliedAudienceFilters(
 
 function readAudienceMode(
   criteria: AudienceCriteria,
-): "project_status" | "specific" | "all_approved" | "all_available" {
+) :
+  | "project_status"
+  | "specific"
+  | "all_approved"
+  | "all_available"
+  | "csv_upload" {
   return criteria.initialFilter ?? "project_status";
 }
 
@@ -342,6 +394,31 @@ function deriveProjectId(
   }
 
   return criteria.projectId ?? criteria.projectIds[0] ?? null;
+}
+
+async function deriveRunProjectId(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+  input: {
+    readonly kind: CampaignKind;
+    readonly criteria: AudienceCriteria;
+    readonly fromEmail: string | null;
+  },
+): Promise<string | null> {
+  const criteriaProjectId = deriveProjectId(input.kind, input.criteria);
+  if (criteriaProjectId !== null || input.kind !== "project") {
+    return criteriaProjectId;
+  }
+
+  if (readAudienceMode(input.criteria) !== "csv_upload") {
+    return null;
+  }
+
+  const aliasEmail = normalizeAliasEmail(input.fromEmail);
+  if (aliasEmail === null) {
+    return null;
+  }
+
+  return (await runtime.settings.aliases.findByAlias(aliasEmail))?.projectId ?? null;
 }
 
 function toStoredAudienceCriteria(
@@ -434,6 +511,43 @@ async function createResolver() {
       settingsProjects: runtime.settings.projects,
     },
   });
+}
+
+async function loadUploadedAudience(
+  input: {
+    readonly runId: string;
+    readonly fromEmail?: string | null;
+    readonly projectId?: string | null;
+  },
+): Promise<readonly AudienceMember[]> {
+  const runtime = await getStage1WebRuntime();
+
+  return resolveUploadedAudienceForRun(
+    {
+      uploadedRecipients: {
+        listForRun: (runId) => listBroadcastUploadedRecipients(runId),
+      },
+      contacts: runtime.repositories.contacts,
+      settingsProjects: runtime.settings.projects,
+      settingsAliases: runtime.settings.aliases,
+    },
+    input,
+  );
+}
+
+async function loadUploadedAudiencePreview(
+  runId: string,
+): Promise<readonly AudiencePreviewRow[]> {
+  return (await listBroadcastUploadedRecipients(runId))
+    .slice(0, PREVIEW_LIMIT)
+    .map((recipient) =>
+      mapUploadedRecipientPreviewRow({
+        id: recipient.id,
+        email: recipient.email,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
+      }),
+    );
 }
 
 function buildAllProjectsCriteria(
@@ -784,7 +898,22 @@ export async function resolveStoredCampaignAudience(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
   readonly at: Date;
+  readonly runId?: string;
+  readonly fromEmail?: string | null;
+  readonly projectId?: string | null;
 }): Promise<readonly AudienceMember[]> {
+  if (readAudienceMode(input.criteria) === "csv_upload") {
+    if (input.runId === undefined) {
+      throw new Error("CSV-upload audiences require a campaign run id.");
+    }
+
+    return loadUploadedAudience({
+      runId: input.runId,
+      ...(input.fromEmail === undefined ? {} : { fromEmail: input.fromEmail }),
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    });
+  }
+
   if (input.kind === "newsletter") {
     if ((input.criteria.newsletterSubscriberIds?.length ?? 0) > 0) {
       return loadSpecificNewsletterSubscribersAudience(
@@ -806,35 +935,43 @@ export async function resolveStoredCampaignAudience(input: {
 }
 
 async function resolveWizardAudience(
-  kind: CampaignKind,
-  criteria: AudienceCriteria,
-  at: Date,
+  input: {
+    readonly kind: CampaignKind;
+    readonly criteria: AudienceCriteria;
+    readonly at: Date;
+    readonly runId?: string;
+    readonly fromEmail?: string | null;
+    readonly projectId?: string | null;
+  },
 ): Promise<readonly AudienceMember[]> {
-  const parsedCriteria = audienceCriteriaSchema.parse(criteria);
-  const mode = readAudienceMode(criteria);
+  const parsedCriteria = audienceCriteriaSchema.parse(input.criteria);
+  const mode = readAudienceMode(input.criteria);
 
-  if (mode === "all_approved" && kind === "newsletter") {
-    return loadApprovedContactsAudience(at);
+  if (mode === "all_approved" && input.kind === "newsletter") {
+    return loadApprovedContactsAudience(input.at);
   }
 
-  if (mode === "all_available" && kind === "newsletter") {
+  if (mode === "all_available" && input.kind === "newsletter") {
     return loadNewsletterSubscriberAudience();
   }
 
-  if (mode === "specific" && kind === "newsletter") {
+  if (mode === "specific" && input.kind === "newsletter") {
     if (parsedCriteria.newsletterSubscriberIds.length > 0) {
-      return loadSpecificNewsletterSubscribersAudience(parsedCriteria, at);
+      return loadSpecificNewsletterSubscribersAudience(parsedCriteria, input.at);
     }
     if (parsedCriteria.contactIds.length > 0) {
-      return loadSpecificContactsAudience(parsedCriteria, at);
+      return loadSpecificContactsAudience(parsedCriteria, input.at);
     }
     return [];
   }
 
   return resolveStoredCampaignAudience({
-    kind,
+    kind: input.kind,
     criteria: parsedCriteria,
-    at,
+    at: input.at,
+    ...(input.runId === undefined ? {} : { runId: input.runId }),
+    ...(input.fromEmail === undefined ? {} : { fromEmail: input.fromEmail }),
+    ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
   });
 }
 
@@ -1041,6 +1178,7 @@ async function readRequestOrigin(): Promise<string> {
 }
 
 export async function resolveAudienceCountAction(input: {
+  readonly runId: string;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
 }): Promise<UiResult<AudienceCountData>> {
@@ -1048,14 +1186,21 @@ export async function resolveAudienceCountAction(input: {
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
-    const audience = await resolveWizardAudience(
-      input.kind,
-      input.criteria,
-      new Date(),
-    );
+    const mode = readAudienceMode(criteria);
+    const count =
+      mode === "csv_upload"
+        ? await countBroadcastUploadedRecipients(input.runId)
+        : (
+            await resolveWizardAudience({
+              runId: input.runId,
+              kind: input.kind,
+              criteria: input.criteria,
+              at: new Date(),
+            })
+          ).length;
 
     return successResult({
-      count: audience.length,
+      count,
       hasAppliedFilters: hasAppliedAudienceFilters({
         ...criteria,
         ...(input.criteria.initialFilter === undefined
@@ -1075,23 +1220,30 @@ export async function resolveAudienceCountAction(input: {
 }
 
 export async function previewAudienceAction(input: {
+  readonly runId: string;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireSession();
 
   try {
+    const criteria = audienceCriteriaSchema.parse(input.criteria);
+    if (readAudienceMode(criteria) === "csv_upload") {
+      return successResult(await loadUploadedAudiencePreview(input.runId));
+    }
+
     const runtime = await getStage1WebRuntime();
     const aliasCache = new Map<string, Promise<string | null>>();
     const settingsProjects = await runtime.settings.projects.listAll();
     const projectsById = new Map(
       settingsProjects.map((project) => [project.projectId, project] as const),
     );
-    const audience = await resolveWizardAudience(
-      input.kind,
-      input.criteria,
-      new Date(),
-    );
+    const audience = await resolveWizardAudience({
+      runId: input.runId,
+      kind: input.kind,
+      criteria,
+      at: new Date(),
+    });
 
     return successResult(
       await Promise.all(
@@ -1130,6 +1282,7 @@ export async function previewAudienceAction(input: {
 }
 
 export async function loadComposePreviewAction(input: {
+  readonly runId: string;
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
@@ -1145,11 +1298,13 @@ export async function loadComposePreviewAction(input: {
   try {
     const runtime = await getStage1WebRuntime();
     const mergeRenderer = createMergeRenderer();
-    const audience = await resolveWizardAudience(
-      input.kind,
-      input.criteria,
-      new Date(),
-    );
+    const audience = await resolveWizardAudience({
+      runId: input.runId,
+      kind: input.kind,
+      criteria: input.criteria,
+      at: new Date(),
+      fromEmail: input.fromEmail,
+    });
     const orgSettings = await runtime.campaigns.orgSettings.read();
     const footerAddress = formatOrgAddress(orgSettings);
 
@@ -1574,6 +1729,58 @@ export async function loadMemberStatusCountsForProjects(
   }
 }
 
+export async function uploadBroadcastAudienceCsvAction(input: {
+  readonly runId: string;
+  readonly csvText: string;
+}): Promise<UiResult<CsvUploadSummary>> {
+  await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.launchType === "sms") {
+      return errorResult(
+        "campaign_csv_upload_sms_unsupported",
+        "CSV import is only available for email broadcasts.",
+      );
+    }
+    if (run.kind !== "project") {
+      return errorResult(
+        "campaign_csv_upload_sender_unsupported",
+        "CSV import is only available for project senders.",
+      );
+    }
+
+    const parsed = parseRecipientCsv(input.csvText);
+    const uploadedRows: BroadcastUploadedRecipientInput[] =
+      parsed.recipients.map((recipient) => ({
+        email: recipient.email,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
+      }));
+
+    await replaceBroadcastUploadedRecipients(input.runId, uploadedRows);
+
+    return successResult({
+      importedCount: parsed.importedCount,
+      invalidSkippedCount: parsed.invalidSkippedCount,
+      duplicatesRemovedCount: parsed.duplicatesRemovedCount,
+      sample: (await loadUploadedAudiencePreview(input.runId)).slice(0, 5),
+    });
+  } catch (error) {
+    return errorResult(
+      "campaign_csv_upload_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to import the CSV audience.",
+      true,
+    );
+  }
+}
+
 export async function saveCampaignWizardDraftAction(input: {
   readonly runId: string;
   readonly launchType: LaunchType;
@@ -1601,7 +1808,11 @@ export async function saveCampaignWizardDraftAction(input: {
       {
         launchType: input.launchType,
         kind: input.kind,
-        projectId: deriveProjectId(input.kind, audienceCriteria),
+        projectId: await deriveRunProjectId(runtime, {
+          kind: input.kind,
+          criteria: audienceCriteria,
+          fromEmail: input.fromEmail,
+        }),
         name: input.name,
         fromEmail: input.fromEmail,
         replyToEmail: input.replyToEmail,

@@ -245,7 +245,13 @@ export const audienceCriteriaSchema = z
       audienceCriteriaDefaults.hasClicked,
     ),
     initialFilter: z
-      .enum(["project_status", "specific", "all_approved", "all_available"])
+      .enum([
+        "project_status",
+        "specific",
+        "all_approved",
+        "all_available",
+        "csv_upload",
+      ])
       .optional(),
   }))
   .transform((value) => ({
@@ -350,7 +356,7 @@ function validateAudienceSnapshotRecipient(
     (value.contactId === null ? 0 : 1) +
     (value.newsletterSubscriberId === null ? 0 : 1);
 
-  if (recipientCount === 1) {
+  if (recipientCount <= 1) {
     return;
   }
 
@@ -358,13 +364,13 @@ function validateAudienceSnapshotRecipient(
     code: z.ZodIssueCode.custom,
     path: ["contactId"],
     message:
-      "Exactly one of contactId or newsletterSubscriberId must be provided.",
+      "At most one of contactId or newsletterSubscriberId may be provided.",
   });
   context.addIssue({
     code: z.ZodIssueCode.custom,
     path: ["newsletterSubscriberId"],
     message:
-      "Exactly one of contactId or newsletterSubscriberId must be provided.",
+      "At most one of contactId or newsletterSubscriberId may be provided.",
   });
 }
 

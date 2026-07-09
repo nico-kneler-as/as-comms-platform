@@ -16,12 +16,21 @@ vi.mock("../../app/broadcasts/actions", () => ({
 import { readAllowedAudienceModesForSenderType } from "../../app/broadcasts/new/_components/use-new-campaign-wizard-state";
 
 describe("use-new-campaign-wizard-state audience mode gating", () => {
-  it("offers all_available only to org senders", () => {
-    expect(readAllowedAudienceModesForSenderType("org")).toEqual([
+  it("offers CSV upload only to project email senders", () => {
+    expect(
+      readAllowedAudienceModesForSenderType("org", "normal_email"),
+    ).toEqual([
       "specific",
       "all_available",
     ]);
-    expect(readAllowedAudienceModesForSenderType("project")).toEqual([
+    expect(
+      readAllowedAudienceModesForSenderType("project", "normal_email"),
+    ).toEqual([
+      "project_status",
+      "specific",
+      "csv_upload",
+    ]);
+    expect(readAllowedAudienceModesForSenderType("project", "sms")).toEqual([
       "project_status",
       "specific",
     ]);

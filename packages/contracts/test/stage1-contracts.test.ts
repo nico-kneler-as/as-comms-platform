@@ -172,8 +172,12 @@ describe("Stage 1 contracts", () => {
       statuses: ["Approved"],
       initialFilter: "invalid_mode",
     });
+    const parsedCsvMode = audienceCriteriaSchema.parse({
+      initialFilter: "csv_upload",
+    });
 
     expect(parsedWithMode.initialFilter).toBe("specific");
+    expect(parsedCsvMode.initialFilter).toBe("csv_upload");
     expect(parsedWithoutMode.initialFilter).toBeUndefined();
     expect(parsedUnknownMode.success).toBe(false);
   });

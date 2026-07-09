@@ -133,6 +133,9 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   volunteerSearchRows: [],
   volunteerSearchLoading: false,
   volunteerSearchErrorMessage: null,
+  csvUploadSummary: null,
+  csvUploadPending: false,
+  csvUploadErrorMessage: null,
   projectOptions: [],
   statusOptions: ["Waitlist"],
   statusCounts: {},
@@ -144,6 +147,7 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   onStatusToggle: () => undefined,
   onVolunteerSearchQueryChange: () => undefined,
   onVolunteerToggle: () => undefined,
+  onCsvUpload: () => Promise.resolve(),
   onBack: () => undefined,
   onContinue: () => undefined,
 };
@@ -205,6 +209,37 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
     expect(markup).not.toContain("Audience filters");
     expect(markup).not.toContain("Find volunteers");
+  });
+
+  it("renders the CSV upload surface for project email audiences", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        availableModes={["project_status", "specific", "csv_upload"]}
+        criteria={{
+          ...baseProps.criteria,
+          initialFilter: "csv_upload",
+        }}
+        countState={{
+          count: 2,
+          hasAppliedFilters: true,
+        }}
+        csvUploadSummary={{
+          importedCount: 2,
+          invalidSkippedCount: 1,
+          duplicatesRemovedCount: 1,
+          sample: [],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Import CSV");
+    expect(markup).toContain("CSV with `email` and optional `firstName` / `lastName` columns.");
+    expect(markup).toContain("Imported");
+    expect(markup).toContain("Duplicates removed");
+    expect(markup).not.toContain("Find volunteers");
+    expect(markup).not.toContain("Audience filters");
   });
 
   it("renders only the project and status surface in project mode", () => {
