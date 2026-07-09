@@ -816,6 +816,67 @@ describe("Stage 5 campaigns repositories", () => {
     );
   });
 
+  it("hard deletes draft runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-delete-draft",
+      }),
+    );
+
+    await expect(campaigns.campaignRuns.deleteDraft(created.id)).resolves.toBe(
+      true,
+    );
+    await expect(campaigns.campaignRuns.findById(created.id)).resolves.toBeNull();
+  });
+
+  it("does not hard delete non-draft runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-delete-scheduled",
+      }),
+    );
+    await campaigns.campaignRuns.transitionState(
+      created.id,
+      "draft",
+      "scheduled",
+      {
+        scheduledAt: "2026-05-16T09:00:00.000Z",
+      },
+    );
+
+    await expect(campaigns.campaignRuns.deleteDraft(created.id)).resolves.toBe(
+      false,
+    );
+    await expect(campaigns.campaignRuns.findById(created.id)).resolves.toMatchObject(
+      {
+        id: created.id,
+        state: "scheduled",
+      },
+    );
+  });
+
+  it("returns false when deleting a missing draft", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await expect(campaigns.campaignRuns.deleteDraft("run-missing")).resolves.toBe(
+      false,
+    );
+  });
+
   it("adds the postmark sender status column to project_dimensions", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);

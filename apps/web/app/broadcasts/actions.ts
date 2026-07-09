@@ -1386,6 +1386,68 @@ export async function cancelDraft(
   }
 }
 
+export async function deleteDraft(
+  runId: string,
+): Promise<UiSuccess<CampaignActionData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Draft not found.",
+        false,
+      );
+    }
+    if (run.state !== "draft") {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Only drafts can be deleted.",
+        false,
+      );
+    }
+
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.draft_deleted",
+      runId,
+      detail: "Draft deleted before launch.",
+      auditEvidence: runtime.repositories.auditEvidence,
+    });
+
+    const deleted = await runtime.campaigns.campaignRuns.deleteDraft(runId);
+    if (!deleted) {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Draft not found.",
+        false,
+      );
+    }
+
+    return {
+      ok: true,
+      data: {
+        runId,
+        scheduledAt: null,
+        state: "cancelled",
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_delete_draft_failed",
+      error instanceof Error ? error.message : "Unable to delete the draft.",
+      true,
+    );
+  }
+}
+
 export async function cancel(
   runId: string,
   reason: string,

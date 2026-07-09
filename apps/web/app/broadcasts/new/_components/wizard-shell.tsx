@@ -1,10 +1,12 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const wizardFooterLeftSlotContext = createContext<ReactNode | null>(null);
 
 interface StepHeaderProps {
   readonly title: string;
@@ -34,6 +36,20 @@ export function StepHeader({
   );
 }
 
+export function WizardFooterLeftSlotProvider({
+  value,
+  children,
+}: {
+  readonly value: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <wizardFooterLeftSlotContext.Provider value={value}>
+      {children}
+    </wizardFooterLeftSlotContext.Provider>
+  );
+}
+
 interface WizardFooterProps {
   readonly onBack?: () => void;
   readonly backDisabled?: boolean;
@@ -57,6 +73,8 @@ export function WizardFooter({
   leftSlot,
   showPrimary = true,
 }: WizardFooterProps) {
+  const sharedLeftSlot = useContext(wizardFooterLeftSlotContext);
+
   return (
     <footer className="mt-auto flex items-center justify-between gap-3 border-t border-slate-200 pt-5">
       <div className="flex items-center gap-3">
@@ -72,6 +90,7 @@ export function WizardFooter({
             Back
           </Button>
         ) : null}
+        {sharedLeftSlot}
         {leftSlot}
       </div>
       {showPrimary && primaryAction ? (
