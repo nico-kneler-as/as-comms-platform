@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import {
   reconcileSmsConsent,
   type ConsentRecord,
-  type ConsentRecordRepository
+  type ConsentRecordRepository,
+  tryNormalizePhoneE164,
+  type ContactRepository,
 } from "@as-comms/domain";
 import type { SalesforceContactSnapshotRecord } from "@as-comms/integrations";
 
@@ -25,6 +27,7 @@ export function createCapturedSmsConsentReconciler(input: {
     ConsentRecordRepository,
     "findLatestByContactIds" | "insert"
   >;
+  readonly contacts: Pick<ContactRepository, "listByIds">;
   readonly logger?: Pick<Console, "info">;
   readonly now?: () => Date;
 }): ReconcileCapturedSmsConsentBatch {
@@ -48,13 +51,30 @@ export function createCapturedSmsConsentReconciler(input: {
     const latestConsentByContactId = new Map<string, ConsentRecord>(
       latestConsentLookup
     );
+    const platformContactsById = new Map(
+      (
+        await input.contacts.listByIds(
+          Array.from(new Set(eligibleContacts.map(({ contactId }) => contactId)))
+        )
+      ).map((contact) => [contact.id, contact] as const)
+    );
     let optedInAppended = 0;
     let revokedAppended = 0;
     let skippedNoPhone = 0;
     const skippedNoOptInData = capturedContacts.length - eligibleContacts.length;
 
     for (const { contactId, record } of eligibleContacts) {
-      const phoneE164 = record.primaryPhone ?? record.normalizedPhones[0] ?? null;
+      const platformContact = platformContactsById.get(contactId) ?? null;
+      const platformPhoneE164 =
+        platformContact?.primaryPhone === null ||
+        platformContact?.primaryPhone === undefined
+          ? null
+          : tryNormalizePhoneE164(platformContact.primaryPhone);
+      const phoneE164 =
+        record.primaryPhone ??
+        record.normalizedPhones[0] ??
+        platformPhoneE164 ??
+        null;
 
       if (phoneE164 === null) {
         skippedNoPhone += 1;
