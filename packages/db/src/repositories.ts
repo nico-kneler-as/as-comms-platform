@@ -58,6 +58,7 @@ import {
   type ConsentSource,
   type CreateDraftInput,
   type DeliveryStatus,
+  type NewsletterSubscriberRecord,
   type NewAudienceSnapshot,
   type NewsletterSuppressionRecord,
   type OrgSettingsRecord,
@@ -72,8 +73,12 @@ import {
 
 import type { DatabaseConnection } from "./client.js";
 import {
+  getNewsletterSubscriberByEmail,
+  getNewsletterSubscriberById,
   getNewsletterSuppressionByEmail,
+  signUpNewsletterSubscriber,
   upsertNewsletterSuppression,
+  type NewsletterSubscriberSignupResult,
 } from "./newsletter-subscribers-repository.js";
 import {
   mapAiKnowledgeEntryRow,
@@ -360,6 +365,18 @@ export interface Stage5RepositoryBundle {
     ): Promise<void>;
     isSuppressed(normalizedEmail: string, at: Date): Promise<boolean>;
     listAll(): Promise<readonly SuppressionListRecord[]>;
+  };
+  readonly newsletterSubscribers: {
+    findById(id: string): Promise<NewsletterSubscriberRecord | null>;
+    findByEmail(email: string): Promise<NewsletterSubscriberRecord | null>;
+    signUp(input: {
+      readonly email: string;
+      readonly firstName?: string | null;
+      readonly lastName?: string | null;
+      readonly optinTime: string;
+      readonly optinIp: string;
+      readonly source: string;
+    }): Promise<NewsletterSubscriberSignupResult>;
   };
   readonly newsletterSuppressions: {
     upsert(
@@ -7729,6 +7746,20 @@ export function createStage5RepositoryBundle(
           .orderBy(asc(suppressionList.normalizedEmail));
 
         return rows.map(mapSuppressionListRow);
+      },
+    },
+
+    newsletterSubscribers: {
+      async findById(id) {
+        return getNewsletterSubscriberById(db, id);
+      },
+
+      async findByEmail(email) {
+        return getNewsletterSubscriberByEmail(db, email);
+      },
+
+      async signUp(input) {
+        return signUpNewsletterSubscriber(db, input);
       },
     },
 

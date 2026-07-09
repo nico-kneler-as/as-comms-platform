@@ -12,6 +12,7 @@ import {
   listSendableNewsletterSubscribers,
   listNewsletterSubscribers,
   searchNewsletterSubscribers,
+  signUpNewsletterSubscriber,
   upsertNewsletterSubscriber,
   upsertNewsletterSuppression,
 } from "../src/newsletter-subscribers-repository.js";
@@ -256,5 +257,88 @@ describe("newsletter subscribers repository", () => {
     expect(second.reason).toBe("platform_optout");
     expect(second.source).toBe("admin_action");
     expect(rows[0]?.value ?? 0).toBe(1);
+  });
+
+  it("signs up a new subscriber as subscribed with opt-in metadata and website source", async () => {
+    const result = await signUpNewsletterSubscriber(context.db, {
+      email: "new-signup@example.com",
+      firstName: "Nina",
+      lastName: "Signup",
+      optinTime: "2026-07-09T12:00:00.000Z",
+      optinIp: "203.0.113.42",
+      source: "website_signup",
+    });
+
+    expect(result.disposition).toBe("created");
+    expect(result.subscriber).toMatchObject({
+      email: "new-signup@example.com",
+      firstName: "Nina",
+      lastName: "Signup",
+      status: "subscribed",
+      optinTime: "2026-07-09T12:00:00.000Z",
+      optinIp: "203.0.113.42",
+      source: "website_signup",
+      confirmTime: null,
+      confirmIp: null,
+    });
+  });
+
+  it("keeps duplicate signup attempts idempotent on the unique email index", async () => {
+    const first = await signUpNewsletterSubscriber(context.db, {
+      email: "repeat@example.com",
+      firstName: "Repeat",
+      optinTime: "2026-07-09T12:00:00.000Z",
+      optinIp: "203.0.113.10",
+      source: "website_signup",
+    });
+    const second = await signUpNewsletterSubscriber(context.db, {
+      email: " repeat@example.com ",
+      firstName: "Changed",
+      optinTime: "2026-07-09T12:05:00.000Z",
+      optinIp: "203.0.113.11",
+      source: "website_signup",
+    });
+    const rows = await context.db
+      .select({ value: count() })
+      .from(newsletterSubscribers)
+      .where(eq(newsletterSubscribers.email, "repeat@example.com"));
+
+    expect(first.disposition).toBe("created");
+    expect(second.disposition).toBe("already_subscribed");
+    expect(second.subscriber.id).toBe(first.subscriber.id);
+    expect(second.subscriber.firstName).toBe("Repeat");
+    expect(rows[0]?.value ?? 0).toBe(1);
+  });
+
+  it("re-subscribes a previously suppressed email and clears the suppression row", async () => {
+    await upsertNewsletterSuppression(context.db, {
+      email: "resub@example.com",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+
+    const result = await signUpNewsletterSubscriber(context.db, {
+      email: "resub@example.com",
+      firstName: "Re",
+      lastName: "Sub",
+      optinTime: "2026-07-09T13:00:00.000Z",
+      optinIp: "198.51.100.8",
+      source: "website_signup",
+    });
+    const suppression = await getNewsletterSuppressionByEmail(
+      context.db,
+      "resub@example.com",
+    );
+
+    expect(result.disposition).toBe("resubscribed");
+    expect(result.subscriber).toMatchObject({
+      email: "resub@example.com",
+      firstName: "Re",
+      lastName: "Sub",
+      status: "subscribed",
+      optinIp: "198.51.100.8",
+      source: "website_signup",
+    });
+    expect(suppression).toBeNull();
   });
 });
