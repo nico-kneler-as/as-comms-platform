@@ -1,5 +1,3 @@
-import { createHmac } from "node:crypto";
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPostmarkClient } from "../src/providers/postmark.js";
@@ -7,14 +5,6 @@ import { createPostmarkClient } from "../src/providers/postmark.js";
 const TEST_SECRET = "test-webhook-secret";
 const TEST_SERVER_TOKEN = "server-token-12345";
 const TEST_ACCOUNT_TOKEN = "account-token-67890";
-
-function computeExpected(secret: string, body: string) {
-  const digest = createHmac("sha256", secret).update(body, "utf8").digest();
-  return {
-    base64: digest.toString("base64"),
-    hex: digest.toString("hex"),
-  };
-}
 
 function buildBatchMessage() {
   return {
@@ -33,73 +23,36 @@ describe("PostmarkClient — verifyWebhookSignature", () => {
     webhookSigningSecret: TEST_SECRET,
   });
 
-  it("accepts a valid base64-formatted signature", () => {
-    const body = '{"hello":"world"}';
-    const { base64 } = computeExpected(TEST_SECRET, body);
-
-    expect(client.verifyWebhookSignature(body, base64)).toBe(true);
+  it("accepts the configured shared secret", () => {
+    expect(client.verifyWebhookSignature(TEST_SECRET)).toBe(true);
   });
 
-  it("accepts a valid hex-formatted signature", () => {
-    const body = '{"hello":"world"}';
-    const { hex } = computeExpected(TEST_SECRET, body);
-
-    expect(client.verifyWebhookSignature(body, hex)).toBe(true);
+  it("accepts the shared secret with surrounding whitespace", () => {
+    expect(client.verifyWebhookSignature(`  ${TEST_SECRET}  `)).toBe(true);
   });
 
-  it("accepts signatures prefixed with `sha256=`", () => {
-    const body = '{"hello":"world"}';
-    const { hex } = computeExpected(TEST_SECRET, body);
-
-    expect(client.verifyWebhookSignature(body, `sha256=${hex}`)).toBe(true);
+  it("rejects a token that does not match the secret", () => {
+    expect(client.verifyWebhookSignature("not-the-secret")).toBe(false);
   });
 
-  it("rejects a signature computed with the wrong secret", () => {
-    const body = '{"hello":"world"}';
-    const wrong = computeExpected("not-the-secret", body);
-
-    expect(client.verifyWebhookSignature(body, wrong.base64)).toBe(false);
-    expect(client.verifyWebhookSignature(body, wrong.hex)).toBe(false);
+  it("rejects a token of a different length", () => {
+    expect(client.verifyWebhookSignature("tooshort")).toBe(false);
+    expect(client.verifyWebhookSignature("0".repeat(200))).toBe(false);
   });
 
-  it("rejects when the body has been tampered with after signing", () => {
-    const signedBody = '{"hello":"world"}';
-    const { base64 } = computeExpected(TEST_SECRET, signedBody);
-
-    expect(
-      client.verifyWebhookSignature(
-        '{"hello":"tampered"}',
-        base64,
-      ),
-    ).toBe(false);
+  it("rejects an empty token", () => {
+    expect(client.verifyWebhookSignature("")).toBe(false);
+    expect(client.verifyWebhookSignature("   ")).toBe(false);
   });
 
-  it("rejects an empty signature header", () => {
-    expect(client.verifyWebhookSignature("anything", "")).toBe(false);
-    expect(client.verifyWebhookSignature("anything", "   ")).toBe(false);
-  });
-
-  it("rejects every signature when the signing secret is blank", () => {
+  it("rejects every token when the signing secret is blank", () => {
     const noSecretClient = createPostmarkClient({
       serverToken: TEST_SERVER_TOKEN,
       webhookSigningSecret: "",
     });
-    const body = '{"hello":"world"}';
-    const { base64 } = computeExpected("anything", body);
 
-    expect(noSecretClient.verifyWebhookSignature(body, base64)).toBe(false);
-  });
-
-  it("rejects a signature that matches a different length string", () => {
-    const body = '{"hello":"world"}';
-
-    expect(client.verifyWebhookSignature(body, "tooshort")).toBe(false);
-    expect(
-      client.verifyWebhookSignature(
-        body,
-        "0".repeat(200),
-      ),
-    ).toBe(false);
+    expect(noSecretClient.verifyWebhookSignature(TEST_SECRET)).toBe(false);
+    expect(noSecretClient.verifyWebhookSignature("anything")).toBe(false);
   });
 });
 

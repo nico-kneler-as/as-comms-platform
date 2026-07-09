@@ -414,7 +414,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!client.verifyWebhookSignature(rawBody, signature)) {
+  if (!client.verifyWebhookSignature(signature)) {
     return safeError(
       "invalid_signature",
       "Postmark webhook signature did not match.",
