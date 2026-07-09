@@ -6,7 +6,6 @@ import {
   FOCUS_RING,
   TONE_CLASSES,
   TRANSITION,
-  type ToneClassesV2,
   type ToneNameV2,
 } from "@/app/_lib/design-tokens-v2";
 import type { ExpeditionMemberStatus } from "@as-comms/contracts";
@@ -51,16 +50,6 @@ const STAGE_GROUPS = {
     readonly statuses: readonly ExpeditionMemberStatus[];
   }
 >;
-
-const PROJECT_PILL_TONES = [
-  "emerald",
-  "sky",
-  "violet",
-  "amber",
-  "rose",
-  "indigo",
-  "teal",
-] as const satisfies readonly ToneNameV2[];
 
 interface AudienceFilterPanelProps {
   readonly criteria: CampaignAudienceCriteria;
@@ -256,8 +245,6 @@ function ProjectOptionRow({
   readonly selected: boolean;
   readonly onSelect: (projectId: string) => void;
 }) {
-  const tone = readProjectTone(project.id);
-
   return (
     <button
       type="button"
@@ -269,20 +256,14 @@ function ProjectOptionRow({
       className={cn(
         `inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium ring-1 ring-inset ${TRANSITION.fast} ${FOCUS_RING}`,
         selected
-          ? `${tone.bg} text-white ring-transparent shadow-sm`
-          : `${tone.subtle} ${tone.subtleText} ${tone.ring} hover:opacity-90`,
+          ? "bg-slate-900 text-white ring-slate-900 shadow-sm"
+          : "bg-slate-100 text-slate-700 ring-slate-300 hover:bg-slate-200",
       )}
     >
       {selected ? (
         <Check className="size-3 shrink-0" aria-hidden="true" />
       ) : (
-        <span
-          className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            tone.dot,
-          )}
-          aria-hidden="true"
-        />
+        <span className="size-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
       )}
       <span className="max-w-full truncate">{project.name}</span>
     </button>
@@ -294,18 +275,13 @@ function LockedProjectRow({
 }: {
   readonly project: CampaignProjectOption;
 }) {
-  // Locked projects always render in violet so operators read them as
-  // "fixed to this sender alias" regardless of which project they belong to.
-  const tone = TONE_CLASSES.violet;
-
   return (
     <span
       role="status"
       aria-label={`Project ${project.name} is locked to this sender alias`}
       className={cn(
         "inline-flex max-w-full items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium shadow-sm ring-1 ring-inset ring-transparent",
-        tone.bg,
-        "text-white",
+        "bg-slate-900 text-white",
       )}
     >
       <Check className="size-3 shrink-0" aria-hidden="true" />
@@ -376,13 +352,4 @@ function StageStatusSection({
       </div>
     </section>
   );
-}
-
-function readProjectTone(projectId: string): ToneClassesV2 {
-  const hash = Array.from(projectId).reduce(
-    (total, character) => total + character.charCodeAt(0),
-    0,
-  );
-  const toneName = PROJECT_PILL_TONES.at(hash % PROJECT_PILL_TONES.length) ?? "emerald";
-  return TONE_CLASSES[toneName];
 }

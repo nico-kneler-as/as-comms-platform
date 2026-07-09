@@ -17,8 +17,12 @@ import { deleteDraft } from "../../actions";
 
 export function DeleteDraftButton({
   runId,
+  compact = false,
+  redirectTo,
 }: {
   readonly runId: string;
+  readonly compact?: boolean;
+  readonly redirectTo?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -38,7 +42,11 @@ export function DeleteDraftButton({
         type="button"
         variant="ghost"
         disabled={pending}
-        className="text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+        className={
+          compact
+            ? "h-auto px-0 py-0 text-[11px] font-medium text-rose-700 hover:bg-transparent hover:text-rose-800"
+            : "text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+        }
         onClick={() => {
           handleOpenChange(true);
         }}
@@ -83,7 +91,12 @@ export function DeleteDraftButton({
 
                   setErrorMessage(null);
                   handleOpenChange(false);
-                  router.push("/broadcasts");
+                  if (redirectTo) {
+                    router.push(redirectTo);
+                    return;
+                  }
+
+                  router.refresh();
                 });
               }}
             >

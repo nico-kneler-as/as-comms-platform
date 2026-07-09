@@ -28,7 +28,6 @@ import {
   type CampaignAudienceCriteria,
 } from "./audience-builder-step";
 import { ComposeStep } from "./compose-step";
-import { DeleteDraftButton } from "./delete-draft-button";
 import { LaunchTypeStep } from "./launch-type-step";
 import { NameAndSenderStep } from "./name-and-sender-step";
 import { PreviewStep } from "./preview-step";
@@ -427,7 +426,6 @@ function readProjectChipLabel(
 export function NewCampaignWizard({
   bootstrap,
   draft,
-  isAdmin,
 }: {
   readonly bootstrap: AudienceBuilderBootstrap;
   readonly draft: CampaignWizardDraftData;
@@ -525,10 +523,6 @@ export function NewCampaignWizard({
     statusLabel,
   } = useNewCampaignWizardState({ bootstrap, draft });
   const singleSelectProjects = projectSelectionMode === "single";
-  const deleteDraftControl =
-    isAdmin && runState === "draft" ? (
-      <DeleteDraftButton runId={draft.runId} />
-    ) : null;
 
   async function persistDraft(successMessage: string): Promise<boolean> {
     if (frozen || !dirty) {
@@ -857,7 +851,7 @@ export function NewCampaignWizard({
         steps={STEPS}
       />
 
-      <WizardFooterLeftSlotProvider value={deleteDraftControl}>
+      <WizardFooterLeftSlotProvider value={null}>
         <div className="flex min-w-0 flex-1 flex-col">
           {toast ? (
             <div

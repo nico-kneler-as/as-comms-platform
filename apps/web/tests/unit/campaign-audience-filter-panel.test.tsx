@@ -340,7 +340,7 @@ describe("AudienceFilterPanel", () => {
     ).toBe(false);
   });
 
-  it("renders compact tone pills for multi-project aliases", () => {
+  it("renders neutral project pills for multi-project aliases", () => {
     renderPanel({
       criteria: {
         projectId: "project-a",
@@ -362,31 +362,11 @@ describe("AudienceFilterPanel", () => {
     expect(projectButtons[0]?.className).toContain("rounded-full");
     expect(projectButtons[1]?.className).toContain("rounded-full");
     expect(projectButtons[0]?.className).not.toContain("rounded-xl");
+    expect(projectButtons[0]?.className).toContain("bg-slate-900");
     expect(projectButtons[0]?.className).toContain("text-white");
-    expect(projectButtons[1]?.className).not.toContain("text-white");
-    expect(
-      [
-        "bg-emerald-600",
-        "bg-sky-600",
-        "bg-violet-500",
-        "bg-amber-500",
-        "bg-rose-500",
-        "bg-indigo-600",
-        "bg-teal-600",
-      ].some((className) => projectButtons[0]?.className.includes(className)),
-    ).toBe(true);
-    expect(
-      [
-        "bg-emerald-50",
-        "bg-sky-50",
-        "bg-violet-50",
-        "bg-amber-50",
-        "bg-rose-50",
-        "bg-indigo-50",
-        "bg-teal-50",
-      ].some((className) => projectButtons[1]?.className.includes(className)),
-    ).toBe(true);
-    expect(projectButtons[0]?.className).not.toBe(projectButtons[1]?.className);
+    expect(projectButtons[1]?.className).toContain("bg-slate-100");
+    expect(projectButtons[1]?.className).toContain("text-slate-700");
+    expect(projectButtons[1]?.className).toContain("ring-slate-300");
     expect(
       document.querySelector(
         '[aria-label="Project Restoring Butternut Forest Health is locked to this sender alias"]',

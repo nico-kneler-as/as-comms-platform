@@ -9,6 +9,7 @@ import { projectToneFromName } from "@/app/inbox/_lib/project-tone";
 import { cn } from "@/lib/utils";
 
 import { RunStateChip } from "../[runId]/_components/run-state-chip";
+import { DeleteDraftButton } from "../new/_components/delete-draft-button";
 
 const ACTIVE_ACCENT_CLASS: Partial<Record<CampaignRunProjectionRow["state"], string>> =
   {
@@ -291,71 +292,82 @@ export function CampaignRow({
 
   return (
     <div style={style}>
-      <Link
-        href={href}
-        prefetch={false}
-        data-campaign-row="true"
-        data-campaign-provider={item.provider}
-        data-campaign-state={item.state}
+      <div
         className={cn(
-          "group relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 overflow-hidden bg-white px-5 py-3",
+          "group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 overflow-hidden bg-white px-5 py-3",
           TRANSITION.fast,
           TRANSITION.reduceMotion,
           "hover:bg-slate-50",
-          FOCUS_RING,
         )}
       >
         <span
           aria-hidden="true"
           className={cn("absolute inset-y-0 left-0 w-0.5", accentClass)}
         />
-        <span
+        <Link
+          href={href}
+          prefetch={false}
+          data-campaign-row="true"
+          data-campaign-provider={item.provider}
+          data-campaign-state={item.state}
           className={cn(
-            "flex size-9 items-center justify-center rounded-md ring-1 ring-inset",
-            typeMeta.className,
+            "grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-4",
+            FOCUS_RING,
           )}
-          title={typeMeta.label}
         >
-          <TypeIcon className="size-4" aria-hidden="true" />
-        </span>
-
-        <div className="min-w-0">
-          <p
+          <span
             className={cn(
-              "truncate text-[13.5px] font-semibold text-slate-900",
-              untitledDraft && "italic text-slate-500",
+              "flex size-9 items-center justify-center rounded-md ring-1 ring-inset",
+              typeMeta.className,
             )}
+            title={typeMeta.label}
           >
-            {title}
-          </p>
+            <TypeIcon className="size-4" aria-hidden="true" />
+          </span>
 
-          <div className="mt-1 flex min-w-0 items-center gap-2">
-            {showProjectPill ? (
-              <span
-                className={cn(
-                  "inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-px text-[10px] font-semibold tracking-tight",
-                  projectTone.subtle,
-                  projectTone.subtleText,
-                )}
-              >
-                {projectLabel}
-              </span>
-            ) : null}
+          <div className="min-w-0">
             <p
               className={cn(
-                "min-w-0 truncate text-[12px]",
-                trimmedSubject.length > 0
-                  ? "text-slate-600"
-                  : "italic text-slate-500",
+                "truncate text-[13.5px] font-semibold text-slate-900",
+                untitledDraft && "italic text-slate-500",
               )}
             >
-              {subjectLine}
+              {title}
             </p>
+
+            <div className="mt-1 flex min-w-0 items-center gap-2">
+              {showProjectPill ? (
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-px text-[10px] font-semibold tracking-tight",
+                    projectTone.subtle,
+                    projectTone.subtleText,
+                  )}
+                >
+                  {projectLabel}
+                </span>
+              ) : null}
+              <p
+                className={cn(
+                  "min-w-0 truncate text-[12px]",
+                  trimmedSubject.length > 0
+                    ? "text-slate-600"
+                    : "italic text-slate-500",
+                )}
+              >
+                {subjectLine}
+              </p>
+            </div>
           </div>
-        </div>
+        </Link>
 
         <div className="flex flex-col items-end gap-1 whitespace-nowrap text-right">
-          <RunStateChip state={item.state} variant="list" />
+          <div className="flex items-center gap-2">
+            <RunStateChip state={item.state} variant="list" />
+            {item.state === "draft" ? (
+              <DeleteDraftButton runId={item.runId} compact />
+            ) : null}
+          </div>
           <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-slate-500">
             {renderMetric(item)}
           </p>
@@ -363,7 +375,7 @@ export function CampaignRow({
             {renderDateLine(item)}
           </p>
         </div>
-      </Link>
+      </div>
     </div>
   );
 }

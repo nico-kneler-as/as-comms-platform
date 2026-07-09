@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 import type { CampaignRunRecord, LaunchType } from "@as-comms/contracts";
 
+import { SmsSampleBubble } from "./sms-sample-bubble";
 import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
 
 interface ReviewStepProps {
@@ -210,6 +211,18 @@ export function ReviewStep({
               : "Audience freezes at launch. Auto-excludes unsubscribed, hard-bounced, and contacts without an email on file."}
           </div>
         </SectionPanel>
+
+        {isSmsLaunch ? (
+          <SectionPanel
+            label="Sample message"
+            bodyClassName="px-5 py-5"
+          >
+            <SmsSampleBubble
+              sampleBody={smsPreviewData?.sampleBody ?? null}
+              emptyBodyFallback="No reachable recipients to sample yet."
+            />
+          </SectionPanel>
+        ) : null}
 
         {frozen ? (
           <section

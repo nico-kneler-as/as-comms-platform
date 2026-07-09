@@ -139,6 +139,9 @@ describe("ReviewStep sender gating", () => {
     expect(markup).toContain("reachable of");
     expect(markup).toContain("selected contacts in");
     expect(markup).toContain("≈ 14 segments · ~$0.1106");
+    expect(markup).toContain("Sample message");
+    expect(markup).toContain("Hi Sam");
+    expect(markup).toContain("Reply STOP to opt out.");
     expect(markup).toContain("Send 9 of 12 selected contacts (~14 segments, ~$0.1106)?");
     expect(markup).not.toContain("Schedule for later");
     expect(markup).not.toContain("Choose a verified sender");

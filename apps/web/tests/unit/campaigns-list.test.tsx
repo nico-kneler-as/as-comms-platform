@@ -29,14 +29,41 @@ vi.mock("next/link", () => ({
 }));
 
 const replaceMock = vi.fn();
+const refreshMock = vi.fn();
 let searchParamsValue = new URLSearchParams();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: replaceMock,
+    refresh: refreshMock,
   }),
   usePathname: () => "/broadcasts",
   useSearchParams: () => searchParamsValue,
+}));
+
+vi.mock("@/components/ui/dialog", () => ({
+  Dialog: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogContent: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogDescription: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogFooter: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogHeader: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogTitle: ({ children }: { readonly children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
+vi.mock("../../app/broadcasts/new/_components/delete-draft-button", () => ({
+  DeleteDraftButton: () => <button type="button">Delete draft</button>,
 }));
 
 vi.mock("@/components/ui/dropdown-menu", () => ({
@@ -191,6 +218,7 @@ function makeCampaignRow(index: number): CampaignListItem {
 
 beforeEach(() => {
   replaceMock.mockReset();
+  refreshMock.mockReset();
   searchParamsValue = new URLSearchParams();
 });
 
@@ -425,6 +453,25 @@ describe("broadcasts list snapshots", () => {
         .querySelector('a[data-campaign-state="complete"]')
         ?.getAttribute("href"),
     ).toBe("/broadcasts/sent-1");
+  });
+
+  it("renders the delete-draft action only for draft rows", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [
+        { ...makeCampaignRow(0), runId: "draft-1", name: null, state: "draft" },
+        { ...makeCampaignRow(1), runId: "sent-1", state: "complete" },
+      ],
+      totalCount: 2,
+    });
+
+    expect(container.textContent).toContain("Delete draft");
+    expect(
+      container
+        .querySelector('a[data-campaign-state="complete"]')
+        ?.parentElement?.textContent,
+    ).not.toContain("Delete draft");
   });
 
   it("does not navigate when the active state tab is selected again", () => {
