@@ -331,4 +331,194 @@ describe("contact resolution", () => {
     });
     expect(result.contact.id).toBe(existing.id);
   });
+
+  it("resolves to the consent-anchored contact instead of creating a placeholder", async () => {
+    const consentAnchored: ContactInsertRecord = {
+      id: "contact:salesforce:003TESTCONSENT",
+      salesforceContactId: "003TESTCONSENT",
+      displayName: "Jeanette Locher",
+      primaryEmail: "jeanette@example.org",
+      primaryPhone: null,
+      createdAt: "2026-05-03T12:00:00.000Z",
+      updatedAt: "2026-05-03T12:00:00.000Z",
+    };
+    const contactUpsert = vi
+      .fn<(_: ContactInsertRecord) => Promise<ContactInsertRecord>>()
+      .mockImplementation((record) => Promise.resolve(record));
+    const identityUpsert = vi.fn().mockResolvedValue(undefined);
+
+    const result = await resolveContactByPhoneFromIdentities({
+      phoneE164: "+12695892009",
+      readContactIdentities: {
+        listByNormalizedValue: vi.fn().mockResolvedValue([]),
+      },
+      readContacts: {
+        findById: vi.fn().mockResolvedValue(consentAnchored),
+        listByIds: vi.fn(),
+        findByPrimaryPhone: vi.fn().mockResolvedValue(null),
+      },
+      readInboxProjection: {
+        findByContactId: vi.fn(),
+      },
+      readConsentRecords: {
+        findLatestByPhone: vi
+          .fn()
+          .mockResolvedValue({ contactId: consentAnchored.id }),
+      },
+      writeContacts: {
+        upsert: contactUpsert,
+      },
+      writeContactIdentities: {
+        upsert: identityUpsert,
+      },
+      clock: {
+        now: () => new Date("2026-07-09T18:00:00.000Z"),
+      },
+      idGenerator: () => "identity-new",
+    });
+
+    expect(result.isNewlyCreated).toBe(false);
+    expect(result.contact.id).toBe(consentAnchored.id);
+    expect(result.contact.primaryPhone).toBe("+12695892009");
+    expect(identityUpsert).toHaveBeenCalledWith({
+      id: "identity-new",
+      contactId: consentAnchored.id,
+      kind: "phone",
+      normalizedValue: "+12695892009",
+      isPrimary: true,
+      source: "system",
+      verifiedAt: null,
+    });
+    expect(contactUpsert).toHaveBeenCalledWith({
+      ...consentAnchored,
+      primaryPhone: "+12695892009",
+      updatedAt: "2026-07-09T18:00:00.000Z",
+    });
+  });
+
+  it("keeps an existing primary phone when attaching a consent-anchored identity", async () => {
+    const consentAnchored: ContactInsertRecord = {
+      id: "contact:salesforce:003TESTCONSENT",
+      salesforceContactId: "003TESTCONSENT",
+      displayName: "Jeanette Locher",
+      primaryEmail: null,
+      primaryPhone: "+14065550111",
+      createdAt: "2026-05-03T12:00:00.000Z",
+      updatedAt: "2026-05-03T12:00:00.000Z",
+    };
+    const contactUpsert = vi.fn();
+    const identityUpsert = vi.fn().mockResolvedValue(undefined);
+
+    const result = await resolveContactByPhoneFromIdentities({
+      phoneE164: "+12695892009",
+      readContactIdentities: {
+        listByNormalizedValue: vi.fn().mockResolvedValue([]),
+      },
+      readContacts: {
+        findById: vi.fn().mockResolvedValue(consentAnchored),
+        listByIds: vi.fn(),
+        findByPrimaryPhone: vi.fn().mockResolvedValue(null),
+      },
+      readInboxProjection: {
+        findByContactId: vi.fn(),
+      },
+      readConsentRecords: {
+        findLatestByPhone: vi
+          .fn()
+          .mockResolvedValue({ contactId: consentAnchored.id }),
+      },
+      writeContacts: {
+        upsert: contactUpsert,
+      },
+      writeContactIdentities: {
+        upsert: identityUpsert,
+      },
+      clock: {
+        now: () => new Date("2026-07-09T18:00:00.000Z"),
+      },
+      idGenerator: () => "identity-new",
+    });
+
+    expect(result.contact).toEqual(consentAnchored);
+    expect(contactUpsert).not.toHaveBeenCalled();
+    expect(identityUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ isPrimary: false }),
+    );
+  });
+
+  it("creates a placeholder when the latest consent record has no contact", async () => {
+    const contactUpsert = vi
+      .fn<(_: ContactInsertRecord) => Promise<ContactInsertRecord>>()
+      .mockImplementation((record) => Promise.resolve(record));
+
+    const result = await resolveContactByPhoneFromIdentities({
+      phoneE164: "+12695892009",
+      readContactIdentities: {
+        listByNormalizedValue: vi.fn().mockResolvedValue([]),
+      },
+      readContacts: {
+        findById: vi.fn(),
+        listByIds: vi.fn(),
+        findByPrimaryPhone: vi.fn().mockResolvedValue(null),
+      },
+      readInboxProjection: {
+        findByContactId: vi.fn(),
+      },
+      readConsentRecords: {
+        findLatestByPhone: vi.fn().mockResolvedValue({ contactId: null }),
+      },
+      writeContacts: {
+        upsert: contactUpsert,
+      },
+      writeContactIdentities: {
+        upsert: vi.fn().mockResolvedValue(undefined),
+      },
+      clock: {
+        now: () => new Date("2026-07-09T18:00:00.000Z"),
+      },
+      idGenerator: () => "contact-new",
+    });
+
+    expect(result.isNewlyCreated).toBe(true);
+    expect(result.contact.displayName).toBe("Unknown (+1 269 589 2009)");
+  });
+
+  it("creates a placeholder when the consent-anchored contact no longer exists", async () => {
+    const contactUpsert = vi
+      .fn<(_: ContactInsertRecord) => Promise<ContactInsertRecord>>()
+      .mockImplementation((record) => Promise.resolve(record));
+
+    const result = await resolveContactByPhoneFromIdentities({
+      phoneE164: "+12695892009",
+      readContactIdentities: {
+        listByNormalizedValue: vi.fn().mockResolvedValue([]),
+      },
+      readContacts: {
+        findById: vi.fn().mockResolvedValue(null),
+        listByIds: vi.fn(),
+        findByPrimaryPhone: vi.fn().mockResolvedValue(null),
+      },
+      readInboxProjection: {
+        findByContactId: vi.fn(),
+      },
+      readConsentRecords: {
+        findLatestByPhone: vi
+          .fn()
+          .mockResolvedValue({ contactId: "contact-gone" }),
+      },
+      writeContacts: {
+        upsert: contactUpsert,
+      },
+      writeContactIdentities: {
+        upsert: vi.fn().mockResolvedValue(undefined),
+      },
+      clock: {
+        now: () => new Date("2026-07-09T18:00:00.000Z"),
+      },
+      idGenerator: () => "contact-new",
+    });
+
+    expect(result.isNewlyCreated).toBe(true);
+    expect(result.contact.displayName).toBe("Unknown (+1 269 589 2009)");
+  });
 });

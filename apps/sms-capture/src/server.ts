@@ -437,6 +437,10 @@ async function handleInboundWebhook(input: {
             findByContactId: (contactId) =>
               repositories.inboxProjection.findByContactId(contactId),
           },
+          readConsentRecords: {
+            findLatestByPhone: (phoneE164) =>
+              repositories.consentRecords.findLatestByPhone(phoneE164),
+          },
           writeContacts: {
             upsert: (record) => repositories.contacts.upsert(record),
           },
@@ -676,6 +680,10 @@ async function handleOptOutWebhook(input: {
         readInboxProjection: {
           findByContactId: (contactId) =>
             repositories.inboxProjection.findByContactId(contactId),
+        },
+        readConsentRecords: {
+          findLatestByPhone: (phoneE164) =>
+            repositories.consentRecords.findLatestByPhone(phoneE164),
         },
         writeContacts: {
           upsert: (record) => repositories.contacts.upsert(record),
