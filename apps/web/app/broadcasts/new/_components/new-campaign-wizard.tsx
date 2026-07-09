@@ -28,12 +28,14 @@ import {
   type CampaignAudienceCriteria,
 } from "./audience-builder-step";
 import { ComposeStep } from "./compose-step";
+import { DeleteDraftButton } from "./delete-draft-button";
 import { LaunchTypeStep } from "./launch-type-step";
 import { NameAndSenderStep } from "./name-and-sender-step";
 import { PreviewStep } from "./preview-step";
 import { ReviewStep } from "./review-step";
 import { useNewCampaignWizardState } from "./use-new-campaign-wizard-state";
 import { type CampaignWizardStepDefinition, WizardRail } from "./wizard-rail";
+import { WizardFooterLeftSlotProvider } from "./wizard-shell";
 
 const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
@@ -405,6 +407,7 @@ function readProjectChipLabel(
 export function NewCampaignWizard({
   bootstrap,
   draft,
+  isAdmin,
 }: {
   readonly bootstrap: AudienceBuilderBootstrap;
   readonly draft: CampaignWizardDraftData;
@@ -500,6 +503,10 @@ export function NewCampaignWizard({
     warningDismissed,
     statusLabel,
   } = useNewCampaignWizardState({ bootstrap, draft });
+  const deleteDraftControl =
+    isAdmin && runState === "draft" ? (
+      <DeleteDraftButton runId={draft.runId} />
+    ) : null;
 
   async function persistDraft(successMessage: string): Promise<boolean> {
     if (frozen || !dirty) {
@@ -817,213 +824,215 @@ export function NewCampaignWizard({
         steps={STEPS}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {toast ? (
-          <div
-            className={cn(
-              "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
-              toast.tone === "error"
-                ? "border-rose-200 bg-rose-50 text-rose-900"
-                : "border-emerald-200 bg-emerald-50 text-emerald-900",
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            {toast.message}
-          </div>
-        ) : null}
+      <WizardFooterLeftSlotProvider value={deleteDraftControl}>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {toast ? (
+            <div
+              className={cn(
+                "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
+                toast.tone === "error"
+                  ? "border-rose-200 bg-rose-50 text-rose-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900",
+              )}
+              role="status"
+              aria-live="polite"
+            >
+              {toast.message}
+            </div>
+          ) : null}
 
-        <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-          <div
-            className={cn(
-              "flex min-h-full w-full flex-col",
-              currentStep === 3 && launchType === "html_email"
-                ? null
-                : "mx-auto max-w-3xl",
-            )}
-          >
-            {currentStep === 0 ? (
-              <LaunchTypeStep
-                value={launchType}
-                onChange={setLaunchType}
-                onContinue={() => {
-                  void continueTo(1);
-                }}
-              />
-            ) : null}
+          <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+            <div
+              className={cn(
+                "flex min-h-full w-full flex-col",
+                currentStep === 3 && launchType === "html_email"
+                  ? null
+                  : "mx-auto max-w-3xl",
+              )}
+            >
+              {currentStep === 0 ? (
+                <LaunchTypeStep
+                  value={launchType}
+                  onChange={setLaunchType}
+                  onContinue={() => {
+                    void continueTo(1);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 1 ? (
-              <NameAndSenderStep
-                launchType={launchType}
-                name={name}
-                fromEmail={fromEmail}
-                senderOptions={bootstrap.senderOptions}
-                activeSmsSender={bootstrap.activeSmsSender}
-                frozen={frozen}
-                onNameChange={setName}
-                onFromEmailChange={setFromEmail}
-                onBack={() => {
-                  setCurrentStep(0);
-                }}
-                onContinue={() => {
-                  void continueTo(2);
-                }}
-              />
-            ) : null}
+              {currentStep === 1 ? (
+                <NameAndSenderStep
+                  launchType={launchType}
+                  name={name}
+                  fromEmail={fromEmail}
+                  senderOptions={bootstrap.senderOptions}
+                  activeSmsSender={bootstrap.activeSmsSender}
+                  frozen={frozen}
+                  onNameChange={setName}
+                  onFromEmailChange={setFromEmail}
+                  onBack={() => {
+                    setCurrentStep(0);
+                  }}
+                  onContinue={() => {
+                    void continueTo(2);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 2 ? (
-              <AudienceBuilderStep
-                availableModes={availableAudienceModes}
-                hasPickedMode={hasPickedAudienceMode}
-                criteria={criteria}
-                selectedSenderType={selectedSenderType}
-                countState={countState}
-                previewRows={previewRows}
-                countLoading={countLoading}
-                previewLoading={audiencePreviewLoading}
-                previewErrorMessage={previewErrorMessage}
-                volunteerSearchQuery={volunteerSearchQuery}
-                volunteerSearchRows={volunteerSearchRows}
-                volunteerSearchLoading={volunteerSearchPending}
-                volunteerSearchErrorMessage={volunteerSearchErrorMessage}
-                projectOptions={aliasProjects}
-                statusOptions={bootstrap.statuses}
-                statusCounts={statusCounts}
-                statusCountsLoading={statusCountsLoading}
-                statusCountsErrorMessage={statusCountsErrorMessage}
-                onInitialFilterChange={changeInitialFilter}
-                onProjectChange={toggleProject}
-                onToggleAllStatuses={toggleAllStatuses}
-                onStatusToggle={toggleStatus}
-                onVolunteerSearchQueryChange={setVolunteerSearchQuery}
-                onVolunteerToggle={toggleVolunteer}
-                onBack={() => {
-                  setCurrentStep(1);
-                }}
-                onContinue={() => {
-                  void continueTo(3);
-                }}
-              />
-            ) : null}
+              {currentStep === 2 ? (
+                <AudienceBuilderStep
+                  availableModes={availableAudienceModes}
+                  hasPickedMode={hasPickedAudienceMode}
+                  criteria={criteria}
+                  selectedSenderType={selectedSenderType}
+                  countState={countState}
+                  previewRows={previewRows}
+                  countLoading={countLoading}
+                  previewLoading={audiencePreviewLoading}
+                  previewErrorMessage={previewErrorMessage}
+                  volunteerSearchQuery={volunteerSearchQuery}
+                  volunteerSearchRows={volunteerSearchRows}
+                  volunteerSearchLoading={volunteerSearchPending}
+                  volunteerSearchErrorMessage={volunteerSearchErrorMessage}
+                  projectOptions={aliasProjects}
+                  statusOptions={bootstrap.statuses}
+                  statusCounts={statusCounts}
+                  statusCountsLoading={statusCountsLoading}
+                  statusCountsErrorMessage={statusCountsErrorMessage}
+                  onInitialFilterChange={changeInitialFilter}
+                  onProjectChange={toggleProject}
+                  onToggleAllStatuses={toggleAllStatuses}
+                  onStatusToggle={toggleStatus}
+                  onVolunteerSearchQueryChange={setVolunteerSearchQuery}
+                  onVolunteerToggle={toggleVolunteer}
+                  onBack={() => {
+                    setCurrentStep(1);
+                  }}
+                  onContinue={() => {
+                    void continueTo(3);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 3 ? (
-              <ComposeStep
-                launchType={launchType}
-                subject={subject}
-                preheader={preheader}
-                bodyPlaintext={bodyPlaintext}
-                bodyHtml={bodyHtml}
-                savedDesign={bodyDesignJson}
-                selectedAliasSignature={selectedAliasSignature}
-                frozen={frozen}
-                continuePending={savePending}
-                onSubjectChange={setSubject}
-                onPreheaderChange={setPreheader}
-                onBodyChange={(value) => {
-                  setBodyDesignJson(value.bodyDesignJson);
-                  setBodyPlaintext(value.bodyPlaintext);
-                  setBodyHtml(value.bodyHtml);
-                }}
-                onBack={() => {
-                  setCurrentStep(2);
-                }}
-                onContinue={() => {
-                  void continueTo(4);
-                }}
-              />
-            ) : null}
+              {currentStep === 3 ? (
+                <ComposeStep
+                  launchType={launchType}
+                  subject={subject}
+                  preheader={preheader}
+                  bodyPlaintext={bodyPlaintext}
+                  bodyHtml={bodyHtml}
+                  savedDesign={bodyDesignJson}
+                  selectedAliasSignature={selectedAliasSignature}
+                  frozen={frozen}
+                  continuePending={savePending}
+                  onSubjectChange={setSubject}
+                  onPreheaderChange={setPreheader}
+                  onBodyChange={(value) => {
+                    setBodyDesignJson(value.bodyDesignJson);
+                    setBodyPlaintext(value.bodyPlaintext);
+                    setBodyHtml(value.bodyHtml);
+                  }}
+                  onBack={() => {
+                    setCurrentStep(2);
+                  }}
+                  onContinue={() => {
+                    void continueTo(4);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 4 ? (
-              <PreviewStep
-                launchType={launchType}
-                subject={subject}
-                preheader={preheader}
-                previewData={composePreview}
-                smsPreviewData={smsPreview}
-                previewLoading={
-                  launchType === "sms"
-                    ? smsPreviewPending
-                    : composePreviewPending
-                }
-                warningDismissed={warningDismissed}
-                affectedContactsOpen={affectedContactsOpen}
-                testSendOpen={testSendOpen}
-                testRecipientValue={
-                  launchType === "sms" ? testPhoneE164 : testRecipientEmail
-                }
-                testSendPending={testSendPending}
-                selectedSenderVerified={selectedSenderVerified}
-                frozen={frozen}
-                onBack={() => {
-                  setCurrentStep(3);
-                }}
-                onContinue={() => {
-                  void continueTo(5);
-                }}
-                onPreviewPrevious={() => {
-                  setSampleIndex((current) => current - 1);
-                }}
-                onPreviewNext={() => {
-                  setSampleIndex((current) => current + 1);
-                }}
-                onDismissWarning={() => {
-                  setWarningDismissFingerprint(previewFingerprint);
-                }}
-                onAffectedContactsOpenChange={setAffectedContactsOpen}
-                onTestSendOpenChange={setTestSendOpen}
-                onTestRecipientValueChange={(value) => {
-                  if (launchType === "sms") {
-                    setTestPhoneE164(value);
-                    return;
+              {currentStep === 4 ? (
+                <PreviewStep
+                  launchType={launchType}
+                  subject={subject}
+                  preheader={preheader}
+                  previewData={composePreview}
+                  smsPreviewData={smsPreview}
+                  previewLoading={
+                    launchType === "sms"
+                      ? smsPreviewPending
+                      : composePreviewPending
                   }
-
-                  setTestRecipientEmail(value);
-                }}
-                onSendTest={() => {
-                  void handleTestSend();
-                }}
-              />
-            ) : null}
-
-            {currentStep === 5 ? (
-              <ReviewStep
-                launchType={launchType}
-                projectChipLabel={readProjectChipLabel(
-                  kind,
-                  criteria,
-                  bootstrap,
-                )}
-                runName={name.trim().length === 0 ? null : name}
-                fromEmail={launchType === "sms" ? null : fromEmail}
-                subject={composePreview?.sample?.subject ?? subject}
-                selectedSenderVerified={selectedSenderVerified}
-                audienceSize={composePreview?.audienceSize ?? countState.count}
-                smsPreviewData={smsPreview}
-                sendMode={sendMode}
-                scheduleDate={scheduleDate}
-                scheduleTime={scheduleTime}
-                frozen={frozen}
-                frozenState={runState}
-                frozenScheduledAt={scheduledAt}
-                confirmOpen={confirmOpen}
-                submitPending={submitPending}
-                onBack={() => {
-                  if (!frozen) {
-                    setCurrentStep(4);
+                  warningDismissed={warningDismissed}
+                  affectedContactsOpen={affectedContactsOpen}
+                  testSendOpen={testSendOpen}
+                  testRecipientValue={
+                    launchType === "sms" ? testPhoneE164 : testRecipientEmail
                   }
-                }}
-                onSendModeChange={setSendMode}
-                onScheduleDateChange={setScheduleDate}
-                onScheduleTimeChange={setScheduleTime}
-                onConfirmOpenChange={setConfirmOpen}
-                onSubmit={() => {
-                  void handleSubmit();
-                }}
-              />
-            ) : null}
+                  testSendPending={testSendPending}
+                  selectedSenderVerified={selectedSenderVerified}
+                  frozen={frozen}
+                  onBack={() => {
+                    setCurrentStep(3);
+                  }}
+                  onContinue={() => {
+                    void continueTo(5);
+                  }}
+                  onPreviewPrevious={() => {
+                    setSampleIndex((current) => current - 1);
+                  }}
+                  onPreviewNext={() => {
+                    setSampleIndex((current) => current + 1);
+                  }}
+                  onDismissWarning={() => {
+                    setWarningDismissFingerprint(previewFingerprint);
+                  }}
+                  onAffectedContactsOpenChange={setAffectedContactsOpen}
+                  onTestSendOpenChange={setTestSendOpen}
+                  onTestRecipientValueChange={(value) => {
+                    if (launchType === "sms") {
+                      setTestPhoneE164(value);
+                      return;
+                    }
+
+                    setTestRecipientEmail(value);
+                  }}
+                  onSendTest={() => {
+                    void handleTestSend();
+                  }}
+                />
+              ) : null}
+
+              {currentStep === 5 ? (
+                <ReviewStep
+                  launchType={launchType}
+                  projectChipLabel={readProjectChipLabel(
+                    kind,
+                    criteria,
+                    bootstrap,
+                  )}
+                  runName={name.trim().length === 0 ? null : name}
+                  fromEmail={launchType === "sms" ? null : fromEmail}
+                  subject={composePreview?.sample?.subject ?? subject}
+                  selectedSenderVerified={selectedSenderVerified}
+                  audienceSize={composePreview?.audienceSize ?? countState.count}
+                  smsPreviewData={smsPreview}
+                  sendMode={sendMode}
+                  scheduleDate={scheduleDate}
+                  scheduleTime={scheduleTime}
+                  frozen={frozen}
+                  frozenState={runState}
+                  frozenScheduledAt={scheduledAt}
+                  confirmOpen={confirmOpen}
+                  submitPending={submitPending}
+                  onBack={() => {
+                    if (!frozen) {
+                      setCurrentStep(4);
+                    }
+                  }}
+                  onSendModeChange={setSendMode}
+                  onScheduleDateChange={setScheduleDate}
+                  onScheduleTimeChange={setScheduleTime}
+                  onConfirmOpenChange={setConfirmOpen}
+                  onSubmit={() => {
+                    void handleSubmit();
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      </WizardFooterLeftSlotProvider>
     </div>
   );
 }

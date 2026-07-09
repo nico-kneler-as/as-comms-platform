@@ -293,6 +293,7 @@ export interface Stage5RepositoryBundle {
       id: string,
       input: UpdateDraftInput,
     ): Promise<CampaignRunRecord>;
+    deleteDraft(id: string): Promise<boolean>;
     transitionState(
       id: string,
       from: RunState,
@@ -7445,6 +7446,15 @@ export function createStage5RepositoryBundle(
             "Expected draft campaign run row to be returned from updateDraft.",
           ),
         );
+      },
+
+      async deleteDraft(id) {
+        const rows = await db
+          .delete(campaignRuns)
+          .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, "draft")))
+          .returning({ id: campaignRuns.id });
+
+        return rows.length > 0;
       },
 
       async transitionState(id, from, to, fields) {

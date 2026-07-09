@@ -35,6 +35,13 @@ vi.mock("@/components/ui/input", () => ({
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
 import { AudienceBuilderStep } from "../../app/broadcasts/new/_components/audience-builder-step";
 import type {
   AudienceBuilderBootstrap,
