@@ -4,8 +4,8 @@ Use this snippet on `adventurescientists.org` to POST a public single-opt-in sig
 
 ## Before publish
 
-- Set `NEWSLETTER_SIGNUP_ALLOWED_ORIGIN=https://adventurescientists.org` in the app environment.
-- Replace `https://YOUR_APP_DOMAIN` in the snippet with the production app origin.
+- Set `NEWSLETTER_SIGNUP_ALLOWED_ORIGIN=https://www.adventurescientists.org` in the app environment. This must exactly match the `Origin` the browser sends from the page hosting the form (scheme + host, no path/trailing slash). The site canonicalizes to `www` — the apex `adventurescientists.org` 301-redirects to `www.adventurescientists.org`, so the form always loads on `www` and the origin is the `www` host. It is a single exact-match origin (no wildcard, no list).
+- The snippet posts to the production app endpoint `https://as-comms-platform-production.up.railway.app/api/newsletter/subscribe`. Update it if the app moves to a custom domain.
 - Keep the hidden `website` field present and empty. It is the honeypot.
 
 ## Copyable snippet
@@ -13,7 +13,7 @@ Use this snippet on `adventurescientists.org` to POST a public single-opt-in sig
 ```html
 <form
   id="as-newsletter-signup"
-  action="https://YOUR_APP_DOMAIN/api/newsletter/subscribe"
+  action="https://as-comms-platform-production.up.railway.app/api/newsletter/subscribe"
   method="post"
   novalidate
 >
