@@ -209,6 +209,12 @@ describe("public unsubscribe page", () => {
       contactId: null,
       newsletterSubscriberId: "newsletter-subscriber-1",
     });
+    // CSV-imported project recipient: project send, no contact, frozen email.
+    await seedTarget(runtime, {
+      kind: "project",
+      token: "token-project-csv",
+      contactId: null,
+    });
   });
 
   afterEach(async () => {
@@ -274,6 +280,49 @@ describe("public unsubscribe page", () => {
     expect(html).toContain("taylor@example.org");
   });
 
+  it("renders a valid project unsubscribe page for a no-contact (CSV) recipient", async () => {
+    const page = await UnsubscribeTokenPage({
+      params: Promise.resolve({ token: "token-project-csv" }),
+      searchParams: Promise.resolve({}),
+    });
+    const html = renderToStaticMarkup(page);
+
+    // Not the "invalid link" page — a working confirm page.
+    expect(html).toContain("Unsubscribe from Forests emails?");
+    expect(html).toContain("Confirm unsubscribe");
+    expect(html).toContain(
+      'action="/u/token-project-csv/confirm"',
+    );
+  });
+
+  it("POST suppresses a no-contact (CSV) recipient by email", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+    expect(
+      await campaigns.suppressionList.isSuppressed(
+        "taylor@example.org",
+        new Date(),
+      ),
+    ).toBe(false);
+
+    const response = await unsubscribePost(
+      new Request("http://localhost/u/token-project-csv/confirm", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-project-csv" }) },
+    );
+
+    expect(response.status).toBe(303);
+    expect(
+      await campaigns.suppressionList.isSuppressed(
+        "taylor@example.org",
+        new Date(),
+      ),
+    ).toBe(true);
+  });
+
   it("loads a valid newsletter page model for a null-contact recipient", async () => {
     const page = await UnsubscribeTokenPage({
       params: Promise.resolve({ token: "token-news-null-contact" }),
@@ -317,7 +366,7 @@ describe("public unsubscribe page", () => {
     expect(html).toContain("info@adventurescientists.org");
   });
 
-  it("keeps a non-newsletter null-contact target invalid", async () => {
+  it("renders a valid confirm page for a non-newsletter null-contact target", async () => {
     const webRuntime = await getStage1WebRuntime();
     const originalFindSnapshot =
       webRuntime.campaigns.audienceSnapshots.findByUnsubscribeToken.bind(
@@ -342,7 +391,7 @@ describe("public unsubscribe page", () => {
         frozenProjectName: "Forests",
         frozenProjectId: "project-host",
         frozenAliasEmail: "forests@adventurescientists.org",
-        unsubscribeToken: "token-project-null-contact",
+        unsubscribeToken: "token-project-csv",
         deliveryStatus: "sent",
         providerMessageId: "provider-project-null-contact",
         sentAt: null,
@@ -413,7 +462,7 @@ describe("public unsubscribe page", () => {
 
     const model = await loadUnsubscribePageModel({
       runtime: webRuntime,
-      token: "token-project-null-contact",
+      token: "token-project-csv",
       requestedAllBanner: false,
       confirmed: false,
     });
@@ -423,7 +472,8 @@ describe("public unsubscribe page", () => {
     webRuntime.campaigns.campaignRuns.findById = originalFindRun;
     webRuntime.settings.projects.findById = originalFindProject;
 
-    expect(model.state).toBe("invalid");
+    expect(model.state).toBe("pending");
+    expect(model.variant).toBe("project");
   });
 
   it("renders the same success state for an already-unsubscribed token", async () => {

@@ -38,6 +38,21 @@ export async function POST(
       source: "recipient_click",
     });
   }
+  // No-contact broadcast recipient (e.g. CSV import): suppress by email. The
+  // suppression list already applies to every send, so this is effectively
+  // "unsubscribe from all" for a recipient with no contact record.
+  if (
+    target !== null &&
+    target.contactId === null &&
+    target.kind !== "newsletter"
+  ) {
+    await runtime.campaigns.suppressionList.upsertFromBounce(
+      target.email,
+      "manual",
+      `recipient-unsubscribe-all:${target.runId}`,
+      new Date(),
+    );
+  }
 
   return NextResponse.redirect(
     new URL(`/u/${encodeURIComponent(decodedToken)}?all=1`, request.url),
