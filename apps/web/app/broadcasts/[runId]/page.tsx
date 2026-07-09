@@ -9,6 +9,7 @@ import { RunAuditLog } from "./_components/run-audit-log";
 import {
   AudienceCriteriaPanel,
   EmailContentPanel,
+  LinkClicksPanel,
   SendDetailsPanel,
 } from "./_components/run-detail-panels";
 import {
@@ -53,7 +54,12 @@ async function EmailContentSection({
   readonly modelPromise: DetailPromise;
 }) {
   const model = await readModel(modelPromise);
-  return <EmailContentPanel model={model} />;
+  return (
+    <>
+      <EmailContentPanel model={model} />
+      <LinkClicksPanel model={model} />
+    </>
+  );
 }
 
 async function RecipientsSection({

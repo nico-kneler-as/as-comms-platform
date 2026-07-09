@@ -88,6 +88,63 @@ export function EmailContentPanel({
   );
 }
 
+export function LinkClicksPanel({
+  model,
+}: {
+  readonly model: RunDetailModel;
+}) {
+  if (model.provider === "mailchimp") {
+    return (
+      <Panel title="Link clicks">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
+          <p>Link clicks are not available for Mailchimp imports.</p>
+        </div>
+      </Panel>
+    );
+  }
+
+  if (model.linkClicks.length === 0) {
+    return (
+      <Panel title="Link clicks">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
+          <p>No link clicks recorded yet.</p>
+          <p>Only broadcasts sent after link tracking went live have data.</p>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Link clicks">
+      <ul className="divide-y divide-slate-100">
+        {model.linkClicks.map((entry) => (
+          <li
+            key={entry.url}
+            className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
+          >
+            <a
+              href={entry.url}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 break-all text-[12px] font-medium text-slate-900 hover:text-slate-700"
+            >
+              {entry.url}
+            </a>
+            <div className="shrink-0 text-right">
+              <div className="text-[12px] font-medium tabular-nums text-slate-900">
+                {entry.totalClicks.toLocaleString()} clicks
+              </div>
+              <div className="text-[11px] tabular-nums text-slate-500">
+                {entry.uniqueClickers.toLocaleString()} unique
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 export function AudienceCriteriaPanel({
   model,
 }: {

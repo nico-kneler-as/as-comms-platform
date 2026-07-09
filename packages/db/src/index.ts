@@ -1,4 +1,5 @@
 export * from "./ai-knowledge-sources.js";
+export * from "./broadcast-link-clicks-repository.js";
 export * from "./client.js";
 export * from "./composer-drafts-repository.js";
 export * from "./media-assets-repository.js";

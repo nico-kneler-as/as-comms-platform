@@ -1,6 +1,8 @@
 import { isNotNull, sql } from "drizzle-orm";
 import type {
   AiKnowledgeSource,
+  BroadcastLinkClickClient,
+  BroadcastLinkClickGeo,
   CanonicalEventProvenance,
   ComposerDraftForwardContext,
   IntegrationHealthCategory,
@@ -1425,6 +1427,41 @@ export const audienceSnapshots = pgTable(
     uniqueIndex("audience_snapshots_run_newsletter_subscriber_unique")
       .on(table.campaignRunId, table.newsletterSubscriberId)
       .where(isNotNull(table.newsletterSubscriberId)),
+  ],
+);
+
+export const broadcastLinkClicks = pgTable(
+  "broadcast_link_clicks",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    audienceSnapshotId: text("audience_snapshot_id").references(
+      () => audienceSnapshots.id,
+      {
+        onDelete: "cascade",
+      },
+    ),
+    contactId: text("contact_id"),
+    originalLink: text("original_link").notNull(),
+    clickedAt: timestamp("clicked_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    userAgent: text("user_agent"),
+    platform: text("platform"),
+    client: jsonb("client").$type<BroadcastLinkClickClient | null>(),
+    os: jsonb("os").$type<BroadcastLinkClickClient | null>(),
+    geo: jsonb("geo").$type<BroadcastLinkClickGeo | null>(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    uniqueIndex("broadcast_link_clicks_idempotency_key_unique").on(
+      table.idempotencyKey,
+    ),
+    index("broadcast_link_clicks_campaign_run_id_idx").on(table.campaignRunId),
   ],
 );
 

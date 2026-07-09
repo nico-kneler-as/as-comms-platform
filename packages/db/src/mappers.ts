@@ -2,6 +2,7 @@ import {
   aiKnowledgeSourcesSchema,
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
+  broadcastLinkClickRecordSchema,
   createMediaAssetInputSchema,
   canonicalEventSchema,
   canonicalEventAudienceSchema,
@@ -21,6 +22,9 @@ import {
   messageAttachmentSchema,
   manualNoteDetailSchema,
   mediaAssetRecordSchema,
+  type BroadcastLinkClickClient,
+  type BroadcastLinkClickGeo,
+  type BroadcastLinkClickRecord as BroadcastLinkClickContractRecord,
   newsletterSubscriberRecordSchema,
   newsletterSuppressionRecordSchema,
   upsertNewsletterSubscriberInputSchema,
@@ -88,6 +92,7 @@ import { z } from "zod";
 import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
+  broadcastLinkClicks,
   canonicalEventLedger,
   canonicalEventAudience,
   broadcastMediaAssets,
@@ -165,6 +170,7 @@ type SalesforceReconciliationRunRow =
   typeof salesforceReconciliationRuns.$inferSelect;
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
+type BroadcastLinkClickDbRowInsert = typeof broadcastLinkClicks.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
 type NewsletterSubscriberTableRowInsert =
   typeof newsletterSubscribers.$inferInsert;
@@ -298,6 +304,30 @@ export type MediaAssetRowInsert = BroadcastMediaAssetRowInsert;
 export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
 
 export type MediaAssetRecord = MediaAssetContractRecord;
+
+export type BroadcastLinkClickRow = Readonly<{
+  id: string;
+  campaign_run_id: string;
+  audience_snapshot_id: string | null;
+  contact_id: string | null;
+  original_link: string;
+  clicked_at: Date;
+  user_agent: string | null;
+  platform: string | null;
+  client: BroadcastLinkClickClient | null;
+  os: BroadcastLinkClickClient | null;
+  geo: BroadcastLinkClickGeo | null;
+  idempotency_key: string;
+  created_at: Date;
+}>;
+
+export type BroadcastLinkClickRowInsert = BroadcastLinkClickDbRowInsert;
+
+export type BroadcastLinkClickInsert = z.input<
+  typeof broadcastLinkClickRecordSchema
+>;
+
+export type BroadcastLinkClickRecord = BroadcastLinkClickContractRecord;
 
 export type NewsletterSubscriberRow = Readonly<{
   id: string;
@@ -454,6 +484,48 @@ export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInse
     filename: parsed.filename,
     contentType: parsed.contentType,
     sizeBytes: parsed.sizeBytes,
+  };
+}
+
+export function mapBroadcastLinkClickRow(
+  row: BroadcastLinkClickRow,
+): BroadcastLinkClickRecord {
+  return broadcastLinkClickRecordSchema.parse({
+    id: row.id,
+    campaignRunId: row.campaign_run_id,
+    audienceSnapshotId: row.audience_snapshot_id,
+    contactId: row.contact_id,
+    originalLink: row.original_link,
+    clickedAt: row.clicked_at.toISOString(),
+    userAgent: row.user_agent,
+    platform: row.platform,
+    client: row.client,
+    os: row.os,
+    geo: row.geo,
+    idempotencyKey: row.idempotency_key,
+    createdAt: row.created_at.toISOString(),
+  });
+}
+
+export function mapBroadcastLinkClickInsert(
+  record: BroadcastLinkClickInsert,
+): BroadcastLinkClickRowInsert {
+  const parsed = broadcastLinkClickRecordSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    campaignRunId: parsed.campaignRunId,
+    audienceSnapshotId: parsed.audienceSnapshotId,
+    contactId: parsed.contactId,
+    originalLink: parsed.originalLink,
+    clickedAt: toDate(parsed.clickedAt),
+    userAgent: parsed.userAgent,
+    platform: parsed.platform,
+    client: parsed.client,
+    os: parsed.os,
+    geo: parsed.geo,
+    idempotencyKey: parsed.idempotencyKey,
+    createdAt: toDate(parsed.createdAt),
   };
 }
 
