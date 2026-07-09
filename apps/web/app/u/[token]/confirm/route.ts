@@ -41,6 +41,21 @@ export async function POST(
       source: "recipient_click",
     });
   }
+  // No-contact broadcast recipient (e.g. a CSV-imported project send): opt out
+  // by email via the suppression list, which the exclusion filter honors for
+  // every future send.
+  if (
+    target !== null &&
+    target.contactId === null &&
+    target.kind !== "newsletter"
+  ) {
+    await runtime.campaigns.suppressionList.upsertFromBounce(
+      target.email,
+      "manual",
+      `recipient-unsubscribe:${target.runId}`,
+      new Date(),
+    );
+  }
 
   return NextResponse.redirect(
     new URL(

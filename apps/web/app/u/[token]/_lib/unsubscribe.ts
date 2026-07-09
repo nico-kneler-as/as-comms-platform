@@ -263,7 +263,14 @@ export async function loadUnsubscribePageModel(input: {
   if (target.kind === "project" && target.project.id === null) {
     return buildInvalidModel(input.token, footerAddress);
   }
-  if (target.contactId === null && target.kind !== "newsletter") {
+  // A CSV-imported recipient has no contact but carries a frozen email; it can
+  // still unsubscribe (applied by email to the suppression list on confirm).
+  // Only a no-contact, non-newsletter target with no email is truly invalid.
+  if (
+    target.contactId === null &&
+    target.kind !== "newsletter" &&
+    target.email.trim().length === 0
+  ) {
     return buildInvalidModel(input.token, footerAddress);
   }
 
