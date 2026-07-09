@@ -180,6 +180,13 @@ function buildMetricTiles(
       subtitle: null,
     },
     {
+      key: "sent",
+      label: "Sent",
+      value: counts.sent,
+      percentage: formatPercentage(counts.sent, total),
+      subtitle: "Accepted by Postmark",
+    },
+    {
       key: "delivered",
       label: "Delivered",
       value: counts.delivered,
@@ -245,6 +252,13 @@ function buildMailchimpMetricTiles(
       label: "Queued",
       value: aggregates.distinctMembers,
       percentage: formatPercentage(aggregates.distinctMembers, denominator),
+      subtitle: null,
+    },
+    {
+      key: "sent",
+      label: "Sent",
+      value: sent,
+      percentage: formatPercentage(sent, denominator),
       subtitle: null,
     },
     {

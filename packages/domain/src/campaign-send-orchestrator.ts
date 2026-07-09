@@ -54,6 +54,8 @@ interface PostmarkClientLike {
       readonly HtmlBody?: string;
       readonly TextBody?: string;
       readonly MessageStream?: string;
+      readonly TrackOpens?: boolean;
+      readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
       readonly Metadata?: Record<string, string>;
       readonly Headers?: readonly {
         readonly Name: string;
@@ -406,6 +408,8 @@ export function createCampaignSendOrchestrator(deps: {
             readonly HtmlBody: string;
             readonly TextBody: string;
             readonly MessageStream: string;
+            readonly TrackOpens: boolean;
+            readonly TrackLinks: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
             readonly Metadata: Record<string, string>;
             readonly Headers: readonly {
               readonly Name: string;
@@ -478,6 +482,11 @@ export function createCampaignSendOrchestrator(deps: {
               HtmlBody: rendered.html,
               TextBody: rendered.text,
               MessageStream: broadcastMessageStream,
+              // Request open + link tracking so Postmark emits Open/Click
+              // webhook events; without these the broadcast detail metrics
+              // (and the link click map) can never populate.
+              TrackOpens: true,
+              TrackLinks: "HtmlAndText",
               Metadata: {
                 campaignRunId: runId,
                 audienceSnapshotId: snapshot.id,
