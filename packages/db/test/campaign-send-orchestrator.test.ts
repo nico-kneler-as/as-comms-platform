@@ -125,6 +125,8 @@ function createMockPostmarkClient(input: {
       readonly HtmlBody?: string;
       readonly TextBody?: string;
       readonly MessageStream?: string;
+      readonly TrackOpens?: boolean;
+      readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
     }[],
   ) => Promise<void> | void;
   resultFor?: (email: string) => { readonly errorCode: number; readonly message: string };
@@ -306,6 +308,35 @@ describe("Campaign send orchestrator", () => {
     await orchestrator.processSendRequest(run.id);
 
     expect(streams).toEqual(["as-newsletter-stream"]);
+  });
+
+  it("requests open and link tracking so Postmark emits Open/Click events", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 1);
+
+    let trackOpens: readonly (boolean | undefined)[] = [];
+    let trackLinks: readonly (string | undefined)[] = [];
+    const { campaigns, orchestrator } = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          trackOpens = messages.map((message) => message.TrackOpens);
+          trackLinks = messages.map((message) => message.TrackLinks);
+        },
+      }),
+      500,
+    );
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-tracking-flags" }),
+    );
+
+    await orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await orchestrator.processSendRequest(run.id);
+
+    expect(trackOpens).toEqual([true]);
+    expect(trackLinks).toEqual(["HtmlAndText"]);
   });
 
   it("stops between batches when the run is cancelled mid-send", async () => {
