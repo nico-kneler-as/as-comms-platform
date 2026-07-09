@@ -6,9 +6,14 @@ import {
   createCampaignSendOrchestrator,
   createExclusionFilter,
   createMergeRenderer,
+  resolveUploadedAudienceForRun,
 } from "@as-comms/domain";
 
-import { createStage5RepositoryBundle } from "../src/index.js";
+import {
+  createStage5RepositoryBundle,
+  listBroadcastUploadedRecipientsForRun,
+  replaceBroadcastUploadedRecipientsForRun,
+} from "../src/index.js";
 import { createTestStage1Context } from "./helpers.js";
 
 type Stage1Context = Awaited<ReturnType<typeof createTestStage1Context>>;
@@ -118,6 +123,44 @@ async function seedAudience(
   return contactIds;
 }
 
+async function seedProjectContact(
+  context: Stage1Context,
+  input: {
+    readonly id: string;
+    readonly email: string;
+    readonly displayName: string;
+  },
+) {
+  await context.repositories.contacts.upsert({
+    id: input.id,
+    salesforceContactId: null,
+    displayName: input.displayName,
+    primaryEmail: input.email,
+    primaryPhone: null,
+    createdAt: "2026-05-15T12:00:00.000Z",
+    updatedAt: "2026-05-15T12:00:00.000Z",
+  });
+  await context.repositories.contactMemberships.upsert({
+    id: `membership-${input.id}`,
+    contactId: input.id,
+    projectId: "project-1",
+    expeditionId: null,
+    salesforceMembershipId: `sf-membership-${input.id}`,
+    role: "volunteer",
+    status: "Waitlist",
+    source: "salesforce",
+    createdAt: "2026-05-15T12:00:00.000Z",
+  });
+}
+
+async function seedUploadedRecipients(
+  context: Stage1Context,
+  runId: string,
+  rows: Parameters<typeof replaceBroadcastUploadedRecipientsForRun>[2],
+) {
+  await replaceBroadcastUploadedRecipientsForRun(context.db, runId, rows);
+}
+
 function createMockPostmarkClient(input: {
   onBatch?: (
     messages: readonly {
@@ -197,6 +240,25 @@ function createOrchestrator(
           settingsProjects: context.settings.projects,
         },
       }),
+      resolveUploadedAudience: (run, at) => {
+        void at;
+        return resolveUploadedAudienceForRun(
+          {
+            uploadedRecipients: {
+              listForRun: (runId) =>
+                listBroadcastUploadedRecipientsForRun(context.db, runId),
+            },
+            contacts: context.repositories.contacts,
+            settingsProjects: context.settings.projects,
+            settingsAliases: context.settings.aliases,
+          },
+          {
+            runId: run.id,
+            fromEmail: run.fromEmail,
+            projectId: run.projectId,
+          },
+        );
+      },
       exclusionFilter: createExclusionFilter({
         repositories: {
           campaignRuns: campaigns.campaignRuns,
@@ -448,6 +510,117 @@ describe("Campaign send orchestrator", () => {
     const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
 
     expect(snapshot?.deliveryStatus).toBe("suppressed_at_send");
+  });
+
+  it("freezes csv uploads through project exclusions and keeps newsletter-only opt-outs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const freezeAt = new Date("2026-08-15T12:00:00.000Z");
+    await seedProject(context);
+    await seedProjectContact(context, {
+      id: "contact-all-opt-out",
+      email: "all-opt-out@example.org",
+      displayName: "Global Opt Out",
+    });
+    await seedProjectContact(context, {
+      id: "contact-newsletter-only",
+      email: "newsletter-only@example.org",
+      displayName: "Newsletter Only",
+    });
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-csv-freeze",
+        fromEmail: "project-one@example.org",
+        replyToEmail: "project-one@example.org",
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+          initialFilter: "csv_upload",
+        },
+      }),
+    );
+    await seedUploadedRecipients(context, run.id, [
+      {
+        email: "suppressed@example.org",
+        firstName: "Suppressed",
+        lastName: null,
+      },
+      {
+        email: "all-opt-out@example.org",
+        firstName: "Global",
+        lastName: "Opt Out",
+      },
+      {
+        email: "newsletter-only@example.org",
+        firstName: "Newsletter",
+        lastName: "Only",
+      },
+      {
+        email: "new-person@example.org",
+        firstName: "New",
+        lastName: "Person",
+      },
+    ]);
+    await runtime.campaigns.suppressionList.upsertFromBounce(
+      "suppressed@example.org",
+      "hard_bounce",
+      "pm-suppressed",
+      freezeAt,
+    );
+    await runtime.campaigns.contactConsent.recordOptOut(
+      "contact-all-opt-out",
+      { type: "all" },
+      "recipient_click",
+      run.id,
+    );
+    await runtime.campaigns.contactConsent.recordOptOut(
+      "contact-newsletter-only",
+      { type: "newsletter" },
+      "recipient_click",
+      run.id,
+    );
+
+    await expect(
+      runtime.orchestrator.freeze(run.id, freezeAt),
+    ).resolves.toEqual({
+      audienceSize: 2,
+      excludedCount: 2,
+    });
+
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    const refreshedRun = await runtime.campaigns.campaignRuns.findById(run.id);
+    const snapshotsByEmail = new Map(
+      snapshots.map((snapshot) => [snapshot.frozenEmail, snapshot] as const),
+    );
+
+    expect(snapshots).toHaveLength(2);
+    expect(refreshedRun?.audienceSize).toBe(2);
+    expect(snapshotsByEmail.has("suppressed@example.org")).toBe(false);
+    expect(snapshotsByEmail.has("all-opt-out@example.org")).toBe(false);
+    expect(snapshotsByEmail.get("newsletter-only@example.org")).toMatchObject({
+      contactId: "contact-newsletter-only",
+      newsletterSubscriberId: null,
+      frozenFirstName: "Newsletter",
+      frozenProjectId: "project-1",
+      frozenProjectName: "Project One",
+      frozenAliasEmail: "project-one@example.org",
+    });
+    expect(snapshotsByEmail.get("new-person@example.org")).toMatchObject({
+      contactId: null,
+      newsletterSubscriberId: null,
+      frozenFirstName: "New",
+      frozenProjectId: "project-1",
+      frozenProjectName: "Project One",
+      frozenAliasEmail: "project-one@example.org",
+    });
   });
 
   it("marks a single 4xx-like recipient response failed while continuing the rest", async () => {

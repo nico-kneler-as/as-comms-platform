@@ -349,7 +349,7 @@ describe("Stage 5 campaigns repositories", () => {
     ).rejects.toThrow();
   });
 
-  it("allows newsletter-subscriber snapshots and rejects invalid recipient combinations", async () => {
+  it("allows newsletter-subscriber and uploaded-email snapshots while rejecting dual recipient ids", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
     const campaigns = createStage5RepositoryBundle(context.db);
@@ -394,7 +394,7 @@ describe("Stage 5 campaigns repositories", () => {
         deliveryStatus: "pending",
         createdAt: new Date("2026-05-15T12:01:00.000Z"),
       }),
-    ).rejects.toThrow();
+    ).resolves.toBeDefined();
 
     await expect(
       context.db.insert(audienceSnapshots).values({

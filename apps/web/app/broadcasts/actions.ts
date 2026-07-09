@@ -26,6 +26,7 @@ import {
   formatOrgAddress,
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
+  resolveUploadedAudienceForRun,
   renderSmsBroadcast,
   renderBroadcastEmail,
   type SmsBroadcastAudienceMember,
@@ -43,6 +44,7 @@ import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
+  listBroadcastUploadedRecipients,
   withStage1WebTransaction,
   type Stage1WebTransaction,
   type Stage1WebRuntime,
@@ -238,6 +240,24 @@ function createCampaignSendOrchestratorForRepositories(input: {
         settingsProjects: input.settings.projects,
       },
     }),
+    resolveUploadedAudience: (run, at) => {
+      void at;
+      return resolveUploadedAudienceForRun(
+        {
+          uploadedRecipients: {
+            listForRun: (runId) => listBroadcastUploadedRecipients(runId),
+          },
+          contacts: input.repositories.contacts,
+          settingsProjects: input.settings.projects,
+          settingsAliases: input.settings.aliases,
+        },
+        {
+          runId: run.id,
+          fromEmail: run.fromEmail,
+          projectId: run.projectId,
+        },
+      );
+    },
     exclusionFilter: createExclusionFilter({
       repositories: {
         campaignRuns: input.campaigns.campaignRuns,
@@ -492,6 +512,9 @@ async function freezeNewsletterAudienceForSend(input: {
     kind: run.kind,
     criteria: run.audienceCriteria,
     at: input.at,
+    runId: run.id,
+    fromEmail: run.fromEmail,
+    projectId: run.projectId,
   });
   const exclusionFilter = createExclusionFilter({
     repositories: {
@@ -1192,6 +1215,9 @@ export async function testSend(
         kind: run.kind,
         criteria: run.audienceCriteria,
         at: new Date(),
+        runId: run.id,
+        fromEmail: run.fromEmail,
+        projectId: run.projectId,
       }),
       run.audienceCriteria.contactIds,
     );

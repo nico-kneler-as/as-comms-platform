@@ -241,6 +241,10 @@ async function readFrozenResult(
 export function createCampaignSendOrchestrator(deps: {
   repositories: CampaignSendRepositories;
   audienceResolver: AudienceResolver;
+  resolveUploadedAudience?: (
+    run: CampaignRunRecord,
+    at: Date,
+  ) => Promise<readonly AudienceMember[]>;
   exclusionFilter: ExclusionFilter;
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
@@ -289,10 +293,13 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
       }
 
-      const members = filterAudienceMembersBySelectedContacts(
-        await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
-        run,
-      );
+      const members =
+        run.audienceCriteria.initialFilter === "csv_upload"
+          ? await deps.resolveUploadedAudience?.(run, at) ?? []
+          : filterAudienceMembersBySelectedContacts(
+              await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
+              run,
+            );
       const exclusions = await deps.exclusionFilter.applyExclusions(
         members,
         runId,

@@ -1408,7 +1408,7 @@ export const audienceSnapshots = pgTable(
     ),
     check(
       "audience_snapshots_recipient_check",
-      sql`num_nonnulls(${table.contactId}, ${table.newsletterSubscriberId}) = 1`,
+      sql`num_nonnulls(${table.contactId}, ${table.newsletterSubscriberId}) <= 1`,
     ),
     index("audience_snapshots_run_id_idx").on(table.campaignRunId),
     index("audience_snapshots_contact_id_idx").on(table.contactId),
@@ -1427,6 +1427,25 @@ export const audienceSnapshots = pgTable(
     uniqueIndex("audience_snapshots_run_newsletter_subscriber_unique")
       .on(table.campaignRunId, table.newsletterSubscriberId)
       .where(isNotNull(table.newsletterSubscriberId)),
+  ],
+);
+
+export const broadcastUploadedRecipients = pgTable(
+  "broadcast_uploaded_recipients",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    index("broadcast_uploaded_recipients_campaign_run_id_idx").on(
+      table.campaignRunId,
+    ),
   ],
 );
 

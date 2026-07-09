@@ -17,6 +17,7 @@ import type {
   CampaignSenderOption,
   CampaignSenderType,
   CampaignWizardDraftData,
+  CsvUploadSummary,
   ComposePreviewData,
 } from "../../_lib/audience-data-source";
 import {
@@ -70,10 +71,15 @@ function defaultAudienceModeForSenderType(
 
 export function readAllowedAudienceModesForSenderType(
   senderType: CampaignSenderType | null,
+  launchType: LaunchType,
 ): readonly AudienceInitialFilter[] {
+  if (launchType === "sms") {
+    return ["project_status", "specific"];
+  }
+
   return senderType === "org"
     ? ["specific", "all_available"]
-    : ["project_status", "specific"];
+    : ["project_status", "specific", "csv_upload"];
 }
 
 function hasAppliedAudienceFilters(
@@ -86,6 +92,7 @@ function hasAppliedAudienceFilters(
   switch (criteria.initialFilter) {
     case "all_approved":
     case "all_available":
+    case "csv_upload":
     case "project_status":
     case "specific":
       return true;
@@ -342,6 +349,18 @@ function buildCriteriaForMode(input: {
     };
   }
 
+  if (input.mode === "csv_upload") {
+    return {
+      ...input.current,
+      initialFilter: "csv_upload",
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    };
+  }
+
   return {
     ...input.current,
     initialFilter: "project_status",
@@ -441,6 +460,12 @@ export function useNewCampaignWizardState({
   const [previewErrorMessage, setPreviewErrorMessage] = useState<string | null>(
     null,
   );
+  const [csvUploadSummary, setCsvUploadSummary] =
+    useState<CsvUploadSummary | null>(null);
+  const [csvUploadErrorMessage, setCsvUploadErrorMessage] = useState<
+    string | null
+  >(null);
+  const [csvUploadVersion, setCsvUploadVersion] = useState(0);
   const [statusCounts, setStatusCounts] = useState<AudienceStatusCounts>({});
   const [statusCountsLoading, setStatusCountsLoading] = useState(false);
   const [statusCountsErrorMessage, setStatusCountsErrorMessage] = useState<
@@ -491,6 +516,7 @@ export function useNewCampaignWizardState({
   const [, startStatusCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
+  const [csvUploadPending, startCsvUploadTransition] = useTransition();
   const [savePending, startSaveTransition] = useTransition();
   const [submitPending, startSubmitTransition] = useTransition();
   const [testSendPending, startTestSendTransition] = useTransition();
@@ -550,8 +576,8 @@ export function useNewCampaignWizardState({
     [effectiveProjectOptions],
   );
   const availableAudienceModes = useMemo(
-    () => readAllowedAudienceModesForSenderType(selectedSenderType),
-    [selectedSenderType],
+    () => readAllowedAudienceModesForSenderType(selectedSenderType, launchType),
+    [launchType, selectedSenderType],
   );
   const kind =
     launchType === "sms"
@@ -655,6 +681,7 @@ export function useNewCampaignWizardState({
     if (
       !hasPickedAudienceMode ||
       currentMode === undefined ||
+      currentMode === "csv_upload" ||
       selectedSenderType !== "project" ||
       effectiveProjectOptions.length === 0
     ) {
@@ -729,6 +756,7 @@ export function useNewCampaignWizardState({
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }, [criteria.initialFilter, launchType]);
 
   useEffect(() => {
@@ -756,6 +784,7 @@ export function useNewCampaignWizardState({
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }, [
     availableAudienceModes,
     effectiveProjectOptions,
@@ -871,6 +900,7 @@ export function useNewCampaignWizardState({
     setCountLoading(true);
     startCountTransition(async () => {
       const result = await resolveAudienceCountAction({
+        runId: draft.runId,
         kind,
         criteria: toActionCriteria(criteria),
       });
@@ -886,7 +916,7 @@ export function useNewCampaignWizardState({
 
       setCountState(result.data);
     });
-  }, [criteria, frozen, hasPickedAudienceMode, kind]);
+  }, [criteria, csvUploadVersion, draft.runId, frozen, hasPickedAudienceMode, kind]);
 
   useEffect(() => {
     if (currentStep !== 2 || !hasPickedAudienceMode) {
@@ -901,6 +931,7 @@ export function useNewCampaignWizardState({
     setPreviewErrorMessage(null);
     void (async () => {
       const result = await previewAudienceAction({
+        runId: draft.runId,
         kind,
         criteria: toActionCriteria(criteria),
       });
@@ -917,7 +948,7 @@ export function useNewCampaignWizardState({
       setPreviewRows(result.data);
       setPreviewErrorMessage(null);
     })();
-  }, [criteria, currentStep, hasPickedAudienceMode, kind]);
+  }, [criteria, csvUploadVersion, currentStep, draft.runId, hasPickedAudienceMode, kind]);
 
   useEffect(() => {
     if (
@@ -1026,6 +1057,7 @@ export function useNewCampaignWizardState({
     const timer = setTimeout(() => {
       startComposePreviewTransition(async () => {
         const result = await loadComposePreviewAction({
+          runId: draft.runId,
           launchType,
           kind,
           criteria: toActionCriteria(criteria),
@@ -1059,8 +1091,10 @@ export function useNewCampaignWizardState({
   }, [
     bodyHtml,
     bodyPlaintext,
+    csvUploadVersion,
     criteria,
     currentStep,
+    draft.runId,
     fromEmail,
     launchType,
     kind,
@@ -1155,8 +1189,17 @@ export function useNewCampaignWizardState({
     hasPickedAudienceMode,
     setHasPickedAudienceMode,
     countState,
+    setCountState,
     previewRows,
+    setPreviewRows,
     previewErrorMessage,
+    csvUploadSummary,
+    setCsvUploadSummary,
+    csvUploadErrorMessage,
+    setCsvUploadErrorMessage,
+    csvUploadPending,
+    startCsvUploadTransition,
+    setCsvUploadVersion,
     statusCounts,
     statusCountsLoading,
     statusCountsErrorMessage,

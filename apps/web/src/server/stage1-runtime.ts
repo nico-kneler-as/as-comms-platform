@@ -2,11 +2,14 @@ import {
   accounts,
   aggregateBroadcastLinkClicksByRunId,
   countMediaAssets,
+  countBroadcastUploadedRecipientsForRun,
   createOrgSender,
   createMediaAsset,
   createDatabaseConnection,
   insertBroadcastLinkClick,
+  listBroadcastUploadedRecipientsForRun,
   listSendableNewsletterSubscribers as listSendableNewsletterSubscribersFromDb,
+  replaceBroadcastUploadedRecipientsForRun,
   searchNewsletterSubscribers as searchNewsletterSubscribersFromDb,
   getOrgSenderByEmail,
   listMediaAssets,
@@ -22,6 +25,7 @@ import {
   softDeleteMediaAsset,
   users,
   verificationTokens,
+  type BroadcastUploadedRecipientInsert,
   type DatabaseConnection,
   type Stage5RepositoryBundle,
 } from "@as-comms/db";
@@ -212,6 +216,40 @@ export async function aggregateBroadcastLinkClicksForRun(runId: string) {
   }
 
   return aggregateBroadcastLinkClicksByRunId(runtime.connection.db, runId);
+}
+
+export async function replaceBroadcastUploadedRecipients(
+  runId: string,
+  rows: readonly BroadcastUploadedRecipientInsert[],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return replaceBroadcastUploadedRecipientsForRun(
+    runtime.connection.db,
+    runId,
+    rows,
+  );
+}
+
+export async function listBroadcastUploadedRecipients(runId: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return listBroadcastUploadedRecipientsForRun(runtime.connection.db, runId);
+}
+
+export async function countBroadcastUploadedRecipients(runId: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return countBroadcastUploadedRecipientsForRun(runtime.connection.db, runId);
 }
 
 export async function listEnabledOrgSenders() {
