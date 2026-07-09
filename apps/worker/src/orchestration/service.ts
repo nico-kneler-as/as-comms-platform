@@ -1067,6 +1067,7 @@ export function createStage1WorkerOrchestrationService(input: {
     input.reconcileCapturedSmsConsent ??
     createCapturedSmsConsentReconciler({
       consentRecords: input.persistence.repositories.consentRecords,
+      contacts: input.persistence.repositories.contacts,
       logger,
       ...(input.now === undefined
         ? {}
