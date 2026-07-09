@@ -90,6 +90,7 @@ interface AudienceBuilderStepProps {
   readonly volunteerSearchLoading: boolean;
   readonly volunteerSearchErrorMessage: string | null;
   readonly projectOptions: readonly CampaignProjectOption[];
+  readonly singleSelectProjects?: boolean;
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsLoading: boolean;
@@ -119,6 +120,7 @@ export function AudienceBuilderStep({
   volunteerSearchLoading,
   volunteerSearchErrorMessage,
   projectOptions,
+  singleSelectProjects = false,
   statusOptions,
   statusCounts,
   statusCountsLoading,
@@ -133,6 +135,10 @@ export function AudienceBuilderStep({
   onContinue,
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter;
+  const selectedProjectIds = [
+    ...(criteria.projectId == null ? [] : [criteria.projectId]),
+    ...criteria.projectIds,
+  ].filter((projectId, index, values) => values.indexOf(projectId) === index);
   const specificSelectionCount =
     selectedSenderType === "org"
       ? (criteria.newsletterSubscriberIds?.length ?? 0)
@@ -140,12 +146,9 @@ export function AudienceBuilderStep({
   const canContinue =
     !countLoading &&
     initialFilter !== undefined &&
+    (!singleSelectProjects || selectedProjectIds.length > 0) &&
     (initialFilter === "project_status"
-      ? [
-          ...(criteria.projectId == null ? [] : [criteria.projectId]),
-          ...criteria.projectIds,
-        ].filter((projectId, index, values) => values.indexOf(projectId) === index)
-          .length > 0 &&
+      ? selectedProjectIds.length > 0 &&
         criteria.statuses.length > 0 &&
         countState.count > 0
       : initialFilter === "specific"
@@ -174,6 +177,7 @@ export function AudienceBuilderStep({
                 <AudienceFilterPanel
                   criteria={criteria}
                   projectOptions={projectOptions}
+                  singleSelectProjects={singleSelectProjects}
                   statusOptions={statusOptions}
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
@@ -193,6 +197,22 @@ export function AudienceBuilderStep({
 
             {initialFilter === "specific" ? (
               <>
+                {singleSelectProjects ? (
+                  <AudienceFilterPanel
+                    criteria={criteria}
+                    projectOptions={projectOptions}
+                    singleSelectProjects={singleSelectProjects}
+                    statusOptions={statusOptions}
+                    statusCounts={statusCounts}
+                    statusCountsLoading={statusCountsLoading}
+                    statusCountsErrorMessage={statusCountsErrorMessage}
+                    showStatusSection={false}
+                    onProjectChange={onProjectChange}
+                    onToggleAllStatuses={onToggleAllStatuses}
+                    onStatusToggle={onStatusToggle}
+                  />
+                ) : null}
+
                 <SpecificVolunteerSelector
                   criteria={criteria}
                   senderType={selectedSenderType}

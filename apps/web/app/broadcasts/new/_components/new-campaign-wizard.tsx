@@ -76,6 +76,7 @@ export type ToastState = {
   readonly tone: "success" | "error";
   readonly message: string;
 } | null;
+type ProjectSelectionMode = "multi" | "single";
 
 function normalizeProjectIds(projectIds: readonly string[]): string[] {
   return projectIds.filter(
@@ -288,9 +289,30 @@ export function readAliasProjectsForSender(
 function buildCriteriaForMode(input: {
   readonly current: CampaignAudienceCriteria;
   readonly mode: AudienceInitialFilter;
-  readonly aliasProjects: readonly CampaignProjectOption[];
+  readonly projectOptions: readonly CampaignProjectOption[];
+  readonly projectSelectionMode: ProjectSelectionMode;
 }): CampaignAudienceCriteria {
-  const aliasProjectIds = input.aliasProjects.map((project) => project.id);
+  const availableProjectIds = normalizeProjectIds(
+    input.projectOptions.map((project) => project.id),
+  );
+  const projectSelection =
+    input.projectSelectionMode === "single"
+      ? (() => {
+          const selectedProjectId =
+            readProjectIds(input.current).find((projectId) =>
+              availableProjectIds.includes(projectId),
+            ) ?? null;
+
+          return {
+            projectId: selectedProjectId,
+            projectIds:
+              selectedProjectId === null ? [] : [selectedProjectId],
+          };
+        })()
+      : {
+          projectId: availableProjectIds[0] ?? null,
+          projectIds: availableProjectIds,
+        };
 
   if (input.mode === "all_approved") {
     return {
@@ -320,8 +342,7 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "specific",
-      projectId: aliasProjectIds[0] ?? null,
-      projectIds: aliasProjectIds,
+      ...projectSelection,
       statuses: [],
       contactIds: [],
       newsletterSubscriberIds: [],
@@ -331,8 +352,7 @@ function buildCriteriaForMode(input: {
   return {
     ...input.current,
     initialFilter: "project_status",
-    projectId: aliasProjectIds[0] ?? null,
-    projectIds: aliasProjectIds,
+    ...projectSelection,
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
@@ -498,11 +518,13 @@ export function NewCampaignWizard({
     dirty,
     selectedSenderVerified,
     selectedSenderType,
-    aliasProjects,
+    effectiveProjectOptions,
+    projectSelectionMode,
     previewFingerprint,
     warningDismissed,
     statusLabel,
   } = useNewCampaignWizardState({ bootstrap, draft });
+  const singleSelectProjects = projectSelectionMode === "single";
   const deleteDraftControl =
     isAdmin && runState === "draft" ? (
       <DeleteDraftButton runId={draft.runId} />
@@ -613,7 +635,8 @@ export function NewCampaignWizard({
       buildCriteriaForMode({
         current,
         mode: value,
-        aliasProjects,
+        projectOptions: effectiveProjectOptions,
+        projectSelectionMode,
       }),
     );
     setVolunteerSearchQuery("");
@@ -622,23 +645,33 @@ export function NewCampaignWizard({
   }
 
   function toggleProject(projectId: string) {
-    updateCriteria((current) => ({
-      ...current,
-      projectIds: normalizeProjectIds(
+    updateCriteria((current) => {
+      if (singleSelectProjects) {
+        return {
+          ...current,
+          projectId,
+          projectIds: [projectId],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          statuses: [],
+        };
+      }
+
+      const nextProjectIds = normalizeProjectIds(
         readProjectIds(current).includes(projectId)
           ? readProjectIds(current).filter((value) => value !== projectId)
           : [...readProjectIds(current), projectId],
-      ),
-      projectId:
-        normalizeProjectIds(
-          readProjectIds(current).includes(projectId)
-            ? readProjectIds(current).filter((value) => value !== projectId)
-            : [...readProjectIds(current), projectId],
-        )[0] ?? null,
-      contactIds: [],
-      newsletterSubscriberIds: [],
-      statuses: [],
-    }));
+      );
+
+      return {
+        ...current,
+        projectIds: nextProjectIds,
+        projectId: nextProjectIds[0] ?? null,
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        statuses: [],
+      };
+    });
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
@@ -894,7 +927,8 @@ export function NewCampaignWizard({
                   volunteerSearchRows={volunteerSearchRows}
                   volunteerSearchLoading={volunteerSearchPending}
                   volunteerSearchErrorMessage={volunteerSearchErrorMessage}
-                  projectOptions={aliasProjects}
+                  projectOptions={effectiveProjectOptions}
+                  singleSelectProjects={singleSelectProjects}
                   statusOptions={bootstrap.statuses}
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
