@@ -581,6 +581,34 @@ function buildDraft(
   };
 }
 
+function buildFreshDraft(
+  overrides: Partial<CampaignWizardDraftData> = {},
+): CampaignWizardDraftData {
+  return buildDraft({
+    name: null,
+    fromEmail: null,
+    replyToEmail: null,
+    subjectTemplate: null,
+    bodyDesignJson: null,
+    bodyHtmlTemplate: null,
+    bodyTextTemplate: null,
+    preheader: null,
+    audienceCriteria: {
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
+      hasClicked: "either",
+    },
+    audienceSize: null,
+    ...overrides,
+  });
+}
+
 function buildComposePreviewData(
   overrides: Partial<ComposePreviewData> = {},
 ): ComposePreviewData {
@@ -711,7 +739,7 @@ async function flush() {
 
 async function renderWizard({
   bootstrap = buildBootstrap(),
-  draft = buildDraft(),
+  draft = buildFreshDraft(),
 }: {
   readonly bootstrap?: AudienceBuilderBootstrap;
   readonly draft?: CampaignWizardDraftData;
@@ -744,6 +772,10 @@ function getByLabelText(label: string): HTMLElement {
   return element;
 }
 
+function readCurrentStep() {
+  return Number(getByTestId("current-step").textContent);
+}
+
 async function click(label: string) {
   const element = getByLabelText(label);
   act(() => {
@@ -752,6 +784,33 @@ async function click(label: string) {
     );
   });
   await flush();
+}
+
+async function goToStep(target: number) {
+  const continueLabels = [
+    "launch-continue",
+    "name-continue",
+    "audience-continue",
+    "compose-continue",
+    "preview-continue",
+  ] as const;
+
+  let currentStep = readCurrentStep();
+  if (currentStep > target) {
+    await click(`go-step-${String(target)}`);
+    return;
+  }
+
+  while (currentStep < target) {
+    const continueLabel = continueLabels[currentStep];
+    if (continueLabel === undefined) {
+      throw new Error(
+        `No continue action is defined for step ${String(currentStep)}.`,
+      );
+    }
+    await click(continueLabel);
+    currentStep = readCurrentStep();
+  }
 }
 
 async function changeInput(label: string, value: string) {
@@ -772,9 +831,7 @@ async function advanceTimersBy(ms: number) {
 }
 
 async function goToComposeStep() {
-  await click("launch-continue");
-  await click("name-continue");
-  await click("audience-continue");
+  await goToStep(3);
 }
 
 beforeEach(() => {
@@ -884,13 +941,69 @@ afterEach(() => {
 });
 
 describe("NewCampaignWizard", () => {
-  it("starts on launch type for draft campaigns", async () => {
+  it("opens complete draft campaigns on preview", async () => {
     await renderWizard({
       draft: buildDraft({ state: "draft" }),
     });
 
+    expect(getByTestId("current-step").textContent).toBe("4");
+    expect(getByTestId("preview-step").textContent).toContain("PreviewStep");
+  });
+
+  it("starts a new empty draft on launch type", async () => {
+    await renderWizard({
+      draft: buildDraft({
+        name: null,
+        fromEmail: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: null,
+          projectIds: [],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: null,
+        state: "draft",
+      }),
+    });
+
     expect(getByTestId("current-step").textContent).toBe("0");
     expect(getByTestId("launch-step").textContent).toContain("LaunchTypeStep");
+  });
+
+  it("opens partial drafts on the furthest satisfied step", async () => {
+    await renderWizard({
+      draft: buildDraft({
+        subjectTemplate: null,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: ["Waitlist"],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 2,
+        state: "draft",
+      }),
+    });
+
+    expect(getByTestId("current-step").textContent).toBe("3");
+    expect(getByTestId("compose-step").textContent).toContain("ComposeStep");
   });
 
   it("starts on review for non-draft campaigns", async () => {
@@ -1057,8 +1170,6 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    await click("launch-continue");
-
     expect(getByTestId("current-from-email").textContent).toBe(
       "forests@example.org",
     );
@@ -1104,7 +1215,7 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    await click("launch-continue");
+    await goToStep(1);
     await click("sender-info@adventurescientists.org");
     await click("name-continue");
 
@@ -1158,8 +1269,7 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    await click("launch-continue");
-    await click("name-continue");
+    await goToStep(2);
     await click("mode-specific");
     await click("search-alice");
     await advanceTimersBy(300);
@@ -1200,9 +1310,7 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    await click("set-launch-sms");
-    await goToComposeStep();
-    await click("compose-continue");
+    await goToStep(4);
     await advanceTimersBy(200);
     await click("set-preview-test-recipient");
     await click("preview-send-test");
@@ -1230,11 +1338,7 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    await click("set-launch-sms");
-    await goToComposeStep();
-    await click("compose-continue");
-    await advanceTimersBy(200);
-    await click("preview-continue");
+    await goToStep(5);
     await click("review-submit");
 
     expect(sendSmsBroadcastNowMock).toHaveBeenCalledWith({ runId: "run-1" });
