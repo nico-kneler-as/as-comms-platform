@@ -102,6 +102,7 @@ import { RepliesInInboxPanel } from "../../app/broadcasts/[runId]/_components/re
 import { RunAuditLog } from "../../app/broadcasts/[runId]/_components/run-audit-log";
 import {
   AudienceCriteriaPanel,
+  BotActivityPanel,
   EmailContentPanel,
   LinkClicksPanel,
   SendDetailsPanel,
@@ -593,6 +594,7 @@ function renderShell(model: RunDetailModel) {
         <>
           <EmailContentPanel model={model} />
           <SubjectVariantBreakdownPanel model={model} />
+          <BotActivityPanel model={model} />
           <LinkClicksPanel model={model} />
         </>
       }
@@ -1763,6 +1765,32 @@ describe("broadcast run detail", () => {
     expect(emptyHtml).toContain("No link clicks recorded yet.");
   });
 
+  it("renders per-link bot-share only when bot clicks exist", () => {
+    const html = renderToStaticMarkup(
+      <LinkClicksPanel
+        model={buildPostmarkModel("complete", {
+          linkClicks: [
+            {
+              url: "https://example.org/a",
+              totalClicks: 10,
+              botClicks: 3,
+              uniqueClickers: 4,
+            },
+            {
+              url: "https://example.org/b",
+              totalClicks: 2,
+              botClicks: 0,
+              uniqueClickers: 1,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain("3 bot");
+    expect(html).not.toContain("0 bot");
+  });
+
   it("renders SMS detail panels and hides email-only panels", () => {
     const html = renderShell(buildSmsModel());
 
@@ -1781,6 +1809,7 @@ describe("broadcast run detail", () => {
     expect(html).not.toContain(">Complained<");
     expect(html).not.toContain(">Link clicks<");
     expect(html).not.toContain(">Subject variants<");
+    expect(html).not.toContain(">Bot &amp; scanner activity<");
     expect(html).not.toContain(">From<");
     expect(html).not.toContain(">Reply-to<");
   });
@@ -1832,6 +1861,68 @@ describe("broadcast run detail", () => {
     expect(abHtml).toContain("39.2%");
     expect(abHtml).toContain("Subject B");
     expect(controlHtml).toBe("");
+  });
+
+  it("renders bot activity when event data exists", () => {
+    const html = renderToStaticMarkup(
+      <BotActivityPanel
+        model={buildPostmarkModel("complete", {
+          botActivity: {
+            opens: {
+              human: 11,
+              bot: 1,
+              hasEventData: true,
+            },
+            clicks: {
+              human: 8,
+              bot: 5,
+              hasEventData: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(html).toContain("Bot &amp; scanner activity");
+    expect(html).toContain(">Opens<");
+    expect(html).toContain(">Clicks<");
+    expect(html).toContain(">Real<");
+    expect(html).toContain(">Bot / scanner<");
+    expect(html).toContain(">11<");
+    expect(html).toContain(">1<");
+    expect(html).toContain(">12<");
+    expect(html).toContain(">8<");
+    expect(html).toContain(">5<");
+    expect(html).toContain(">13<");
+  });
+
+  it("hides bot activity when event data is unavailable or unsupported", () => {
+    const legacyHtml = renderToStaticMarkup(
+      <BotActivityPanel
+        model={buildPostmarkModel("complete", {
+          botActivity: {
+            opens: {
+              human: 0,
+              bot: 0,
+              hasEventData: false,
+            },
+            clicks: {
+              human: 0,
+              bot: 0,
+              hasEventData: false,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(legacyHtml).toBe("");
+    expect(
+      renderToStaticMarkup(<BotActivityPanel model={buildMailchimpModel()} />),
+    ).toBe("");
+    expect(
+      renderToStaticMarkup(<BotActivityPanel model={buildSmsModel()} />),
+    ).toBe("");
   });
 
   it("renders email HTML visually and falls back to plain text", () => {
