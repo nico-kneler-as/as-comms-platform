@@ -202,6 +202,85 @@ export function SubjectVariantBreakdownPanel({
   );
 }
 
+export function BotActivityPanel({
+  model,
+}: {
+  readonly model: RunDetailModel;
+}) {
+  if (
+    model.channel === "sms" ||
+    model.provider === "mailchimp" ||
+    (!model.botActivity.opens.hasEventData &&
+      !model.botActivity.clicks.hasEventData)
+  ) {
+    return null;
+  }
+
+  const channels = [
+    {
+      label: "Opens",
+      activity: model.botActivity.opens,
+    },
+    {
+      label: "Clicks",
+      activity: model.botActivity.clicks,
+    },
+  ].filter((entry) => entry.activity.hasEventData);
+
+  return (
+    <Panel title="Bot & scanner activity">
+      <div className="space-y-3">
+        {channels.map((entry) => {
+          const total = entry.activity.human + entry.activity.bot;
+
+          return (
+            <section
+              key={entry.label}
+              className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50/40"
+            >
+              <div className="border-b border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {entry.label}
+                  </h3>
+                  <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
+                    {total.toLocaleString()} total
+                  </span>
+                </div>
+              </div>
+              <dl className="grid grid-cols-3 gap-px bg-slate-200">
+                {[
+                  { label: "Real", count: entry.activity.human },
+                  {
+                    label: "Bot / scanner",
+                    count: entry.activity.bot,
+                  },
+                  { label: "Total", count: total },
+                ].map((metric) => (
+                  <div key={metric.label} className="bg-white px-4 py-3">
+                    <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                      {metric.label}
+                    </dt>
+                    <dd className="mt-1 text-[14px] font-semibold tabular-nums text-slate-900">
+                      {metric.count.toLocaleString()}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          );
+        })}
+        <p className="text-[11px] text-slate-500">
+          Headline Opened and Clicked counts already exclude identified bot /
+          scanner activity. Open detection only covers sends after per-open
+          tracking went live, and some privacy-proxy opens like Apple Mail
+          Privacy Protection cannot be fully identified.
+        </p>
+      </div>
+    </Panel>
+  );
+}
+
 export function LinkClicksPanel({
   model,
 }: {
@@ -255,6 +334,11 @@ export function LinkClicksPanel({
               <div className="text-[11px] tabular-nums text-slate-500">
                 {entry.uniqueClickers.toLocaleString()} unique
               </div>
+              {entry.botClicks > 0 ? (
+                <div className="text-[11px] tabular-nums text-slate-500">
+                  {entry.botClicks.toLocaleString()} bot
+                </div>
+              ) : null}
             </div>
           </li>
         ))}

@@ -8,6 +8,7 @@ import { RepliesInInboxPanel } from "./_components/replies-in-inbox-panel";
 import { RunAuditLog } from "./_components/run-audit-log";
 import {
   AudienceCriteriaPanel,
+  BotActivityPanel,
   EmailContentPanel,
   LinkClicksPanel,
   SendDetailsPanel,
@@ -59,6 +60,7 @@ async function EmailContentSection({
     <>
       <EmailContentPanel model={model} />
       <SubjectVariantBreakdownPanel model={model} />
+      <BotActivityPanel model={model} />
       <LinkClicksPanel model={model} />
     </>
   );
