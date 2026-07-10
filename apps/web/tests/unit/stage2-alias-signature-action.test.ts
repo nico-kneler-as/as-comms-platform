@@ -145,6 +145,30 @@ describe("stage2 alias signature action", () => {
     });
   });
 
+  it("rejects unknown signature tokens", async () => {
+    if (!runtime) throw new Error("runtime not initialized");
+
+    await seedAlias(runtime, {
+      projectId: "project:signature",
+      aliasId: "alias:signature",
+      alias: "signature@asc.internal"
+    });
+
+    const result = await updateProjectAliasSignatureAction(
+      "alias:signature",
+      "Thanks,\n{{firstName}}"
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "invalid_signature",
+      fieldErrors: {
+        signature:
+          "Unknown signature token. Only {{operatorFirstName}} is allowed."
+      }
+    });
+  });
+
   it("updates the signature, writes an audit row, and revalidates the project detail", async () => {
     if (!runtime) throw new Error("runtime not initialized");
 

@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import type { LaunchType } from "@as-comms/contracts";
 
 import type { ComposePreviewData } from "../../_lib/audience-data-source";
+import { SmsSampleBubble } from "./sms-sample-bubble";
 import { StepHeader, WizardFooter } from "./wizard-shell";
 
 interface PreviewStepProps {
@@ -226,28 +227,6 @@ export function PreviewStep({
                     ? "No audience resolved yet."
                     : `${smsPreviewData.reachable.toLocaleString()} reachable of ${smsPreviewData.selected.toLocaleString()} selected`}
                 </p>
-                {smsPreviewData === null ? null : (
-                  <div className="mt-2 space-y-1 text-[11.5px] text-slate-500">
-                    <p>
-                      No consent:{" "}
-                      {(smsPreviewData.unreachable.no_consent ?? 0).toLocaleString()}
-                    </p>
-                    <p>
-                      Revoked:{" "}
-                      {(smsPreviewData.unreachable.revoked ?? 0).toLocaleString()}
-                    </p>
-                    <p>
-                      No phone:{" "}
-                      {(smsPreviewData.unreachable.no_phone ?? 0).toLocaleString()}
-                    </p>
-                    {smsPreviewData.deduplicatedByPhone > 0 ? (
-                      <p>
-                        Duplicate phones suppressed:{" "}
-                        {smsPreviewData.deduplicatedByPhone.toLocaleString()}
-                      </p>
-                    ) : null}
-                  </div>
-                )}
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
@@ -298,14 +277,10 @@ export function PreviewStep({
                   Add audience filters and SMS body copy to load the preview.
                 </div>
               ) : (
-                <div className="mx-auto max-w-xl rounded-[28px] border border-slate-200 bg-slate-50 px-4 py-5">
-                  <div className="ml-auto max-w-[88%] rounded-[24px] rounded-br-md bg-[#253746] px-4 py-3 text-[13px] leading-relaxed text-white shadow-sm">
-                    <p className="whitespace-pre-wrap">
-                      {smsPreviewData.sampleBody ??
-                        "No reachable recipients to sample yet."}
-                    </p>
-                  </div>
-                </div>
+                <SmsSampleBubble
+                  sampleBody={smsPreviewData.sampleBody}
+                  emptyBodyFallback="No reachable recipients to sample yet."
+                />
               )
             ) : sample === null ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">

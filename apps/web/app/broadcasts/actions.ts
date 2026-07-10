@@ -26,6 +26,7 @@ import {
   formatOrgAddress,
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
+  resolveUploadedAudienceForRun,
   renderSmsBroadcast,
   renderBroadcastEmail,
   type SmsBroadcastAudienceMember,
@@ -43,6 +44,7 @@ import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
+  listBroadcastUploadedRecipients,
   withStage1WebTransaction,
   type Stage1WebTransaction,
   type Stage1WebRuntime,
@@ -238,6 +240,24 @@ function createCampaignSendOrchestratorForRepositories(input: {
         settingsProjects: input.settings.projects,
       },
     }),
+    resolveUploadedAudience: (run, at) => {
+      void at;
+      return resolveUploadedAudienceForRun(
+        {
+          uploadedRecipients: {
+            listForRun: (runId) => listBroadcastUploadedRecipients(runId),
+          },
+          contacts: input.repositories.contacts,
+          settingsProjects: input.settings.projects,
+          settingsAliases: input.settings.aliases,
+        },
+        {
+          runId: run.id,
+          fromEmail: run.fromEmail,
+          projectId: run.projectId,
+        },
+      );
+    },
     exclusionFilter: createExclusionFilter({
       repositories: {
         campaignRuns: input.campaigns.campaignRuns,
@@ -492,6 +512,9 @@ async function freezeNewsletterAudienceForSend(input: {
     kind: run.kind,
     criteria: run.audienceCriteria,
     at: input.at,
+    runId: run.id,
+    fromEmail: run.fromEmail,
+    projectId: run.projectId,
   });
   const exclusionFilter = createExclusionFilter({
     repositories: {
@@ -1192,6 +1215,9 @@ export async function testSend(
         kind: run.kind,
         criteria: run.audienceCriteria,
         at: new Date(),
+        runId: run.id,
+        fromEmail: run.fromEmail,
+        projectId: run.projectId,
       }),
       run.audienceCriteria.contactIds,
     );
@@ -1381,6 +1407,68 @@ export async function cancelDraft(
     return errorResult(
       "campaign_cancel_draft_failed",
       error instanceof Error ? error.message : "Unable to cancel the draft.",
+      true,
+    );
+  }
+}
+
+export async function deleteDraft(
+  runId: string,
+): Promise<UiSuccess<CampaignActionData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Draft not found.",
+        false,
+      );
+    }
+    if (run.state !== "draft") {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Only drafts can be deleted.",
+        false,
+      );
+    }
+
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: admin.userId,
+      action: "campaign_run.draft_deleted",
+      runId,
+      detail: "Draft deleted before launch.",
+      auditEvidence: runtime.repositories.auditEvidence,
+    });
+
+    const deleted = await runtime.campaigns.campaignRuns.deleteDraft(runId);
+    if (!deleted) {
+      return errorResult(
+        "campaign_delete_draft_failed",
+        "Draft not found.",
+        false,
+      );
+    }
+
+    return {
+      ok: true,
+      data: {
+        runId,
+        scheduledAt: null,
+        state: "cancelled",
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_delete_draft_failed",
+      error instanceof Error ? error.message : "Unable to delete the draft.",
       true,
     );
   }

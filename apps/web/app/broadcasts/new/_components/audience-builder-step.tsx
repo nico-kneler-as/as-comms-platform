@@ -29,6 +29,7 @@ import type {
   AudienceVolunteerSearchRow,
   CampaignSenderType,
   CampaignProjectOption,
+  CsvUploadSummary,
 } from "../../_lib/audience-data-source";
 import { AudienceFilterPanel } from "./audience-filter-panel";
 import { AudiencePreviewList } from "./audience-preview-list";
@@ -38,7 +39,8 @@ export type AudienceInitialFilter =
   | "project_status"
   | "specific"
   | "all_approved"
-  | "all_available";
+  | "all_available"
+  | "csv_upload";
 
 export type CampaignAudienceCriteria = AudienceCriteria;
 
@@ -70,6 +72,11 @@ const MODE_META: Record<
     hint: "Everyone subscribed to the newsletter, minus suppressions.",
     Icon: Users,
   },
+  csv_upload: {
+    title: "Import CSV",
+    hint: "Upload a one-off email list without creating platform contacts.",
+    Icon: Users,
+  },
 };
 
 interface AudienceBuilderStepProps {
@@ -89,7 +96,11 @@ interface AudienceBuilderStepProps {
   )[];
   readonly volunteerSearchLoading: boolean;
   readonly volunteerSearchErrorMessage: string | null;
+  readonly csvUploadSummary: CsvUploadSummary | null;
+  readonly csvUploadPending: boolean;
+  readonly csvUploadErrorMessage: string | null;
   readonly projectOptions: readonly CampaignProjectOption[];
+  readonly singleSelectProjects?: boolean;
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsLoading: boolean;
@@ -100,6 +111,7 @@ interface AudienceBuilderStepProps {
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
   readonly onVolunteerSearchQueryChange: (value: string) => void;
   readonly onVolunteerToggle: (contactId: string) => void;
+  readonly onCsvUpload: (csvText: string) => Promise<void>;
   readonly onBack: () => void;
   readonly onContinue: () => void;
 }
@@ -118,7 +130,11 @@ export function AudienceBuilderStep({
   volunteerSearchRows,
   volunteerSearchLoading,
   volunteerSearchErrorMessage,
+  csvUploadSummary,
+  csvUploadPending,
+  csvUploadErrorMessage,
   projectOptions,
+  singleSelectProjects = false,
   statusOptions,
   statusCounts,
   statusCountsLoading,
@@ -129,10 +145,15 @@ export function AudienceBuilderStep({
   onStatusToggle,
   onVolunteerSearchQueryChange,
   onVolunteerToggle,
+  onCsvUpload,
   onBack,
   onContinue,
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter;
+  const selectedProjectIds = [
+    ...(criteria.projectId == null ? [] : [criteria.projectId]),
+    ...criteria.projectIds,
+  ].filter((projectId, index, values) => values.indexOf(projectId) === index);
   const specificSelectionCount =
     selectedSenderType === "org"
       ? (criteria.newsletterSubscriberIds?.length ?? 0)
@@ -140,16 +161,15 @@ export function AudienceBuilderStep({
   const canContinue =
     !countLoading &&
     initialFilter !== undefined &&
+    (!singleSelectProjects || selectedProjectIds.length > 0) &&
     (initialFilter === "project_status"
-      ? [
-          ...(criteria.projectId == null ? [] : [criteria.projectId]),
-          ...criteria.projectIds,
-        ].filter((projectId, index, values) => values.indexOf(projectId) === index)
-          .length > 0 &&
+      ? selectedProjectIds.length > 0 &&
         criteria.statuses.length > 0 &&
         countState.count > 0
       : initialFilter === "specific"
         ? specificSelectionCount > 0 && countState.count > 0
+        : initialFilter === "csv_upload"
+          ? countState.count > 0
         : countState.count > 0);
 
   return (
@@ -174,6 +194,7 @@ export function AudienceBuilderStep({
                 <AudienceFilterPanel
                   criteria={criteria}
                   projectOptions={projectOptions}
+                  singleSelectProjects={singleSelectProjects}
                   statusOptions={statusOptions}
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
@@ -193,6 +214,22 @@ export function AudienceBuilderStep({
 
             {initialFilter === "specific" ? (
               <>
+                {singleSelectProjects ? (
+                  <AudienceFilterPanel
+                    criteria={criteria}
+                    projectOptions={projectOptions}
+                    singleSelectProjects={singleSelectProjects}
+                    statusOptions={statusOptions}
+                    statusCounts={statusCounts}
+                    statusCountsLoading={statusCountsLoading}
+                    statusCountsErrorMessage={statusCountsErrorMessage}
+                    showStatusSection={false}
+                    onProjectChange={onProjectChange}
+                    onToggleAllStatuses={onToggleAllStatuses}
+                    onStatusToggle={onStatusToggle}
+                  />
+                ) : null}
+
                 <SpecificVolunteerSelector
                   criteria={criteria}
                   senderType={selectedSenderType}
@@ -245,6 +282,23 @@ export function AudienceBuilderStep({
                 />
               </>
             ) : null}
+
+            {initialFilter === "csv_upload" ? (
+              <>
+                <CsvUploadPanel
+                  summary={csvUploadSummary}
+                  pending={csvUploadPending}
+                  errorMessage={csvUploadErrorMessage}
+                  onUpload={onCsvUpload}
+                />
+
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
           </>
         ) : (
           <InitialFilterSelector
@@ -262,6 +316,99 @@ export function AudienceBuilderStep({
         primaryDisabled={!canContinue}
       />
     </section>
+  );
+}
+
+function CsvUploadPanel({
+  summary,
+  pending,
+  errorMessage,
+  onUpload,
+}: {
+  readonly summary: CsvUploadSummary | null;
+  readonly pending: boolean;
+  readonly errorMessage: string | null;
+  readonly onUpload: (csvText: string) => Promise<void>;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-2">
+        <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+          Upload recipients
+        </p>
+      </div>
+      <div className="space-y-4 px-4 py-4">
+        <label className="block">
+          <span className="mb-2 block text-[12px] text-slate-600">
+            CSV with `email` and optional `firstName` / `lastName` columns.
+          </span>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            disabled={pending}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file === undefined) {
+                return;
+              }
+
+              void file.text().then((csvText) => onUpload(csvText));
+            }}
+            className={cn(
+              `block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-white ${FOCUS_RING}`,
+              pending ? "cursor-wait opacity-70" : null,
+            )}
+          />
+        </label>
+
+        {pending ? (
+          <p className="text-[12px] text-slate-500">Importing recipients…</p>
+        ) : null}
+
+        {errorMessage !== null ? (
+          <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        {summary !== null ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <SummaryCard
+              label="Imported"
+              value={summary.importedCount.toLocaleString()}
+            />
+            <SummaryCard
+              label="Invalid skipped"
+              value={summary.invalidSkippedCount.toLocaleString()}
+            />
+            <SummaryCard
+              label="Duplicates removed"
+              value={summary.duplicatesRemovedCount.toLocaleString()}
+            />
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 text-[20px] font-semibold tabular-nums text-slate-900">
+        {value}
+      </div>
+    </div>
   );
 }
 

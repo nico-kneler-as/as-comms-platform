@@ -31,6 +31,11 @@ export const webEnvSchema = z.object({
   POSTMARK_WEBHOOK_SIGNING_SECRET: z.string().trim().min(1).optional(),
   POSTMARK_TRANSACTIONAL_STREAM_ID: z.string().trim().min(1).default("outbound"),
   POSTMARK_BROADCAST_STREAM_ID: z.string().trim().min(1).default("broadcast"),
+  NEWSLETTER_SIGNUP_ALLOWED_ORIGIN: z
+    .string()
+    .trim()
+    .url()
+    .default("https://adventurescientists.org"),
   POSTMARK_BASE_URL: z
     .string()
     .trim()
@@ -50,6 +55,7 @@ export function readWebEnv(env: NodeJS.ProcessEnv = process.env): WebEnv {
     POSTMARK_WEBHOOK_SIGNING_SECRET: env.POSTMARK_WEBHOOK_SIGNING_SECRET,
     POSTMARK_TRANSACTIONAL_STREAM_ID: env.POSTMARK_TRANSACTIONAL_STREAM_ID,
     POSTMARK_BROADCAST_STREAM_ID: env.POSTMARK_BROADCAST_STREAM_ID,
+    NEWSLETTER_SIGNUP_ALLOWED_ORIGIN: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
     POSTMARK_BASE_URL: env.POSTMARK_BASE_URL,
   });
 }

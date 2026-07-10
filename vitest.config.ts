@@ -33,6 +33,13 @@ export default defineConfig({
         replacement: path.resolve(repoRoot, "packages/domain/src/sms-segments.ts"),
       },
       {
+        find: "@as-comms/domain/signature-template",
+        replacement: path.resolve(
+          repoRoot,
+          "packages/domain/src/signature-template.ts",
+        ),
+      },
+      {
         find: "@as-comms/domain",
         replacement: path.resolve(repoRoot, "packages/domain/src/index.ts"),
       },

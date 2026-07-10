@@ -47,6 +47,7 @@ import {
   MailIcon,
   NoteIcon,
   PaperclipIcon,
+  PencilIcon,
   PinIcon,
   RotateCcwIcon,
   SendIcon,
@@ -70,6 +71,7 @@ import { SendFromPhoneChip } from "./composer-send-from-phone-chip";
 const EMPTY_ACTIVE_COMMANDS = new Set<ComposerToolbarCommand>();
 const NOOP_COMPOSER_COMMAND: (command: ComposerToolbarCommand) => void = () =>
   undefined;
+const COMPOSER_SIGNATURE_MAX_LENGTH = 2000;
 
 function KnowledgeBaseIndicator({
   hasKnowledge,
@@ -174,6 +176,87 @@ function formatUsPhoneLabel(phoneE164: string): string {
   return nationalNumber === null
     ? phoneE164
     : `(${nationalNumber.slice(0, 3)}) ${nationalNumber.slice(3, 6)}-${nationalNumber.slice(6)}`;
+}
+
+function ComposerSignatureEditor({
+  signatureValue,
+  hasOverride,
+  onChange,
+  onReset,
+}: {
+  readonly signatureValue: string;
+  readonly hasOverride: boolean;
+  readonly onChange: (value: string) => void;
+  readonly onReset: () => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  return (
+    <div className="border-t border-slate-100 bg-slate-50/60 px-4 pb-3 pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn(TYPE.caption, "text-slate-500")}>Signature</span>
+        <div className="flex items-center gap-1">
+          {hasOverride ? (
+            <button
+              type="button"
+              aria-label="Reset signature to default"
+              onClick={onReset}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <RotateCcwIcon className="size-3" />
+              Reset
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label={isEditing ? "Hide signature editor" : "Edit signature"}
+            aria-expanded={isEditing}
+            onClick={() => {
+              setIsEditing((current) => !current);
+            }}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <PencilIcon className="size-3" />
+            {signatureValue.length > 0 ? "Edit" : "Add"}
+          </button>
+        </div>
+      </div>
+
+      {isEditing ? (
+        <>
+          <textarea
+            aria-label="Message signature"
+            rows={4}
+            maxLength={COMPOSER_SIGNATURE_MAX_LENGTH}
+            value={signatureValue}
+            onChange={(event) => {
+              onChange(event.currentTarget.value);
+            }}
+            className="mt-2 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+            placeholder="Add a one-off signature for this message"
+          />
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-slate-500">
+            <span>
+              Plain text only. Appended to this message only. Reset restores the
+              project default.
+            </span>
+            <span>
+              {String(signatureValue.length)}/
+              {String(COMPOSER_SIGNATURE_MAX_LENGTH)}
+            </span>
+          </div>
+        </>
+      ) : signatureValue.length > 0 ? (
+        <div className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
+          {signatureValue}
+        </div>
+      ) : (
+        <div className="mt-2 text-[12px] text-slate-400">
+          No signature added for this message.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ComposerPaneChrome({
@@ -283,6 +366,7 @@ export function ComposerEmailSurface({
   selectedAliasHasCachedContent,
   selectedAliasProjectName,
   selectedAliasSignature,
+  hasSignatureOverride,
   aiWarningMessage,
   inlineError,
   canSendAndSaveForAi,
@@ -296,6 +380,8 @@ export function ComposerEmailSurface({
   onToggleCc,
   onToggleBcc,
   onSubjectChange,
+  onSignatureChange,
+  onResetSignature,
   onBodyChange,
   onClearErrors,
   onAiDirectiveChange,
@@ -348,6 +434,7 @@ export function ComposerEmailSurface({
   readonly selectedAliasHasCachedContent: boolean;
   readonly selectedAliasProjectName: string | null;
   readonly selectedAliasSignature: string;
+  readonly hasSignatureOverride: boolean;
   readonly aiWarningMessage: string | null;
   readonly inlineError: InlineComposerError | null;
   readonly canSendAndSaveForAi: boolean;
@@ -367,6 +454,8 @@ export function ComposerEmailSurface({
   readonly onToggleCc: (open: boolean) => void;
   readonly onToggleBcc: (open: boolean) => void;
   readonly onSubjectChange: (value: string) => void;
+  readonly onSignatureChange: (value: string) => void;
+  readonly onResetSignature: () => void;
   readonly onBodyChange: (value: {
     readonly bodyPlaintext: string;
     readonly bodyHtml: string;
@@ -578,11 +667,12 @@ export function ComposerEmailSurface({
                 ) : undefined
               }
               bottomSlot={
-                selectedAliasSignature.length > 0 ? (
-                  <div className="px-4 pb-3 pt-2 whitespace-pre-line text-[13px] leading-relaxed text-slate-500">
-                    {selectedAliasSignature}
-                  </div>
-                ) : undefined
+                <ComposerSignatureEditor
+                  signatureValue={selectedAliasSignature}
+                  hasOverride={hasSignatureOverride}
+                  onChange={onSignatureChange}
+                  onReset={onResetSignature}
+                />
               }
             />
           </div>

@@ -60,9 +60,8 @@ export function EmailContentPanel({
 
   const subject = model.run.subjectTemplate?.trim() ?? "";
   const preheader = model.run.preheader?.trim() ?? "";
-  const body =
-    model.run.bodyTextTemplate?.trim() ??
-    (model.run.bodyHtmlTemplate === null ? "" : "HTML content available.");
+  const bodyHtml = model.run.bodyHtmlTemplate?.trim() ?? "";
+  const bodyText = model.run.bodyTextTemplate?.trim() ?? "";
 
   return (
     <Panel title="Email content">
@@ -80,10 +79,91 @@ export function EmailContentPanel({
         {preheader.length > 0 ? (
           <SummaryRow label="Preheader" value={preheader} />
         ) : null}
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12.5px] leading-6 text-slate-700 whitespace-pre-wrap">
-          {body.length > 0 ? body : "No message body was saved for this run."}
-        </div>
+        {bodyHtml.length > 0 ? (
+          <div className="space-y-1.5">
+            {/*
+              Render the stored HTML visually in a sandboxed iframe (same
+              approach as the compose preview step). Merge tags like
+              {{firstName}} are the send-time template, so they show
+              unrendered here — layout/styling is what matters on this view.
+            */}
+            <iframe
+              title="Email body"
+              srcDoc={bodyHtml}
+              className="block w-full rounded-lg border border-slate-200 bg-white"
+              style={{ height: 640 }}
+              sandbox="allow-same-origin"
+            />
+            <p className="text-[11px] text-slate-400">
+              Rendered from the sent HTML. Merge tags (e.g. {"{{firstName}}"})
+              appear unrendered.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12.5px] leading-6 text-slate-700 whitespace-pre-wrap">
+            {bodyText.length > 0
+              ? bodyText
+              : "No message body was saved for this run."}
+          </div>
+        )}
       </div>
+    </Panel>
+  );
+}
+
+export function LinkClicksPanel({
+  model,
+}: {
+  readonly model: RunDetailModel;
+}) {
+  if (model.provider === "mailchimp") {
+    return (
+      <Panel title="Link clicks">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
+          <p>Link clicks are not available for Mailchimp imports.</p>
+        </div>
+      </Panel>
+    );
+  }
+
+  if (model.linkClicks.length === 0) {
+    return (
+      <Panel title="Link clicks">
+        <div className="space-y-2 text-[12.5px] leading-6 text-pretty text-slate-600">
+          <p>No link clicks recorded yet.</p>
+          <p>Only broadcasts sent after link tracking went live have data.</p>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel title="Link clicks">
+      <ul className="divide-y divide-slate-100">
+        {model.linkClicks.map((entry) => (
+          <li
+            key={entry.url}
+            className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
+          >
+            <a
+              href={entry.url}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-0 break-all text-[12px] font-medium text-slate-900 hover:text-slate-700"
+            >
+              {entry.url}
+            </a>
+            <div className="shrink-0 text-right">
+              <div className="text-[12px] font-medium tabular-nums text-slate-900">
+                {entry.totalClicks.toLocaleString()} clicks
+              </div>
+              <div className="text-[11px] tabular-nums text-slate-500">
+                {entry.uniqueClickers.toLocaleString()} unique
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
     </Panel>
   );
 }

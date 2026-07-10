@@ -10,7 +10,10 @@ import type {
 import { audienceCriteriaSchema } from "@as-comms/contracts";
 import { createCampaignRunProjectionReader } from "@as-comms/domain";
 
-import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+import {
+  aggregateBroadcastLinkClicksForRun,
+  getStage1WebRuntime,
+} from "@/src/server/stage1-runtime";
 
 import {
   listRunRecipients,
@@ -106,6 +109,11 @@ export interface RunDetailModel {
   readonly recentReplies: readonly ReplyPreviewRow[];
   readonly inboxRecipientsHref: string;
   readonly auditEntries: readonly RunAuditEntry[];
+  readonly linkClicks: readonly {
+    url: string;
+    totalClicks: number;
+    uniqueClickers: number;
+  }[];
   readonly audienceCriteria: AudienceCriteria;
   readonly projectLabelsById?: Readonly<Record<string, string>>;
   readonly canStopUnsent: boolean;
@@ -180,6 +188,13 @@ function buildMetricTiles(
       subtitle: null,
     },
     {
+      key: "sent",
+      label: "Sent",
+      value: counts.sent,
+      percentage: formatPercentage(counts.sent, total),
+      subtitle: "Accepted by Postmark",
+    },
+    {
       key: "delivered",
       label: "Delivered",
       value: counts.delivered,
@@ -245,6 +260,13 @@ function buildMailchimpMetricTiles(
       label: "Queued",
       value: aggregates.distinctMembers,
       percentage: formatPercentage(aggregates.distinctMembers, denominator),
+      subtitle: null,
+    },
+    {
+      key: "sent",
+      label: "Sent",
+      value: sent,
+      percentage: formatPercentage(sent, denominator),
       subtitle: null,
     },
     {
@@ -514,17 +536,25 @@ export async function getRunDetailModel(input: {
     return null;
   }
 
-  const [mailchimpAggregates, metricCounts, recipientQuery] =
+  const [mailchimpAggregates, metricCounts, recipientQuery, linkClicks] =
     provider === "mailchimp"
       ? await Promise.all([
           getMailchimpRepository(runtime).aggregateForCampaign(run.id),
           Promise.resolve<RunMetricCounts | null>(null),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
+          Promise.resolve<
+            readonly {
+              originalLink: string;
+              totalClicks: number;
+              uniqueClickers: number;
+            }[]
+          >([]),
         ])
       : await Promise.all([
           Promise.resolve<MailchimpCampaignAggregates | null>(null),
           readRunMetricCounts({ runId: run.id }),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
+          aggregateBroadcastLinkClicksForRun(run.id),
         ]);
   const totalAudience =
     provider === "mailchimp"
@@ -655,6 +685,11 @@ export async function getRunDetailModel(input: {
     recentReplies,
     inboxRecipientsHref: "/inbox",
     auditEntries: audits.map(buildAuditEntry),
+    linkClicks: linkClicks.map((entry) => ({
+      url: entry.originalLink,
+      totalClicks: entry.totalClicks,
+      uniqueClickers: entry.uniqueClickers,
+    })),
     audienceCriteria: run.audienceCriteria,
     projectLabelsById: buildProjectLabelsById(allProjects),
     canStopUnsent:

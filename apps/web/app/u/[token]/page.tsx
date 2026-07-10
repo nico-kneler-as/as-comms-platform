@@ -19,9 +19,14 @@ export default async function UnsubscribeTokenPage({
 }: PageProps) {
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const runtime = await getStage1WebRuntime();
+  const decodedToken = decodeURIComponent(token);
+
+  // Newsletter (and broadcast) unsubscribe is applied only via the POST
+  // confirm/all route handlers, never on a bare GET load — email clients and
+  // security scanners prefetch links, so a GET must stay side-effect free.
   const model = await loadUnsubscribePageModel({
     runtime,
-    token: decodeURIComponent(token),
+    token: decodedToken,
     requestedAllBanner: query.all === "1",
     confirmed: query.confirmed === "1" || query.all === "1",
   });

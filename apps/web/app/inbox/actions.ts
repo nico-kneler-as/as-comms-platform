@@ -10,7 +10,9 @@ import {
   CanonicalContactAmbiguityError,
   canSendTo,
   computePendingComposerOutboundFingerprint,
+  firstNameFromName,
   maskKnowledgeExample,
+  renderSignatureTemplate,
   smsMetrics,
   toE164,
 } from "@as-comms/domain";
@@ -886,6 +888,15 @@ function readAliasSignature(aliasRecord: Record<string, unknown>): string {
   return typeof signature === "string" && signature.trim().length > 0
     ? signature
     : "";
+}
+
+function resolveComposerSignature(input: {
+  readonly signatureTemplate: string;
+  readonly operatorName: string | null | undefined;
+}): string {
+  return renderSignatureTemplate(input.signatureTemplate, {
+    operatorFirstName: firstNameFromName(input.operatorName),
+  });
 }
 
 function appendSignature(bodyPlaintext: string, signature: string): string {
@@ -2089,9 +2100,13 @@ export async function sendComposerAction(
     return mapComposerProviderError(requestId, "invalid_recipient");
   }
 
-  const signature = readAliasSignature(
-    alias as unknown as Record<string, unknown>,
-  );
+  const signatureTemplate =
+    parsedInput.data.signatureOverride ??
+    readAliasSignature(alias as unknown as Record<string, unknown>);
+  const signature = resolveComposerSignature({
+    signatureTemplate,
+    operatorName: currentUser.name,
+  });
   const cc = normalizeEmailAddresses(parsedInput.data.cc);
   const bcc = normalizeEmailAddresses(parsedInput.data.bcc);
   const bodyPlaintext = appendSignature(

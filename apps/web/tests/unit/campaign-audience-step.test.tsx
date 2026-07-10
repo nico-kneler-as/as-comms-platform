@@ -35,6 +35,13 @@ vi.mock("@/components/ui/input", () => ({
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
 import { AudienceBuilderStep } from "../../app/broadcasts/new/_components/audience-builder-step";
 import type {
   AudienceBuilderBootstrap,
@@ -126,6 +133,9 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   volunteerSearchRows: [],
   volunteerSearchLoading: false,
   volunteerSearchErrorMessage: null,
+  csvUploadSummary: null,
+  csvUploadPending: false,
+  csvUploadErrorMessage: null,
   projectOptions: [],
   statusOptions: ["Waitlist"],
   statusCounts: {},
@@ -137,6 +147,7 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   onStatusToggle: () => undefined,
   onVolunteerSearchQueryChange: () => undefined,
   onVolunteerToggle: () => undefined,
+  onCsvUpload: () => Promise.resolve(),
   onBack: () => undefined,
   onContinue: () => undefined,
 };
@@ -198,6 +209,37 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
     expect(markup).not.toContain("Audience filters");
     expect(markup).not.toContain("Find volunteers");
+  });
+
+  it("renders the CSV upload surface for project email audiences", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        availableModes={["project_status", "specific", "csv_upload"]}
+        criteria={{
+          ...baseProps.criteria,
+          initialFilter: "csv_upload",
+        }}
+        countState={{
+          count: 2,
+          hasAppliedFilters: true,
+        }}
+        csvUploadSummary={{
+          importedCount: 2,
+          invalidSkippedCount: 1,
+          duplicatesRemovedCount: 1,
+          sample: [],
+        }}
+      />,
+    );
+
+    expect(markup).toContain("Import CSV");
+    expect(markup).toContain("CSV with `email` and optional `firstName` / `lastName` columns.");
+    expect(markup).toContain("Imported");
+    expect(markup).toContain("Duplicates removed");
+    expect(markup).not.toContain("Find volunteers");
+    expect(markup).not.toContain("Audience filters");
   });
 
   it("renders only the project and status surface in project mode", () => {
@@ -271,6 +313,93 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("Audience filters");
     expect(markup).not.toContain("Member status");
     expect(markup).not.toContain("Toggle expedition-member status");
+  });
+
+  it("renders the SMS project picker in individual mode and blocks continue until a project is chosen", () => {
+    const invalidMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        singleSelectProjects={true}
+        projectOptions={[
+          {
+            id: "project-1",
+            name: "Restoring Butternut Forest Health",
+            alias: null,
+            projectAlias: "Beech & Butternut",
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          {
+            id: "project-2",
+            name: "Saving American Beech",
+            alias: null,
+            projectAlias: "Beech & Butternut",
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+        ]}
+        criteria={{
+          ...baseProps.criteria,
+          contactIds: ["contact-1"],
+          initialFilter: "specific",
+        }}
+        countState={{
+          count: 1,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+    const validMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        singleSelectProjects={true}
+        projectOptions={[
+          {
+            id: "project-1",
+            name: "Restoring Butternut Forest Health",
+            alias: null,
+            projectAlias: "Beech & Butternut",
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          {
+            id: "project-2",
+            name: "Saving American Beech",
+            alias: null,
+            projectAlias: "Beech & Butternut",
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+        ]}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          contactIds: ["contact-1"],
+          initialFilter: "specific",
+        }}
+        countState={{
+          count: 1,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+
+    expect(invalidMarkup).toContain("Audience filters");
+    expect(invalidMarkup).toContain("Restoring Butternut Forest Health");
+    expect(invalidMarkup).toContain("Saving American Beech");
+    expect(invalidMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+    expect(validMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
   });
 
   it("renders human project aliases for volunteer search results and preview rows", () => {
@@ -623,18 +752,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -872,18 +992,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -1120,18 +1231,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -1163,5 +1265,300 @@ describe("AudienceBuilderStep initial filter gate", () => {
         '[aria-label="Project Saving American Beech is locked to this sender alias"]',
       ),
     ).toBeNull();
+  });
+
+  it("lists active projects and uses single-select reachable status counts on the SMS path", async () => {
+    setupDom();
+
+    const loadMemberStatusCountsForProjects = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { Waitlist: 4 },
+      }),
+    );
+    const resolveAudienceCountAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: { count: 4, hasAppliedFilters: true },
+      }),
+    );
+    const previewAudienceAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const searchProjectVolunteersAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: [],
+      }),
+    );
+    const loadComposePreviewAction = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        data: {
+          audienceSize: 0,
+          sampleIndex: 0,
+          sampleCount: 0,
+          sample: null,
+          warningCount: 0,
+          affectedContacts: [],
+          footerAddress: null,
+        },
+      }),
+    );
+    const saveCampaignWizardDraftAction = vi.fn(
+      (
+        input: {
+          readonly runId: string;
+          readonly launchType: "normal_email" | "html_email" | "sms";
+          readonly kind: "project" | "newsletter";
+          readonly name: string | null;
+          readonly fromEmail: string | null;
+          readonly replyToEmail: string | null;
+          readonly subjectTemplate: string | null;
+          readonly bodyHtmlTemplate: string | null;
+          readonly bodyTextTemplate: string | null;
+          readonly preheader: string | null;
+          readonly audienceCriteria: CampaignWizardDraftData["audienceCriteria"];
+          readonly audienceSize: number | null;
+        },
+      ) => ({
+        ok: true as const,
+        data: {
+          runId: input.runId,
+          launchType: input.launchType,
+          kind: input.kind,
+          name: input.name,
+          fromEmail: input.fromEmail,
+          replyToEmail: input.replyToEmail,
+          subjectTemplate: input.subjectTemplate,
+          bodyDesignJson: null,
+          bodyHtmlTemplate: input.bodyHtmlTemplate,
+          bodyTextTemplate: input.bodyTextTemplate,
+          preheader: input.preheader,
+          audienceCriteria: input.audienceCriteria,
+          audienceSize: input.audienceSize,
+          state: "draft" as const,
+          scheduledAt: null,
+          updatedAt: "2026-05-20T12:00:00.000Z",
+          operatorEmail: "operator@example.com",
+        },
+      }),
+    );
+
+    vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadMemberStatusCountsForProjects,
+      loadComposePreviewAction,
+      loadSelectedAliasSignatureAction: vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: "" }),
+      ),
+      previewAudienceAction,
+      resolveAudienceCountAction,
+      saveCampaignWizardDraftAction,
+      searchProjectVolunteersAction,
+    }));
+    vi.doMock("../../app/broadcasts/actions", () => ({
+      previewSmsBroadcast: vi.fn(),
+      schedule: vi.fn(),
+      sendNow: vi.fn(),
+      sendSmsBroadcastNow: vi.fn(),
+      sendSmsBroadcastTest: vi.fn(),
+      testSend: vi.fn(),
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/launch-type-step", () => ({
+      LaunchTypeStep: ({ onContinue }: { readonly onContinue: () => void }) => (
+        <button onClick={onContinue}>Launch continue</button>
+      ),
+    }));
+    vi.doMock(
+      "../../app/broadcasts/new/_components/name-and-sender-step",
+      () => ({
+        NameAndSenderStep: ({
+          onContinue,
+        }: {
+          readonly onContinue: () => void;
+        }) => <button onClick={onContinue}>Sender continue</button>,
+      }),
+    );
+    vi.doMock("../../app/broadcasts/new/_components/compose-step", () => ({
+      ComposeStep: () => <div>Compose</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/preview-step", () => ({
+      PreviewStep: () => <div>Preview</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/review-step", () => ({
+      ReviewStep: () => <div>Review</div>,
+    }));
+    vi.doMock("../../app/broadcasts/new/_components/wizard-rail", () => ({
+      WizardRail: () => null,
+    }));
+    vi.doUnmock("../../app/broadcasts/new/_components/audience-builder-step");
+
+    const { NewCampaignWizard } =
+      await import("../../app/broadcasts/new/_components/new-campaign-wizard");
+
+    const bootstrap: AudienceBuilderBootstrap = {
+      projects: [
+        {
+          host: {
+            id: "project-1",
+            name: "Restoring Butternut Forest Health",
+            alias: null,
+            projectAlias: "Butternut",
+            aliasHint: "forests@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          connectedSubs: [],
+        },
+        {
+          host: {
+            id: "project-2",
+            name: "Saving American Beech",
+            alias: null,
+            projectAlias: "Beech",
+            aliasHint: "beech@",
+            connectedToProjectId: null,
+            isSubProject: false,
+          },
+          connectedSubs: [],
+        },
+      ],
+      expeditions: [],
+      statuses: ["Waitlist"],
+      senderOptions: [],
+      activeSmsSender: {
+        id: "sms-sender-1",
+        displayName: "Adventure Scientists",
+        phoneE164: "+14065550199",
+      },
+    };
+    const draft: CampaignWizardDraftData = {
+      runId: "run-1",
+      launchType: "sms",
+      kind: "project",
+      name: null,
+      fromEmail: null,
+      replyToEmail: null,
+      subjectTemplate: null,
+      bodyDesignJson: null,
+      bodyHtmlTemplate: null,
+      bodyTextTemplate: null,
+      preheader: null,
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      audienceSize: null,
+      state: "draft",
+      scheduledAt: null,
+      updatedAt: "2026-05-20T12:00:00.000Z",
+      operatorEmail: "operator@example.com",
+    };
+
+    act(() => {
+      root?.render(
+        <NewCampaignWizard
+          bootstrap={bootstrap}
+          draft={draft}
+          isAdmin={true}
+        />,
+      );
+    });
+    await settleAsyncWork();
+
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
+    const senderContinueButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Sender continue");
+    if (!(senderContinueButton instanceof HTMLButtonElement)) {
+      throw new Error("Sender continue button not found");
+    }
+
+    act(() => {
+      senderContinueButton.click();
+    });
+    await settleAsyncWork();
+
+    const projectStatusButton = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent.includes("Project / status"));
+    if (!(projectStatusButton instanceof HTMLButtonElement)) {
+      throw new Error("Project / status chooser button not found");
+    }
+
+    act(() => {
+      projectStatusButton.click();
+    });
+    await settleAsyncWork();
+
+    const continueButtonBeforeProject = Array.from(
+      document.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Continue");
+    if (!(continueButtonBeforeProject instanceof HTMLButtonElement)) {
+      throw new Error("Continue button not found");
+    }
+
+    expect(continueButtonBeforeProject.disabled).toBe(true);
+
+    let projectButtons = Array.from(document.querySelectorAll("button")).filter(
+      (button) =>
+        button.getAttribute("aria-label")?.startsWith("Choose project "),
+    );
+    expect(projectButtons).toHaveLength(2);
+
+    const firstProjectButton = projectButtons[0];
+    if (!(firstProjectButton instanceof HTMLButtonElement)) {
+      throw new Error("First SMS project button not found");
+    }
+
+    act(() => {
+      firstProjectButton.click();
+    });
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    expect(loadMemberStatusCountsForProjects).toHaveBeenLastCalledWith(
+      ["project-1"],
+      "sms",
+    );
+
+    projectButtons = Array.from(document.querySelectorAll("button")).filter(
+      (button) =>
+        button.getAttribute("aria-label")?.startsWith("Choose project "),
+    );
+    expect(projectButtons[0]?.getAttribute("aria-pressed")).toBe("true");
+
+    const secondProjectButton = projectButtons[1];
+    if (!(secondProjectButton instanceof HTMLButtonElement)) {
+      throw new Error("Second SMS project button not found");
+    }
+
+    act(() => {
+      secondProjectButton.click();
+    });
+    await settleAsyncWork();
+    await settleAsyncWork();
+
+    projectButtons = Array.from(document.querySelectorAll("button")).filter(
+      (button) =>
+        button.getAttribute("aria-label")?.startsWith("Choose project "),
+    );
+    expect(loadMemberStatusCountsForProjects).toHaveBeenLastCalledWith(
+      ["project-2"],
+      "sms",
+    );
+    expect(projectButtons[0]?.getAttribute("aria-pressed")).toBe("false");
+    expect(projectButtons[1]?.getAttribute("aria-pressed")).toBe("true");
   });
 });

@@ -218,6 +218,9 @@ export function useComposerSubmit({
       subject: state.subject.trim(),
       bodyPlaintext: state.body.trim(),
       bodyHtml: state.bodyHtml,
+      ...(state.signatureOverride !== null
+        ? { signatureOverride: state.signatureOverride }
+        : {}),
       ...(resolvedCc.emails.length > 0 ? { cc: [...resolvedCc.emails] } : {}),
       ...(resolvedBcc.emails.length > 0
         ? { bcc: [...resolvedBcc.emails] }

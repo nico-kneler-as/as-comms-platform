@@ -246,12 +246,18 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
     body,
     bccRecipients,
     ccRecipients,
+    composerAliases,
+    hasSignatureOverride,
     onBodyChange,
     onCancel,
     onAiDirectiveChange,
+    onAliasChange,
     onBccChange,
     onCcChange,
     onRecipientChange,
+    onResetSignature,
+    onSend,
+    onSignatureChange,
     onSubjectChange,
     onToggleBcc,
     onToggleCc,
@@ -259,6 +265,8 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
     recipientAutoFocus,
     runAiDraftDisabled,
     runAiDraftDisabledReason,
+    selectedAlias,
+    selectedAliasSignature,
     showAiDraftAffordances,
     showBcc,
     showCc,
@@ -275,12 +283,17 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       readonly kind: "email";
       readonly emailAddress: string;
     }[];
+    readonly composerAliases: readonly {
+      readonly alias: string;
+    }[];
+    readonly hasSignatureOverride: boolean;
     readonly onBodyChange: (value: {
       readonly bodyPlaintext: string;
       readonly bodyHtml: string;
     }) => void;
     readonly onCancel: () => void;
     readonly onAiDirectiveChange: (value: string) => void;
+    readonly onAliasChange: (value: string | null) => void;
     readonly onBccChange: (
       recipients: readonly {
         readonly kind: "email";
@@ -299,6 +312,9 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
         readonly emailAddress: string;
       } | null,
     ) => void;
+    readonly onResetSignature: () => void;
+    readonly onSend: (sendKind: "send" | "send-and-save") => void;
+    readonly onSignatureChange: (value: string) => void;
     readonly onSubjectChange: (value: string) => void;
     readonly onToggleBcc: (open: boolean) => void;
     readonly onToggleCc: (open: boolean) => void;
@@ -309,6 +325,8 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
     readonly recipientAutoFocus?: boolean;
     readonly runAiDraftDisabled: boolean;
     readonly runAiDraftDisabledReason: string | null;
+    readonly selectedAlias: string | null;
+    readonly selectedAliasSignature: string;
     readonly showAiDraftAffordances?: boolean;
     readonly showBcc: boolean;
     readonly showCc: boolean;
@@ -328,6 +346,24 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       return createElement(
         "div",
         { "data-testid": "email-surface" },
+        createElement(
+          "div",
+          { "data-testid": "selected-alias" },
+          selectedAlias ?? "",
+        ),
+        composerAliases.map((alias) =>
+          createElement(
+            "button",
+            {
+              key: alias.alias,
+              type: "button",
+              onClick: () => {
+                onAliasChange(alias.alias);
+              },
+            },
+            `Use alias ${alias.alias}`,
+          ),
+        ),
         createElement("input", {
           ref: recipientRef,
           "aria-label": "Recipient",
@@ -378,6 +414,33 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
           },
           value: body,
         } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+        createElement(
+          "button",
+          {
+            type: "button",
+          },
+          "Edit signature",
+        ),
+        createElement("textarea", {
+          "aria-label": "Message signature",
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+            onSignatureChange(event.currentTarget.value);
+          },
+          onInput: (event: ReactInputEvent<HTMLTextAreaElement>) => {
+            onSignatureChange(event.currentTarget.value);
+          },
+          value: selectedAliasSignature,
+        } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
+        hasSignatureOverride
+          ? createElement(
+              "button",
+              {
+                type: "button",
+                onClick: onResetSignature,
+              },
+              "Reset signature",
+            )
+          : null,
         showAiDraftAffordances !== false
           ? createElement("textarea", {
               "aria-label": "AI directive",
@@ -504,6 +567,16 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
             ),
           ),
         ),
+        createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => {
+              onSend("send");
+            },
+          },
+          "Send email",
+        ),
         createElement("button", { onClick: onCancel, type: "button" }, "Cancel"),
       );
     }),
@@ -555,6 +628,7 @@ import type {
   InboxComposerAliasOption,
   InboxComposerReplyContext,
 } from "../../app/inbox/_lib/view-models";
+import { sendComposerAction } from "../../app/inbox/actions";
 import {
   InboxClientProvider,
   useInboxClient,
@@ -584,6 +658,16 @@ const composerAliases: readonly InboxComposerAliasOption[] = [
     projectId: "project:whitebark",
     projectName: "Whitebark Pine",
     signature: "Thanks,\nWhitebark Pine",
+    isAiReady: true,
+    isAiConfigured: true,
+    hasCachedContent: true,
+  },
+  {
+    id: "alias:coastal",
+    alias: "coastal@adventurescientists.org",
+    projectId: "project:coastal",
+    projectName: "Coastal Survey",
+    signature: "Warmly,\nCoastal Survey",
     isAiReady: true,
     isAiConfigured: true,
     hasCachedContent: true,
@@ -628,6 +712,7 @@ afterEach(async () => {
   activeSession = null;
   routerPush.mockReset();
   routerRefresh.mockReset();
+  vi.mocked(sendComposerAction).mockReset();
 });
 
 function invokeTimerHandler(
@@ -1130,5 +1215,70 @@ describe("composer canonical modal", () => {
 
     expect(getStateText()).toBe("new-draft:pill");
     expect(document.querySelector("[role='region']")).not.toBeNull();
+  });
+
+  it("includes an edited signature override in the send payload", async () => {
+    vi.mocked(sendComposerAction).mockResolvedValue({
+      ok: true,
+      data: {
+        pendingOutboundId: "pending-1",
+        canonicalContactId: "contact:maya",
+        threadId: "thread:gmail-1",
+        clientGeneratedId: "client-1",
+      },
+      requestId: "request-1",
+    });
+
+    await mount(<TestApp />);
+
+    await click(getByText("Open reply draft"));
+    await changeValue(getTextarea("Message body"), "Please bring your field kit.");
+    await changeValue(getTextarea("Message signature"), "Best,\nMaya Team");
+    await click(getByText("Send email"));
+    await flushReact();
+
+    expect(sendComposerAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        alias: "whitebark@adventurescientists.org",
+        bodyPlaintext: "Please bring your field kit.",
+        signatureOverride: "Best,\nMaya Team",
+      }),
+    );
+  });
+
+  it("clears the signature override when the alias changes", async () => {
+    vi.mocked(sendComposerAction).mockResolvedValue({
+      ok: true,
+      data: {
+        pendingOutboundId: "pending-2",
+        canonicalContactId: "contact:maya",
+        threadId: "thread:gmail-1",
+        clientGeneratedId: "client-2",
+      },
+      requestId: "request-2",
+    });
+
+    await mount(<TestApp />);
+
+    await click(getByText("Open reply draft"));
+    await changeValue(getTextarea("Message body"), "Please bring your field kit.");
+    await changeValue(getTextarea("Message signature"), "Best,\nOne-off reply");
+    await click(
+      getByText("Use alias coastal@adventurescientists.org"),
+    );
+
+    expect(getTextarea("Message signature").value).toBe(
+      "Warmly,\nCoastal Survey",
+    );
+
+    await click(getByText("Send email"));
+    await flushReact();
+
+    const firstCall = vi.mocked(sendComposerAction).mock.calls[0]?.[0];
+    expect(firstCall).toMatchObject({
+      alias: "coastal@adventurescientists.org",
+      bodyPlaintext: "Please bring your field kit.",
+    });
+    expect(firstCall).not.toHaveProperty("signatureOverride");
   });
 });

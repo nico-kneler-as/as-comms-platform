@@ -174,7 +174,14 @@ describe("PreviewStep", () => {
     expect(markup).toContain("SMS preview");
     expect(markup).toContain("9 reachable of 12 selected");
     expect(markup).toContain("≈ 14 segments · ~$0.1106");
-    expect(markup).toContain("Hi Sam Reply STOP to opt out.");
+    expect(markup).toContain("Hi Sam");
+    expect(markup).toContain("Reply STOP to opt out.");
+    expect(markup).toContain("bg-slate-100");
+    expect(markup).toContain("text-slate-900");
     expect(markup).toContain("Send test SMS to");
+    expect(markup).not.toContain("No consent");
+    expect(markup).not.toContain("Revoked");
+    expect(markup).not.toContain("No phone");
+    expect(markup).not.toContain("Duplicate phones suppressed");
   });
 });

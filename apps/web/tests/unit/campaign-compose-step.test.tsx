@@ -239,6 +239,27 @@ describe("ComposeStep snapshots", () => {
     expect(markup).not.toContain("Next sample contact");
   });
 
+  it("rehydrates the upload textarea from persisted bodyHtml on mount", () => {
+    const uploaded =
+      "<!doctype html><html><body><p>Corals survey CTA</p></body></html>";
+    const markup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="html_email"
+        savedDesign={null}
+        bodyHtml={uploaded}
+      />,
+    );
+
+    // Upload-mode paste box is seeded with the persisted HTML (was empty before
+    // the fix — the "lost file" symptom when returning to this step).
+    expect(markup).toContain("campaign-html-paste");
+    expect(markup).toContain("&lt;p&gt;Corals survey CTA&lt;/p&gt;");
+    expect(markup).toContain("{{firstName}}");
+    expect(markup).toContain("{{projectName}}");
+    expect(markup).toContain("{{aliasEmail}}");
+  });
+
   it("renders populated subject and body controls", () => {
     expect(
       renderToStaticMarkup(
@@ -307,7 +328,7 @@ describe("ComposeStep snapshots", () => {
     );
   });
 
-  it("renders the Unlayer host for html_email", () => {
+  it("renders the Unlayer host, merge tags, and media-library link for html_email", () => {
     const markup = renderToStaticMarkup(
       <ComposeStep
         {...baseProps}
@@ -321,6 +342,12 @@ describe("ComposeStep snapshots", () => {
     expect(markup).toContain('data-unlayer-host="true"');
     expect(markup).toContain("Design in editor");
     expect(markup).toContain("Upload HTML");
+    expect(markup).toContain("{{firstName}}");
+    expect(markup).toContain("{{projectName}}");
+    expect(markup).toContain("{{aliasEmail}}");
+    expect(markup).toContain('href="/broadcasts/media"');
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noopener noreferrer"');
   });
 
   it("passes savedDesign through to the Unlayer host", () => {
@@ -371,9 +398,9 @@ describe("ComposeStep HTML upload mode", () => {
     expect(
       document.querySelector("textarea#campaign-html-paste"),
     ).not.toBeNull();
-    expect(document.body.textContent).toContain(
-      "Need image URLs? Open the media library ->",
-    );
+    expect(document.body.textContent).toContain("{{firstName}}");
+    expect(document.body.textContent).toContain("{{projectName}}");
+    expect(document.body.textContent).toContain("{{aliasEmail}}");
   });
 
   it("processes pasted html through prepareUploadedHtml, shows warnings, and clears design json", () => {

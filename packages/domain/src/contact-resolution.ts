@@ -59,6 +59,11 @@ export interface PhoneIdentityResolutionInput {
       readonly lastActivityAt: string | null;
     } | null>;
   };
+  readonly readConsentRecords?: {
+    readonly findLatestByPhone: (
+      phoneE164: string,
+    ) => Promise<{ readonly contactId: string | null } | null>;
+  };
   readonly writeContacts: {
     readonly upsert: (record: ContactInsertRecord) => Promise<ContactRecord>;
   };
@@ -161,6 +166,21 @@ function compareNullableIsoDesc(left: string | null, right: string | null): numb
   return right.localeCompare(left);
 }
 
+async function resolveConsentAnchoredContact(
+  input: Pick<PhoneIdentityResolutionInput, "readConsentRecords" | "readContacts">,
+  phoneE164: string,
+): Promise<ContactRecord | null> {
+  const latestConsent =
+    await input.readConsentRecords?.findLatestByPhone(phoneE164);
+  const contactId = latestConsent?.contactId ?? null;
+
+  if (contactId === null) {
+    return null;
+  }
+
+  return input.readContacts.findById(contactId);
+}
+
 export async function resolveContactByPhoneFromIdentities(
   input: PhoneIdentityResolutionInput,
 ): Promise<PhoneIdentityResolutionResult> {
@@ -177,6 +197,42 @@ export async function resolveContactByPhoneFromIdentities(
 
   if (candidateContactIds.length === 0) {
     const nowIso = input.clock.now().toISOString();
+
+    const consentAnchored = await resolveConsentAnchoredContact(
+      input,
+      phoneE164,
+    );
+
+    if (consentAnchored !== null) {
+      await input.writeContactIdentities.upsert({
+        id: input.idGenerator(),
+        contactId: consentAnchored.id,
+        kind: "phone",
+        normalizedValue: phoneE164,
+        isPrimary:
+          consentAnchored.primaryPhone === null ||
+          consentAnchored.primaryPhone === "",
+        source: "system",
+        verifiedAt: null,
+      });
+
+      let contact = consentAnchored;
+
+      if (contact.primaryPhone === null || contact.primaryPhone === "") {
+        contact = await input.writeContacts.upsert({
+          ...contact,
+          primaryPhone: phoneE164,
+          updatedAt: nowIso,
+        });
+      }
+
+      return {
+        contact,
+        isNewlyCreated: false,
+        ambiguousCandidateContactIds: [],
+      };
+    }
+
     const contactId = input.idGenerator();
 
     try {

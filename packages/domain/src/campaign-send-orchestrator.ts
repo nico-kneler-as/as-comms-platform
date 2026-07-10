@@ -54,6 +54,8 @@ interface PostmarkClientLike {
       readonly HtmlBody?: string;
       readonly TextBody?: string;
       readonly MessageStream?: string;
+      readonly TrackOpens?: boolean;
+      readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
       readonly Metadata?: Record<string, string>;
       readonly Headers?: readonly {
         readonly Name: string;
@@ -239,6 +241,10 @@ async function readFrozenResult(
 export function createCampaignSendOrchestrator(deps: {
   repositories: CampaignSendRepositories;
   audienceResolver: AudienceResolver;
+  resolveUploadedAudience?: (
+    run: CampaignRunRecord,
+    at: Date,
+  ) => Promise<readonly AudienceMember[]>;
   exclusionFilter: ExclusionFilter;
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
@@ -287,10 +293,13 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
       }
 
-      const members = filterAudienceMembersBySelectedContacts(
-        await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
-        run,
-      );
+      const members =
+        run.audienceCriteria.initialFilter === "csv_upload"
+          ? await deps.resolveUploadedAudience?.(run, at) ?? []
+          : filterAudienceMembersBySelectedContacts(
+              await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
+              run,
+            );
       const exclusions = await deps.exclusionFilter.applyExclusions(
         members,
         runId,
@@ -406,6 +415,8 @@ export function createCampaignSendOrchestrator(deps: {
             readonly HtmlBody: string;
             readonly TextBody: string;
             readonly MessageStream: string;
+            readonly TrackOpens: boolean;
+            readonly TrackLinks: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
             readonly Metadata: Record<string, string>;
             readonly Headers: readonly {
               readonly Name: string;
@@ -478,6 +489,11 @@ export function createCampaignSendOrchestrator(deps: {
               HtmlBody: rendered.html,
               TextBody: rendered.text,
               MessageStream: broadcastMessageStream,
+              // Request open + link tracking so Postmark emits Open/Click
+              // webhook events; without these the broadcast detail metrics
+              // (and the link click map) can never populate.
+              TrackOpens: true,
+              TrackLinks: "HtmlAndText",
               Metadata: {
                 campaignRunId: runId,
                 audienceSnapshotId: snapshot.id,

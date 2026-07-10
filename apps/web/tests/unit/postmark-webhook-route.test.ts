@@ -1,8 +1,8 @@
-import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  broadcastLinkClicks,
   createStage5RepositoryBundle,
   postmarkWebhookDeadLetter,
 } from "@as-comms/db";
@@ -28,14 +28,13 @@ function loadFixture(name: string): string {
 }
 
 function signRequest(rawBody: string): Request {
-  const signature = createHmac("sha256", SIGNING_SECRET)
-    .update(rawBody, "utf8")
-    .digest("base64");
+  // Postmark can't HMAC-sign payloads; the endpoint authenticates via a
+  // static shared-secret custom header equal to POSTMARK_WEBHOOK_SIGNING_SECRET.
   return new Request("http://localhost/api/webhooks/postmark", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-postmark-signature": signature,
+      "x-postmark-signature": SIGNING_SECRET,
     },
     body: rawBody,
   });
@@ -43,6 +42,10 @@ function signRequest(rawBody: string): Request {
 
 async function listDeadLetters(runtime: Stage1WebTestRuntime) {
   return runtime.context.db.select().from(postmarkWebhookDeadLetter);
+}
+
+async function listLinkClicks(runtime: Stage1WebTestRuntime) {
+  return runtime.context.db.select().from(broadcastLinkClicks);
 }
 
 async function seedRunAndSnapshot(
@@ -346,7 +349,7 @@ describe("Postmark webhook route handler", () => {
     expect(snapshots[0]?.openedAt).not.toBeNull();
   });
 
-  it("records the click event with activity='click' on the snapshot", async () => {
+  it("records the click event with URL/context and stays idempotent on replay", async () => {
     if (runtime === null) {
       throw new Error("Runtime not initialized.");
     }
@@ -354,13 +357,49 @@ describe("Postmark webhook route handler", () => {
     await seedRunAndSnapshot(runtime, campaigns);
 
     const rawBody = loadFixture("click.json");
-    const response = await POST(signRequest(rawBody));
-    expect(response.status).toBe(200);
+    const firstResponse = await POST(signRequest(rawBody));
+    const secondResponse = await POST(signRequest(rawBody));
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
 
     const snapshots = await campaigns.audienceSnapshots.listForRun(
       "run-project-postmark",
     );
     expect(snapshots[0]?.clickedAt).not.toBeNull();
+
+    const linkClicks = await listLinkClicks(runtime);
+    expect(linkClicks).toHaveLength(1);
+    expect(linkClicks[0]).toMatchObject({
+      campaignRunId: "run-project-postmark",
+      audienceSnapshotId: "snapshot-postmark",
+      contactId: "contact-postmark",
+      originalLink: "https://example.com",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5)",
+      platform: "Desktop",
+      client: {
+        Name: "Chrome 35.0.1916.153",
+        Company: "Google",
+        Family: "Chrome",
+      },
+      os: {
+        Name: "OS X 10.7 Lion",
+        Company: "Apple Computer, Inc.",
+        Family: "OS X 10",
+      },
+      geo: {
+        CountryISOCode: "RS",
+        Country: "Serbia",
+        RegionISOCode: "VO",
+        Region: "Autonomna Pokrajina Vojvodina",
+        City: "Novi Sad",
+        Zip: "21000",
+        Coords: "45.2517,19.8369",
+        IP: "8.8.8.8",
+      },
+    });
+    expect(linkClicks[0]?.clickedAt.toISOString()).toBe(
+      "2017-10-25T15:21:11.906Z",
+    );
   });
 
   it("records a recipient-initiated unsubscribe as contact_consent on the project scope", async () => {

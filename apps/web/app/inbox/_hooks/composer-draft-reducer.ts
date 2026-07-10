@@ -47,6 +47,7 @@ export interface ComposerDraftState {
   readonly showCc: boolean;
   readonly showBcc: boolean;
   readonly selectedAlias: string | null;
+  readonly signatureOverride: string | null;
   readonly subject: string;
   readonly body: string;
   readonly bodyHtml: string;
@@ -86,6 +87,10 @@ export type ComposerDraftAction =
   | { readonly type: "TOGGLE_CC"; readonly open: boolean }
   | { readonly type: "TOGGLE_BCC"; readonly open: boolean }
   | { readonly type: "SET_ALIAS"; readonly alias: string | null }
+  | {
+      readonly type: "SET_SIGNATURE_OVERRIDE";
+      readonly value: string | null;
+    }
   | { readonly type: "SET_SUBJECT"; readonly subject: string }
   | {
       readonly type: "SET_BODY";
@@ -130,6 +135,7 @@ export const INITIAL_COMPOSER_DRAFT_STATE: ComposerDraftState = {
   showCc: false,
   showBcc: false,
   selectedAlias: null,
+  signatureOverride: null,
   subject: "",
   body: "",
   bodyHtml: "",
@@ -160,6 +166,19 @@ function clearErrors(state: ComposerDraftState): ComposerDraftState {
     inlineError: null,
     fieldErrors: [],
   };
+}
+
+function clearSignatureOverrideOnAliasChange(
+  state: ComposerDraftState,
+  nextAlias: string | null,
+): ComposerDraftState {
+  return nextAlias === state.selectedAlias
+    ? state
+    : {
+        ...state,
+        selectedAlias: nextAlias,
+        signatureOverride: null,
+      };
 }
 
 export function reduceComposerDraft(
@@ -259,6 +278,7 @@ export function reduceComposerDraft(
         return {
           ...state,
           activeTab: "sms",
+          signatureOverride: null,
           smsBody: action.draft.bodyPlaintext,
           smsSelectedSenderId:
             state.smsSelectedSenderId ??
@@ -274,6 +294,7 @@ export function reduceComposerDraft(
         return {
           ...state,
           activeTab: "note",
+          signatureOverride: null,
           body: action.draft.bodyPlaintext,
           bodyHtml: action.draft.bodyHtml,
           inlineError: null,
@@ -292,6 +313,7 @@ export function reduceComposerDraft(
         showCc: draftCc.length > 0,
         showBcc: draftBcc.length > 0,
         selectedAlias: action.draft.selectedAlias,
+        signatureOverride: null,
         attachments: action.draft.attachments.map((attachment, index) => ({
           id: `draft:${attachment.filename}:${String(attachment.size)}:${String(index)}`,
           filename: attachment.filename,
@@ -305,18 +327,21 @@ export function reduceComposerDraft(
       };
     }
     case "SET_RECIPIENT":
-      return clearErrors({
-        ...state,
-        recipient: action.recipient,
-        selectedAlias:
+      return clearErrors(
+        clearSignatureOverrideOnAliasChange(
+          {
+            ...state,
+            recipient: action.recipient,
+          },
           state.selectedAlias ??
-          (action.isReplying
-            ? null
-            : resolveDefaultAlias({
-                recipient: action.recipient,
-                aliases: action.aliases,
-              })),
-      });
+            (action.isReplying
+              ? null
+              : resolveDefaultAlias({
+                  recipient: action.recipient,
+                  aliases: action.aliases,
+                })),
+        ),
+      );
     case "SET_CC":
       return clearErrors({ ...state, cc: action.recipients });
     case "SET_BCC":
@@ -334,7 +359,9 @@ export function reduceComposerDraft(
         bcc: action.open ? state.bcc : [],
       });
     case "SET_ALIAS":
-      return clearErrors({ ...state, selectedAlias: action.alias });
+      return clearErrors(clearSignatureOverrideOnAliasChange(state, action.alias));
+    case "SET_SIGNATURE_OVERRIDE":
+      return clearErrors({ ...state, signatureOverride: action.value });
     case "SET_SUBJECT":
       return clearErrors({ ...state, subject: action.subject });
     case "SET_BODY":

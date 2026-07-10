@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 import type { CampaignKind, ContactConsentRecord } from "@as-comms/contracts";
 import { createConsentLedger } from "@as-comms/domain";
 
@@ -29,6 +31,100 @@ export interface UnsubscribeTarget {
   readonly runId: string;
   readonly kind: CampaignKind;
   readonly project: ResolvedProjectScope;
+}
+
+const DIRECT_NEWSLETTER_TOKEN_PREFIX = "ns";
+
+function readDirectNewsletterTokenSecret(): string {
+  const configured = process.env.AUTH_SECRET?.trim();
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    return "dev-newsletter-unsubscribe-secret";
+  }
+
+  throw new Error("AUTH_SECRET is required for newsletter unsubscribe links.");
+}
+
+function signDirectNewsletterToken(newsletterSubscriberId: string): string {
+  return createHmac("sha256", readDirectNewsletterTokenSecret())
+    .update(`newsletter-subscriber:${newsletterSubscriberId}`)
+    .digest("base64url");
+}
+
+function parseDirectNewsletterToken(
+  token: string,
+): { readonly newsletterSubscriberId: string } | null {
+  const [prefix, newsletterSubscriberId, signature, extra] = token.split(".");
+
+  if (
+    prefix !== DIRECT_NEWSLETTER_TOKEN_PREFIX ||
+    newsletterSubscriberId === undefined ||
+    signature === undefined ||
+    extra !== undefined ||
+    newsletterSubscriberId.trim().length === 0 ||
+    signature.trim().length === 0
+  ) {
+    return null;
+  }
+
+  let expectedSignature: string;
+
+  try {
+    expectedSignature = signDirectNewsletterToken(newsletterSubscriberId);
+  } catch {
+    return null;
+  }
+
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (
+    actualBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(actualBuffer, expectedBuffer)
+  ) {
+    return null;
+  }
+
+  return { newsletterSubscriberId };
+}
+
+async function resolveDirectNewsletterUnsubscribeTarget(
+  runtime: Stage1WebRuntime,
+  token: string,
+): Promise<UnsubscribeTarget | null> {
+  const parsed = parseDirectNewsletterToken(token);
+  if (parsed === null) {
+    return null;
+  }
+
+  const subscriber = await runtime.campaigns.newsletterSubscribers.findById(
+    parsed.newsletterSubscriberId,
+  );
+  if (subscriber === null) {
+    return null;
+  }
+
+  return {
+    contactId: null,
+    newsletterSubscriberId: subscriber.id,
+    email: subscriber.email,
+    runId: `newsletter-subscriber:${subscriber.id}`,
+    kind: "newsletter",
+    project: { id: null, name: null },
+  };
+}
+
+export function createDirectNewsletterUnsubscribeToken(
+  newsletterSubscriberId: string,
+): string {
+  return [
+    DIRECT_NEWSLETTER_TOKEN_PREFIX,
+    newsletterSubscriberId,
+    signDirectNewsletterToken(newsletterSubscriberId),
+  ].join(".");
 }
 
 function formatAddress(input: Awaited<ReturnType<Stage1WebRuntime["campaigns"]["orgSettings"]["read"]>>): string | null {
@@ -92,7 +188,7 @@ export async function resolveUnsubscribeTarget(
     token,
   );
   if (snapshot === null) {
-    return null;
+    return resolveDirectNewsletterUnsubscribeTarget(runtime, token);
   }
 
   const run = await runtime.campaigns.campaignRuns.findById(snapshot.campaignRunId);
@@ -167,7 +263,14 @@ export async function loadUnsubscribePageModel(input: {
   if (target.kind === "project" && target.project.id === null) {
     return buildInvalidModel(input.token, footerAddress);
   }
-  if (target.contactId === null && target.kind !== "newsletter") {
+  // A CSV-imported recipient has no contact but carries a frozen email; it can
+  // still unsubscribe (applied by email to the suppression list on confirm).
+  // Only a no-contact, non-newsletter target with no email is truly invalid.
+  if (
+    target.contactId === null &&
+    target.kind !== "newsletter" &&
+    target.email.trim().length === 0
+  ) {
     return buildInvalidModel(input.token, footerAddress);
   }
 

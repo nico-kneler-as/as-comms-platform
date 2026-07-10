@@ -14,7 +14,10 @@ import type {
   CampaignWizardDraftData,
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
-import { saveCampaignWizardDraftAction } from "../../_lib/audience-data-source";
+import {
+  saveCampaignWizardDraftAction,
+  uploadBroadcastAudienceCsvAction,
+} from "../../_lib/audience-data-source";
 import {
   schedule,
   sendNow,
@@ -34,6 +37,7 @@ import { PreviewStep } from "./preview-step";
 import { ReviewStep } from "./review-step";
 import { useNewCampaignWizardState } from "./use-new-campaign-wizard-state";
 import { type CampaignWizardStepDefinition, WizardRail } from "./wizard-rail";
+import { WizardFooterLeftSlotProvider } from "./wizard-shell";
 
 const STEPS: readonly CampaignWizardStepDefinition[] = [
   {
@@ -74,6 +78,7 @@ export type ToastState = {
   readonly tone: "success" | "error";
   readonly message: string;
 } | null;
+type ProjectSelectionMode = "multi" | "single";
 
 function normalizeProjectIds(projectIds: readonly string[]): string[] {
   return projectIds.filter(
@@ -105,6 +110,7 @@ export function hasAppliedAudienceFilters(
   switch (criteria.initialFilter) {
     case "all_approved":
     case "all_available":
+    case "csv_upload":
     case "project_status":
     case "specific":
       return true;
@@ -286,9 +292,30 @@ export function readAliasProjectsForSender(
 function buildCriteriaForMode(input: {
   readonly current: CampaignAudienceCriteria;
   readonly mode: AudienceInitialFilter;
-  readonly aliasProjects: readonly CampaignProjectOption[];
+  readonly projectOptions: readonly CampaignProjectOption[];
+  readonly projectSelectionMode: ProjectSelectionMode;
 }): CampaignAudienceCriteria {
-  const aliasProjectIds = input.aliasProjects.map((project) => project.id);
+  const availableProjectIds = normalizeProjectIds(
+    input.projectOptions.map((project) => project.id),
+  );
+  const projectSelection =
+    input.projectSelectionMode === "single"
+      ? (() => {
+          const selectedProjectId =
+            readProjectIds(input.current).find((projectId) =>
+              availableProjectIds.includes(projectId),
+            ) ?? null;
+
+          return {
+            projectId: selectedProjectId,
+            projectIds:
+              selectedProjectId === null ? [] : [selectedProjectId],
+          };
+        })()
+      : {
+          projectId: availableProjectIds[0] ?? null,
+          projectIds: availableProjectIds,
+        };
 
   if (input.mode === "all_approved") {
     return {
@@ -318,8 +345,19 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "specific",
-      projectId: aliasProjectIds[0] ?? null,
-      projectIds: aliasProjectIds,
+      ...projectSelection,
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    };
+  }
+
+  if (input.mode === "csv_upload") {
+    return {
+      ...input.current,
+      initialFilter: "csv_upload",
+      projectId: null,
+      projectIds: [],
       statuses: [],
       contactIds: [],
       newsletterSubscriberIds: [],
@@ -329,8 +367,7 @@ function buildCriteriaForMode(input: {
   return {
     ...input.current,
     initialFilter: "project_status",
-    projectId: aliasProjectIds[0] ?? null,
-    projectIds: aliasProjectIds,
+    ...projectSelection,
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
@@ -436,8 +473,17 @@ export function NewCampaignWizard({
     hasPickedAudienceMode,
     setHasPickedAudienceMode,
     countState,
+    setCountState,
     previewRows,
+    setPreviewRows,
     previewErrorMessage,
+    csvUploadSummary,
+    setCsvUploadSummary,
+    csvUploadErrorMessage,
+    setCsvUploadErrorMessage,
+    csvUploadPending,
+    startCsvUploadTransition,
+    setCsvUploadVersion,
     statusCounts,
     statusCountsLoading,
     statusCountsErrorMessage,
@@ -495,11 +541,13 @@ export function NewCampaignWizard({
     dirty,
     selectedSenderVerified,
     selectedSenderType,
-    aliasProjects,
+    effectiveProjectOptions,
+    projectSelectionMode,
     previewFingerprint,
     warningDismissed,
     statusLabel,
   } = useNewCampaignWizardState({ bootstrap, draft });
+  const singleSelectProjects = projectSelectionMode === "single";
 
   async function persistDraft(successMessage: string): Promise<boolean> {
     if (frozen || !dirty) {
@@ -606,35 +654,48 @@ export function NewCampaignWizard({
       buildCriteriaForMode({
         current,
         mode: value,
-        aliasProjects,
+        projectOptions: effectiveProjectOptions,
+        projectSelectionMode,
       }),
     );
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }
 
   function toggleProject(projectId: string) {
-    updateCriteria((current) => ({
-      ...current,
-      projectIds: normalizeProjectIds(
+    updateCriteria((current) => {
+      if (singleSelectProjects) {
+        return {
+          ...current,
+          projectId,
+          projectIds: [projectId],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          statuses: [],
+        };
+      }
+
+      const nextProjectIds = normalizeProjectIds(
         readProjectIds(current).includes(projectId)
           ? readProjectIds(current).filter((value) => value !== projectId)
           : [...readProjectIds(current), projectId],
-      ),
-      projectId:
-        normalizeProjectIds(
-          readProjectIds(current).includes(projectId)
-            ? readProjectIds(current).filter((value) => value !== projectId)
-            : [...readProjectIds(current), projectId],
-        )[0] ?? null,
-      contactIds: [],
-      newsletterSubscriberIds: [],
-      statuses: [],
-    }));
+      );
+
+      return {
+        ...current,
+        projectIds: nextProjectIds,
+        projectId: nextProjectIds[0] ?? null,
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        statuses: [],
+      };
+    });
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
+    setCsvUploadErrorMessage(null);
   }
 
   function toggleAllStatuses(selectAll: boolean) {
@@ -680,6 +741,33 @@ export function NewCampaignWizard({
               : [...(current.contactIds ?? []), contactId],
           }),
     }));
+  }
+
+  async function handleCsvUpload(csvText: string) {
+    await new Promise<void>((resolve) => {
+      startCsvUploadTransition(async () => {
+        const result = await uploadBroadcastAudienceCsvAction({
+          runId: draft.runId,
+          csvText,
+        });
+
+        if (!result.ok) {
+          setCsvUploadErrorMessage(result.message);
+          resolve();
+          return;
+        }
+
+        setCsvUploadSummary(result.data);
+        setCsvUploadErrorMessage(null);
+        setCountState({
+          count: result.data.importedCount,
+          hasAppliedFilters: true,
+        });
+        setPreviewRows(result.data.sample);
+        setCsvUploadVersion((current) => current + 1);
+        resolve();
+      });
+    });
   }
 
   async function continueTo(step: number) {
@@ -817,213 +905,220 @@ export function NewCampaignWizard({
         steps={STEPS}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        {toast ? (
-          <div
-            className={cn(
-              "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
-              toast.tone === "error"
-                ? "border-rose-200 bg-rose-50 text-rose-900"
-                : "border-emerald-200 bg-emerald-50 text-emerald-900",
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            {toast.message}
-          </div>
-        ) : null}
+      <WizardFooterLeftSlotProvider value={null}>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {toast ? (
+            <div
+              className={cn(
+                "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
+                toast.tone === "error"
+                  ? "border-rose-200 bg-rose-50 text-rose-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900",
+              )}
+              role="status"
+              aria-live="polite"
+            >
+              {toast.message}
+            </div>
+          ) : null}
 
-        <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-          <div
-            className={cn(
-              "flex min-h-full w-full flex-col",
-              currentStep === 3 && launchType === "html_email"
-                ? null
-                : "mx-auto max-w-3xl",
-            )}
-          >
-            {currentStep === 0 ? (
-              <LaunchTypeStep
-                value={launchType}
-                onChange={setLaunchType}
-                onContinue={() => {
-                  void continueTo(1);
-                }}
-              />
-            ) : null}
+          <div className="flex-1 overflow-y-auto bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+            <div
+              className={cn(
+                "flex min-h-full w-full flex-col",
+                currentStep === 3 && launchType === "html_email"
+                  ? null
+                  : "mx-auto max-w-3xl",
+              )}
+            >
+              {currentStep === 0 ? (
+                <LaunchTypeStep
+                  value={launchType}
+                  onChange={setLaunchType}
+                  onContinue={() => {
+                    void continueTo(1);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 1 ? (
-              <NameAndSenderStep
-                launchType={launchType}
-                name={name}
-                fromEmail={fromEmail}
-                senderOptions={bootstrap.senderOptions}
-                activeSmsSender={bootstrap.activeSmsSender}
-                frozen={frozen}
-                onNameChange={setName}
-                onFromEmailChange={setFromEmail}
-                onBack={() => {
-                  setCurrentStep(0);
-                }}
-                onContinue={() => {
-                  void continueTo(2);
-                }}
-              />
-            ) : null}
+              {currentStep === 1 ? (
+                <NameAndSenderStep
+                  launchType={launchType}
+                  name={name}
+                  fromEmail={fromEmail}
+                  senderOptions={bootstrap.senderOptions}
+                  activeSmsSender={bootstrap.activeSmsSender}
+                  frozen={frozen}
+                  onNameChange={setName}
+                  onFromEmailChange={setFromEmail}
+                  onBack={() => {
+                    setCurrentStep(0);
+                  }}
+                  onContinue={() => {
+                    void continueTo(2);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 2 ? (
-              <AudienceBuilderStep
-                availableModes={availableAudienceModes}
-                hasPickedMode={hasPickedAudienceMode}
-                criteria={criteria}
-                selectedSenderType={selectedSenderType}
-                countState={countState}
-                previewRows={previewRows}
-                countLoading={countLoading}
-                previewLoading={audiencePreviewLoading}
-                previewErrorMessage={previewErrorMessage}
-                volunteerSearchQuery={volunteerSearchQuery}
-                volunteerSearchRows={volunteerSearchRows}
-                volunteerSearchLoading={volunteerSearchPending}
-                volunteerSearchErrorMessage={volunteerSearchErrorMessage}
-                projectOptions={aliasProjects}
-                statusOptions={bootstrap.statuses}
-                statusCounts={statusCounts}
-                statusCountsLoading={statusCountsLoading}
-                statusCountsErrorMessage={statusCountsErrorMessage}
-                onInitialFilterChange={changeInitialFilter}
-                onProjectChange={toggleProject}
-                onToggleAllStatuses={toggleAllStatuses}
-                onStatusToggle={toggleStatus}
-                onVolunteerSearchQueryChange={setVolunteerSearchQuery}
-                onVolunteerToggle={toggleVolunteer}
-                onBack={() => {
-                  setCurrentStep(1);
-                }}
-                onContinue={() => {
-                  void continueTo(3);
-                }}
-              />
-            ) : null}
+              {currentStep === 2 ? (
+                <AudienceBuilderStep
+                  availableModes={availableAudienceModes}
+                  hasPickedMode={hasPickedAudienceMode}
+                  criteria={criteria}
+                  selectedSenderType={selectedSenderType}
+                  countState={countState}
+                  previewRows={previewRows}
+                  countLoading={countLoading}
+                  previewLoading={audiencePreviewLoading}
+                  previewErrorMessage={previewErrorMessage}
+                  volunteerSearchQuery={volunteerSearchQuery}
+                  volunteerSearchRows={volunteerSearchRows}
+                  volunteerSearchLoading={volunteerSearchPending}
+                  volunteerSearchErrorMessage={volunteerSearchErrorMessage}
+                  csvUploadSummary={csvUploadSummary}
+                  csvUploadPending={csvUploadPending}
+                  csvUploadErrorMessage={csvUploadErrorMessage}
+                  projectOptions={effectiveProjectOptions}
+                  singleSelectProjects={singleSelectProjects}
+                  statusOptions={bootstrap.statuses}
+                  statusCounts={statusCounts}
+                  statusCountsLoading={statusCountsLoading}
+                  statusCountsErrorMessage={statusCountsErrorMessage}
+                  onInitialFilterChange={changeInitialFilter}
+                  onProjectChange={toggleProject}
+                  onToggleAllStatuses={toggleAllStatuses}
+                  onStatusToggle={toggleStatus}
+                  onVolunteerSearchQueryChange={setVolunteerSearchQuery}
+                  onVolunteerToggle={toggleVolunteer}
+                  onCsvUpload={handleCsvUpload}
+                  onBack={() => {
+                    setCurrentStep(1);
+                  }}
+                  onContinue={() => {
+                    void continueTo(3);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 3 ? (
-              <ComposeStep
-                launchType={launchType}
-                subject={subject}
-                preheader={preheader}
-                bodyPlaintext={bodyPlaintext}
-                bodyHtml={bodyHtml}
-                savedDesign={bodyDesignJson}
-                selectedAliasSignature={selectedAliasSignature}
-                frozen={frozen}
-                continuePending={savePending}
-                onSubjectChange={setSubject}
-                onPreheaderChange={setPreheader}
-                onBodyChange={(value) => {
-                  setBodyDesignJson(value.bodyDesignJson);
-                  setBodyPlaintext(value.bodyPlaintext);
-                  setBodyHtml(value.bodyHtml);
-                }}
-                onBack={() => {
-                  setCurrentStep(2);
-                }}
-                onContinue={() => {
-                  void continueTo(4);
-                }}
-              />
-            ) : null}
+              {currentStep === 3 ? (
+                <ComposeStep
+                  launchType={launchType}
+                  subject={subject}
+                  preheader={preheader}
+                  bodyPlaintext={bodyPlaintext}
+                  bodyHtml={bodyHtml}
+                  savedDesign={bodyDesignJson}
+                  selectedAliasSignature={selectedAliasSignature}
+                  frozen={frozen}
+                  continuePending={savePending}
+                  onSubjectChange={setSubject}
+                  onPreheaderChange={setPreheader}
+                  onBodyChange={(value) => {
+                    setBodyDesignJson(value.bodyDesignJson);
+                    setBodyPlaintext(value.bodyPlaintext);
+                    setBodyHtml(value.bodyHtml);
+                  }}
+                  onBack={() => {
+                    setCurrentStep(2);
+                  }}
+                  onContinue={() => {
+                    void continueTo(4);
+                  }}
+                />
+              ) : null}
 
-            {currentStep === 4 ? (
-              <PreviewStep
-                launchType={launchType}
-                subject={subject}
-                preheader={preheader}
-                previewData={composePreview}
-                smsPreviewData={smsPreview}
-                previewLoading={
-                  launchType === "sms"
-                    ? smsPreviewPending
-                    : composePreviewPending
-                }
-                warningDismissed={warningDismissed}
-                affectedContactsOpen={affectedContactsOpen}
-                testSendOpen={testSendOpen}
-                testRecipientValue={
-                  launchType === "sms" ? testPhoneE164 : testRecipientEmail
-                }
-                testSendPending={testSendPending}
-                selectedSenderVerified={selectedSenderVerified}
-                frozen={frozen}
-                onBack={() => {
-                  setCurrentStep(3);
-                }}
-                onContinue={() => {
-                  void continueTo(5);
-                }}
-                onPreviewPrevious={() => {
-                  setSampleIndex((current) => current - 1);
-                }}
-                onPreviewNext={() => {
-                  setSampleIndex((current) => current + 1);
-                }}
-                onDismissWarning={() => {
-                  setWarningDismissFingerprint(previewFingerprint);
-                }}
-                onAffectedContactsOpenChange={setAffectedContactsOpen}
-                onTestSendOpenChange={setTestSendOpen}
-                onTestRecipientValueChange={(value) => {
-                  if (launchType === "sms") {
-                    setTestPhoneE164(value);
-                    return;
+              {currentStep === 4 ? (
+                <PreviewStep
+                  launchType={launchType}
+                  subject={subject}
+                  preheader={preheader}
+                  previewData={composePreview}
+                  smsPreviewData={smsPreview}
+                  previewLoading={
+                    launchType === "sms"
+                      ? smsPreviewPending
+                      : composePreviewPending
                   }
-
-                  setTestRecipientEmail(value);
-                }}
-                onSendTest={() => {
-                  void handleTestSend();
-                }}
-              />
-            ) : null}
-
-            {currentStep === 5 ? (
-              <ReviewStep
-                launchType={launchType}
-                projectChipLabel={readProjectChipLabel(
-                  kind,
-                  criteria,
-                  bootstrap,
-                )}
-                runName={name.trim().length === 0 ? null : name}
-                fromEmail={launchType === "sms" ? null : fromEmail}
-                subject={composePreview?.sample?.subject ?? subject}
-                selectedSenderVerified={selectedSenderVerified}
-                audienceSize={composePreview?.audienceSize ?? countState.count}
-                smsPreviewData={smsPreview}
-                sendMode={sendMode}
-                scheduleDate={scheduleDate}
-                scheduleTime={scheduleTime}
-                frozen={frozen}
-                frozenState={runState}
-                frozenScheduledAt={scheduledAt}
-                confirmOpen={confirmOpen}
-                submitPending={submitPending}
-                onBack={() => {
-                  if (!frozen) {
-                    setCurrentStep(4);
+                  warningDismissed={warningDismissed}
+                  affectedContactsOpen={affectedContactsOpen}
+                  testSendOpen={testSendOpen}
+                  testRecipientValue={
+                    launchType === "sms" ? testPhoneE164 : testRecipientEmail
                   }
-                }}
-                onSendModeChange={setSendMode}
-                onScheduleDateChange={setScheduleDate}
-                onScheduleTimeChange={setScheduleTime}
-                onConfirmOpenChange={setConfirmOpen}
-                onSubmit={() => {
-                  void handleSubmit();
-                }}
-              />
-            ) : null}
+                  testSendPending={testSendPending}
+                  selectedSenderVerified={selectedSenderVerified}
+                  frozen={frozen}
+                  onBack={() => {
+                    setCurrentStep(3);
+                  }}
+                  onContinue={() => {
+                    void continueTo(5);
+                  }}
+                  onPreviewPrevious={() => {
+                    setSampleIndex((current) => current - 1);
+                  }}
+                  onPreviewNext={() => {
+                    setSampleIndex((current) => current + 1);
+                  }}
+                  onDismissWarning={() => {
+                    setWarningDismissFingerprint(previewFingerprint);
+                  }}
+                  onAffectedContactsOpenChange={setAffectedContactsOpen}
+                  onTestSendOpenChange={setTestSendOpen}
+                  onTestRecipientValueChange={(value) => {
+                    if (launchType === "sms") {
+                      setTestPhoneE164(value);
+                      return;
+                    }
+
+                    setTestRecipientEmail(value);
+                  }}
+                  onSendTest={() => {
+                    void handleTestSend();
+                  }}
+                />
+              ) : null}
+
+              {currentStep === 5 ? (
+                <ReviewStep
+                  launchType={launchType}
+                  projectChipLabel={readProjectChipLabel(
+                    kind,
+                    criteria,
+                    bootstrap,
+                  )}
+                  runName={name.trim().length === 0 ? null : name}
+                  fromEmail={launchType === "sms" ? null : fromEmail}
+                  subject={composePreview?.sample?.subject ?? subject}
+                  selectedSenderVerified={selectedSenderVerified}
+                  audienceSize={composePreview?.audienceSize ?? countState.count}
+                  smsPreviewData={smsPreview}
+                  sendMode={sendMode}
+                  scheduleDate={scheduleDate}
+                  scheduleTime={scheduleTime}
+                  frozen={frozen}
+                  frozenState={runState}
+                  frozenScheduledAt={scheduledAt}
+                  confirmOpen={confirmOpen}
+                  submitPending={submitPending}
+                  onBack={() => {
+                    if (!frozen) {
+                      setCurrentStep(4);
+                    }
+                  }}
+                  onSendModeChange={setSendMode}
+                  onScheduleDateChange={setScheduleDate}
+                  onScheduleTimeChange={setScheduleTime}
+                  onConfirmOpenChange={setConfirmOpen}
+                  onSubmit={() => {
+                    void handleSubmit();
+                  }}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      </WizardFooterLeftSlotProvider>
     </div>
   );
 }

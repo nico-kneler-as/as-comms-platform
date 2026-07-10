@@ -844,6 +844,7 @@ function buildContactFields(): string[] {
     "Name",
     "Email",
     "Phone",
+    "MobilePhone",
     "Phone_Number__c",
     "Volunteer_ID_Plain__c",
     "CreatedDate",
@@ -1054,6 +1055,7 @@ function buildContactSnapshotRecordWithConfig(input: {
   }
 
   const primaryPhone = getPhoneField(input.contact, "Phone");
+  const mobilePhone = getPhoneField(input.contact, "MobilePhone");
   const fallbackPhone = getPhoneField(input.contact, "Phone_Number__c");
 
   return salesforceContactSnapshotRecordSchema.parse({
@@ -1062,9 +1064,9 @@ function buildContactSnapshotRecordWithConfig(input: {
     salesforceContactId,
     displayName: getStringField(input.contact, "Name") ?? salesforceContactId,
     primaryEmail: getEmailField(input.contact, "Email"),
-    primaryPhone: primaryPhone ?? fallbackPhone,
+    primaryPhone: primaryPhone ?? mobilePhone ?? fallbackPhone,
     normalizedEmails: uniqueValues([getEmailField(input.contact, "Email")]),
-    normalizedPhones: uniqueValues([primaryPhone, fallbackPhone]),
+    normalizedPhones: uniqueValues([primaryPhone, mobilePhone, fallbackPhone]),
     volunteerIdPlainValues: uniqueValues([
       getStringField(input.contact, "Volunteer_ID_Plain__c"),
     ]),

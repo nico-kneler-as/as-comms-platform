@@ -11,10 +11,13 @@ vi.mock("@/src/server/auth/session", () => ({
 
 import {
   getAudienceBuilderBootstrap,
+  loadMemberStatusCountsForProjects,
+  previewAudienceAction,
   resolveAudienceCountAction,
   resolveStoredCampaignAudience,
   searchNewsletterSubscribersAction,
   searchProjectVolunteersAction,
+  uploadBroadcastAudienceCsvAction,
 } from "../../app/broadcasts/_lib/audience-data-source";
 import {
   createOrgSenderForTests,
@@ -28,6 +31,21 @@ function sessionUser() {
     id: "user:operator",
     email: "operator@example.org",
   };
+}
+
+async function seedUser(runtime: Stage1WebTestRuntime): Promise<void> {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+  await runtime.context.settings.users.upsert({
+    id: "user:operator",
+    name: "Operator User",
+    email: "operator@example.org",
+    emailVerified: now,
+    image: null,
+    role: "operator",
+    deactivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 async function seedProject(
@@ -86,6 +104,57 @@ async function seedContact(
     primaryPhone: null,
     createdAt: "2026-06-01T12:00:00.000Z",
     updatedAt: "2026-06-01T12:00:00.000Z",
+  });
+}
+
+async function seedMembership(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly projectId: string;
+    readonly status: string;
+  },
+): Promise<void> {
+  await runtime.context.repositories.contactMemberships.upsert({
+    id: input.id,
+    contactId: input.contactId,
+    projectId: input.projectId,
+    expeditionId: null,
+    role: null,
+    status: input.status,
+    source: "manual",
+    salesforceMembershipId: null,
+    salesforceDeletedAt: null,
+    salesforceReconciledAt: null,
+    createdAt: "2026-06-01T12:00:00.000Z",
+  });
+}
+
+async function seedSmsConsent(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly phoneE164: string;
+    readonly status: "opted_in" | "revoked";
+    readonly createdAt: string;
+  },
+): Promise<void> {
+  await runtime.context.repositories.consentRecords.insert({
+    id: input.id,
+    contactId: input.contactId,
+    phoneE164: input.phoneE164,
+    status: input.status,
+    source: "operator_attestation",
+    sourceDetail: null,
+    consentedAt:
+      input.status === "opted_in" ? new Date(input.createdAt) : null,
+    revokedAt: input.status === "revoked" ? new Date(input.createdAt) : null,
+    recordedByUserId: "user:operator",
+    notes: null,
+    createdAt: new Date(input.createdAt),
+    updatedAt: new Date(input.createdAt),
   });
 }
 
@@ -148,6 +217,46 @@ async function seedNewsletterSuppression(
   `);
 }
 
+async function createProjectBroadcastDraft(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly runId: string;
+    readonly projectId: string;
+    readonly fromEmail: string;
+  },
+) {
+  return runtime.runtime.campaigns.campaignRuns.create({
+    id: input.runId,
+    kind: "project",
+    launchType: "normal_email",
+    projectId: input.projectId,
+    name: "CSV audience import",
+    fromEmail: input.fromEmail,
+    fromName: "Adventure Scientists",
+    replyToEmail: input.fromEmail,
+    subjectTemplate: "Subject",
+    bodyHtmlTemplate: "<p>Hello</p>",
+    bodyTextTemplate: "Hello",
+    bodyDesignJson: null,
+    preheader: null,
+    audienceCriteria: {
+      projectId: input.projectId,
+      projectIds: [input.projectId],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
+      hasClicked: "either",
+      initialFilter: "csv_upload",
+    },
+    audienceSize: null,
+    createdByUserId: "user:operator",
+    lastEditedByUserId: "user:operator",
+  });
+}
+
 describe("campaign audience data source", () => {
   let runtime: Stage1WebTestRuntime | null = null;
 
@@ -158,6 +267,7 @@ describe("campaign audience data source", () => {
     requireSession.mockResolvedValue(sessionUser());
 
     runtime = await createStage1WebTestRuntime();
+    await seedUser(runtime);
   });
 
   afterEach(async () => {
@@ -238,6 +348,119 @@ describe("campaign audience data source", () => {
           project: null,
         }),
       ],
+    });
+  });
+
+  it("keeps email totals unchanged and counts only SMS-reachable contacts per status on the SMS path", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-1",
+      projectName: "Beech Leaf Disease",
+      email: "forests@example.org",
+    });
+    await seedProject(runtime, {
+      projectId: "project-2",
+      projectName: "CA Biodiversity",
+      email: "cabio@example.org",
+    });
+
+    await seedContact(runtime, {
+      contactId: "contact-1",
+      displayName: "Reachable Waitlist",
+      email: "reachable@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-2",
+      displayName: "Revoked Waitlist",
+      email: "revoked@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-3",
+      displayName: "No Phone Denied",
+      email: "nophone@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-4",
+      displayName: "Other Project Reachable",
+      email: "other@example.org",
+    });
+
+    await seedMembership(runtime, {
+      id: "membership-1",
+      contactId: "contact-1",
+      projectId: "project-1",
+      status: "Waitlist",
+    });
+    await seedMembership(runtime, {
+      id: "membership-2",
+      contactId: "contact-2",
+      projectId: "project-1",
+      status: "Waitlist",
+    });
+    await seedMembership(runtime, {
+      id: "membership-3",
+      contactId: "contact-3",
+      projectId: "project-1",
+      status: "Denied",
+    });
+    await seedMembership(runtime, {
+      id: "membership-4",
+      contactId: "contact-4",
+      projectId: "project-2",
+      status: "Waitlist",
+    });
+
+    await seedSmsConsent(runtime, {
+      id: "consent-1",
+      contactId: "contact-1",
+      phoneE164: "+14065550101",
+      status: "opted_in",
+      createdAt: "2026-06-01T12:00:00.000Z",
+    });
+    await seedSmsConsent(runtime, {
+      id: "consent-2",
+      contactId: "contact-2",
+      phoneE164: "+14065550102",
+      status: "revoked",
+      createdAt: "2026-06-01T12:00:00.000Z",
+    });
+    await seedSmsConsent(runtime, {
+      id: "consent-3",
+      contactId: "contact-3",
+      phoneE164: "",
+      status: "opted_in",
+      createdAt: "2026-06-01T12:00:00.000Z",
+    });
+    await seedSmsConsent(runtime, {
+      id: "consent-4",
+      contactId: "contact-4",
+      phoneE164: "+14065550104",
+      status: "opted_in",
+      createdAt: "2026-06-01T12:00:00.000Z",
+    });
+
+    const emailResult = await loadMemberStatusCountsForProjects(["project-1"]);
+    const smsResult = await loadMemberStatusCountsForProjects(
+      ["project-1"],
+      "sms",
+    );
+
+    expect(emailResult).toMatchObject({
+      ok: true,
+      data: {
+        Waitlist: 2,
+        Denied: 1,
+      },
+    });
+    expect(smsResult).toMatchObject({
+      ok: true,
+      data: {
+        Waitlist: 1,
+        Denied: 0,
+      },
     });
   });
 
@@ -374,6 +597,7 @@ describe("campaign audience data source", () => {
     });
 
     const result = await resolveAudienceCountAction({
+      runId: "newsletter-preview",
       kind: "newsletter",
       criteria: {
         projectId: null,
@@ -435,5 +659,150 @@ describe("campaign audience data source", () => {
         },
       ],
     });
+  });
+
+  it("imports a CSV audience, returns counts plus preview, and persists the stored rows", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-csv",
+      projectName: "Corals",
+      email: "corals@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-csv",
+      displayName: "Existing Contact",
+      email: "existing@example.org",
+    });
+    await createProjectBroadcastDraft(runtime, {
+      runId: "run-csv",
+      projectId: "project-csv",
+      fromEmail: "corals@example.org",
+    });
+
+    const upload = await uploadBroadcastAudienceCsvAction({
+      runId: "run-csv",
+      csvText: [
+        "email,firstName,lastName",
+        "existing@example.org,Existing,Contact",
+        "new@example.org,New,Recipient",
+        "existing@example.org,Duplicate,Ignored",
+        "bad-email,Bad,Row",
+      ].join("\n"),
+    });
+
+    expect(upload).toMatchObject({
+      ok: true,
+      data: {
+        importedCount: 2,
+        invalidSkippedCount: 1,
+        duplicatesRemovedCount: 1,
+        sample: [
+          {
+            email: "existing@example.org",
+            name: "Existing Contact",
+          },
+          {
+            email: "new@example.org",
+            name: "New Recipient",
+          },
+        ],
+      },
+    });
+
+    const count = await resolveAudienceCountAction({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    const preview = await previewAudienceAction({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    const audience = await resolveStoredCampaignAudience({
+      runId: "run-csv",
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+      at: new Date("2026-06-01T12:00:00.000Z"),
+      fromEmail: "corals@example.org",
+      projectId: "project-csv",
+    });
+
+    expect(count).toMatchObject({
+      ok: true,
+      data: {
+        count: 2,
+        hasAppliedFilters: true,
+      },
+    });
+    expect(preview).toMatchObject({
+      ok: true,
+      data: [
+        {
+          email: "existing@example.org",
+          name: "Existing Contact",
+        },
+        {
+          email: "new@example.org",
+          name: "New Recipient",
+        },
+      ],
+    });
+    expect(audience).toEqual([
+      {
+        contactId: "contact-csv",
+        newsletterSubscriberId: null,
+        frozenEmail: "existing@example.org",
+        frozenFirstName: "Existing",
+        frozenProjectName: "Corals",
+        frozenProjectId: "project-csv",
+        frozenAliasEmail: "corals@example.org",
+      },
+      {
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "new@example.org",
+        frozenFirstName: "New",
+        frozenProjectName: "Corals",
+        frozenProjectId: "project-csv",
+        frozenAliasEmail: "corals@example.org",
+      },
+    ]);
   });
 });

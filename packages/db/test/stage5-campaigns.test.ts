@@ -349,7 +349,7 @@ describe("Stage 5 campaigns repositories", () => {
     ).rejects.toThrow();
   });
 
-  it("allows newsletter-subscriber snapshots and rejects invalid recipient combinations", async () => {
+  it("allows newsletter-subscriber and uploaded-email snapshots while rejecting dual recipient ids", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
     const campaigns = createStage5RepositoryBundle(context.db);
@@ -394,7 +394,7 @@ describe("Stage 5 campaigns repositories", () => {
         deliveryStatus: "pending",
         createdAt: new Date("2026-05-15T12:01:00.000Z"),
       }),
-    ).rejects.toThrow();
+    ).resolves.toBeDefined();
 
     await expect(
       context.db.insert(audienceSnapshots).values({
@@ -813,6 +813,67 @@ describe("Stage 5 campaigns repositories", () => {
     expect(updated.lastEditedByUserId).toBe("user-99");
     expect(new Date(updated.updatedAt).getTime()).toBeGreaterThanOrEqual(
       new Date(created.updatedAt).getTime(),
+    );
+  });
+
+  it("hard deletes draft runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-delete-draft",
+      }),
+    );
+
+    await expect(campaigns.campaignRuns.deleteDraft(created.id)).resolves.toBe(
+      true,
+    );
+    await expect(campaigns.campaignRuns.findById(created.id)).resolves.toBeNull();
+  });
+
+  it("does not hard delete non-draft runs", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-delete-scheduled",
+      }),
+    );
+    await campaigns.campaignRuns.transitionState(
+      created.id,
+      "draft",
+      "scheduled",
+      {
+        scheduledAt: "2026-05-16T09:00:00.000Z",
+      },
+    );
+
+    await expect(campaigns.campaignRuns.deleteDraft(created.id)).resolves.toBe(
+      false,
+    );
+    await expect(campaigns.campaignRuns.findById(created.id)).resolves.toMatchObject(
+      {
+        id: created.id,
+        state: "scheduled",
+      },
+    );
+  });
+
+  it("returns false when deleting a missing draft", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await expect(campaigns.campaignRuns.deleteDraft("run-missing")).resolves.toBe(
+      false,
     );
   });
 

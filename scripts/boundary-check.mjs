@@ -15,6 +15,7 @@ const workspaceRules = {
       "@as-comms/domain/phone",
       "@as-comms/domain/html-import",
       "@as-comms/domain/sms-segments",
+      "@as-comms/domain/signature-template",
       "@as-comms/db/parse-source-url",
       "@as-comms/ui"
     ])
@@ -186,17 +187,19 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   }
 
   if (
-    (relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
+    (relativeFile === "apps/web/app/api/newsletter/subscribe/route.ts" ||
+      relativeFile === "apps/web/app/api/webhooks/postmark/route.ts" ||
       relativeFile === "apps/web/app/settings/actions.ts" ||
       relativeFile === "apps/web/app/broadcasts/actions.ts") &&
     specifier === "@as-comms/integrations"
   ) {
-    // Stage 5A Briefs A2 + A5: Postmark client composition for the webhook
-    // route handler, the Settings re-check action, and the campaign test-send
-    // Server Action. Each file builds its own PostmarkClient from env vars +
-    // webhook signing secret. A future cleanup could promote a single
-    // composition root at apps/web/src/server/postmark/, but the three-call
-    // surface today is narrow enough to track as an explicit exception.
+    // Stage 5A / newsletter delivery flows: Postmark client composition for
+    // the webhook route handler, the public newsletter signup route, the
+    // Settings re-check action, and the campaign test-send Server Action.
+    // Each file builds its own PostmarkClient from env vars + webhook signing
+    // secret. A future cleanup could promote a single composition root at
+    // apps/web/src/server/postmark/, but the current surface is narrow enough
+    // to track as an explicit exception.
     return true;
   }
 

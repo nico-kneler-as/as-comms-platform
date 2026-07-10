@@ -91,6 +91,7 @@ import type {
   RunDetailHeaderModel,
   RunDetailModel,
 } from "../../app/broadcasts/[runId]/_lib/run-detail";
+import { getRunDetailModel } from "../../app/broadcasts/[runId]/_lib/run-detail";
 import { MetricTiles } from "../../app/broadcasts/[runId]/_components/metric-tiles";
 import { RecipientsTable } from "../../app/broadcasts/[runId]/_components/recipients-table";
 import { RepliesInInboxPanel } from "../../app/broadcasts/[runId]/_components/replies-in-inbox-panel";
@@ -98,12 +99,19 @@ import { RunAuditLog } from "../../app/broadcasts/[runId]/_components/run-audit-
 import {
   AudienceCriteriaPanel,
   EmailContentPanel,
+  LinkClicksPanel,
   SendDetailsPanel,
 } from "../../app/broadcasts/[runId]/_components/run-detail-panels";
 import { RunDetailShell } from "../../app/broadcasts/[runId]/_components/run-detail-shell";
+import {
+  createStage1WebTestRuntime,
+  insertBroadcastLinkClickForTests,
+  upsertNewsletterSubscriberForTests,
+} from "../../src/server/stage1-runtime.test-support";
 
 function buildPostmarkModel(
   state: RunDetailModel["run"]["state"],
+  overrides: Partial<Pick<RunDetailModel, "linkClicks">> = {},
 ): RunDetailModel {
   return {
     provider: "postmark",
@@ -249,6 +257,20 @@ function buildPostmarkModel(
         detail: "Draft created.",
       },
     ],
+    linkClicks:
+      overrides.linkClicks ??
+      [
+        {
+          url: "https://example.org/a",
+          totalClicks: 4,
+          uniqueClickers: 2,
+        },
+        {
+          url: "https://example.org/b",
+          totalClicks: 2,
+          uniqueClickers: 1,
+        },
+      ],
     audienceCriteria: {
       projectIds: ["project-1"],
       statuses: ["Waitlist"],
@@ -352,6 +374,7 @@ function buildMailchimpModel(): RunDetailModel {
     recentReplies: [],
     inboxRecipientsHref: "/inbox",
     auditEntries: [],
+    linkClicks: [],
     audienceCriteria: {
       projectIds: [],
       statuses: [],
@@ -387,7 +410,12 @@ function renderShell(model: RunDetailModel) {
     <RunDetailShell
       header={buildHeader(model)}
       metricsSection={<MetricTiles model={model} />}
-      emailContentSection={<EmailContentPanel model={model} />}
+      emailContentSection={
+        <>
+          <EmailContentPanel model={model} />
+          <LinkClicksPanel model={model} />
+        </>
+      }
       recipientsSection={
         <RecipientsTable
           runId={model.run.id}
@@ -423,8 +451,259 @@ function renderShell(model: RunDetailModel) {
 }
 
 describe("broadcast run detail", () => {
+  it("loads link click aggregates sorted by total clicks with unique clickers", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      const { campaigns } = runtime.runtime;
+
+      await runtime.context.repositories.projectDimensions.upsert({
+        projectId: "project-1",
+        projectName: "Project One",
+        projectAlias: "project-one",
+        connectedToProjectId: null,
+        source: "manual",
+        isActive: true,
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+      });
+
+      await runtime.context.repositories.contacts.upsert({
+        id: "contact-1",
+        salesforceContactId: null,
+        displayName: "Taylor",
+        primaryEmail: "taylor@example.org",
+        primaryPhone: null,
+        createdAt: "2026-07-02T12:00:00.000Z",
+        updatedAt: "2026-07-02T12:00:00.000Z",
+      });
+      await runtime.context.repositories.contacts.upsert({
+        id: "contact-2",
+        salesforceContactId: null,
+        displayName: "Jordan",
+        primaryEmail: "jordan@example.org",
+        primaryPhone: null,
+        createdAt: "2026-07-02T12:00:00.000Z",
+        updatedAt: "2026-07-02T12:00:00.000Z",
+      });
+      const newsletterSubscriber = await upsertNewsletterSubscriberForTests(
+        runtime,
+        {
+          email: "newsletter@example.org",
+          firstName: "Newsletter",
+          lastName: null,
+          status: "subscribed",
+        memberRating: null,
+        optinTime: null,
+        optinIp: null,
+        confirmTime: null,
+        confirmIp: null,
+          lastChangedAt: null,
+          interests: null,
+          tags: null,
+          source: "mailchimp_import",
+        },
+      );
+
+      const run = await campaigns.campaignRuns.create({
+        id: "run-detail-link-clicks",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: "project-1",
+        name: null,
+        fromEmail: "project-one@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "project-one@adventurescientists.org",
+        subjectTemplate: "Field update",
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 3,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      await campaigns.audienceSnapshots.bulkInsert(run.id, [
+        {
+          id: "snapshot-contact-1",
+          contactId: "contact-1",
+          newsletterSubscriberId: null,
+          frozenEmail: "taylor@example.org",
+          frozenFirstName: "Taylor",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-contact-1",
+          deliveryStatus: "sent",
+          providerMessageId: "pm-contact-1",
+        },
+        {
+          id: "snapshot-contact-2",
+          contactId: "contact-2",
+          newsletterSubscriberId: null,
+          frozenEmail: "jordan@example.org",
+          frozenFirstName: "Jordan",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-contact-2",
+          deliveryStatus: "sent",
+          providerMessageId: "pm-contact-2",
+        },
+        {
+          id: "snapshot-newsletter-1",
+          contactId: null,
+          newsletterSubscriberId: newsletterSubscriber.id,
+          frozenEmail: "newsletter@example.org",
+          frozenFirstName: "Newsletter",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-newsletter-1",
+          deliveryStatus: "sent",
+          providerMessageId: "pm-newsletter-1",
+        },
+      ]);
+
+      await insertBroadcastLinkClickForTests(runtime, {
+        id: "click-a-1",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-1",
+        contactId: "contact-1",
+        originalLink: "https://example.org/a",
+        clickedAt: "2026-07-02T13:00:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "click-a-1",
+        createdAt: "2026-07-02T13:00:00.000Z",
+      });
+      await insertBroadcastLinkClickForTests(runtime, {
+        id: "click-a-2",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-1",
+        contactId: "contact-1",
+        originalLink: "https://example.org/a",
+        clickedAt: "2026-07-02T13:01:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "click-a-2",
+        createdAt: "2026-07-02T13:01:00.000Z",
+      });
+      await insertBroadcastLinkClickForTests(runtime, {
+        id: "click-a-3",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-newsletter-1",
+        contactId: null,
+        originalLink: "https://example.org/a",
+        clickedAt: "2026-07-02T13:02:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "click-a-3",
+        createdAt: "2026-07-02T13:02:00.000Z",
+      });
+      await insertBroadcastLinkClickForTests(runtime, {
+        id: "click-b-1",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-2",
+        contactId: "contact-2",
+        originalLink: "https://example.org/b",
+        clickedAt: "2026-07-02T13:03:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "click-b-1",
+        createdAt: "2026-07-02T13:03:00.000Z",
+      });
+
+      const model = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+
+      expect(model?.linkClicks).toEqual([
+        {
+          url: "https://example.org/a",
+          totalClicks: 3,
+          uniqueClickers: 2,
+        },
+        {
+          url: "https://example.org/b",
+          totalClicks: 1,
+          uniqueClickers: 1,
+        },
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("matches the sending Postmark snapshot", () => {
     expect(renderShell(buildPostmarkModel("sending"))).toMatchSnapshot();
+  });
+
+  it("renders populated and empty link-click states", () => {
+    const populatedHtml = renderToStaticMarkup(
+      <LinkClicksPanel model={buildPostmarkModel("complete")} />,
+    );
+    const emptyHtml = renderToStaticMarkup(
+      <LinkClicksPanel
+        model={buildPostmarkModel("complete", { linkClicks: [] })}
+      />,
+    );
+
+    expect(populatedHtml).toContain("https://example.org/a");
+    expect(populatedHtml).toContain("4 clicks");
+    expect(populatedHtml).toContain("2 unique");
+    expect(emptyHtml).toContain("No link clicks recorded yet.");
+  });
+
+  it("renders email HTML visually and falls back to plain text", () => {
+    const htmlModel = buildPostmarkModel("complete");
+    const htmlOut = renderToStaticMarkup(<EmailContentPanel model={htmlModel} />);
+    expect(htmlOut).toContain("<iframe");
+    expect(htmlOut).toContain('title="Email body"');
+    expect(htmlOut).toContain("appear unrendered");
+
+    const textModel: RunDetailModel = {
+      ...htmlModel,
+      run: {
+        ...htmlModel.run,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Plain text body only",
+      },
+    };
+    const textOut = renderToStaticMarkup(<EmailContentPanel model={textModel} />);
+    expect(textOut).not.toContain("<iframe");
+    expect(textOut).toContain("Plain text body only");
   });
 
   it("renders the Mailchimp placeholder panels", () => {
@@ -432,6 +711,7 @@ describe("broadcast run detail", () => {
 
     expect(html).toMatchSnapshot();
     expect(html).toContain("Email content not retained from Mailchimp import.");
+    expect(html).toContain("Link clicks are not available for Mailchimp imports.");
     expect(html).toContain("Mailchimp historical audience.");
     expect(html).toContain("0 replies tracked.");
     expect(html).toContain("Inbox unavailable");
