@@ -1,8 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TransitionStartFunction } from "react";
 
+const draftWithAiAction = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    ok: true,
+    data: {
+      draft: "Generated draft",
+      requestMode: "draft",
+      mode: "generated",
+      grounding: [],
+      warnings: [],
+      costEstimateUsd: 0,
+      providerStatus: "ready",
+      draftId: "11111111-1111-4111-8111-111111111111",
+      repromptIndex: 0,
+      promptPreview: "preview",
+      model: {
+        name: "claude-test",
+        temperature: 0.2,
+        maxTokens: 512,
+        inputTokens: 12,
+        outputTokens: 24,
+        stopReason: "stop",
+      },
+    },
+  }),
+);
+
 vi.mock("../../app/inbox/actions", () => ({
-  draftWithAiAction: vi.fn(),
+  draftWithAiAction,
 }));
 
 import { useAiDraftRun } from "../../app/inbox/_hooks/use-ai-draft-run";
@@ -37,7 +63,18 @@ function setup(input?: {
   readonly composerPaneMode?: "new-draft" | "replying" | "forwarding";
   readonly recipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["recipient"];
   readonly smsRecipient?: (typeof INITIAL_COMPOSER_DRAFT_STATE)["smsRecipient"];
+  readonly selectedAliasRecord?: {
+    readonly id: string;
+    readonly alias: string;
+    readonly projectId: string;
+    readonly projectName: string;
+    readonly signature: string;
+    readonly isAiReady: boolean;
+    readonly isAiConfigured: boolean;
+    readonly hasCachedContent: boolean;
+  } | null;
   readonly selectedAliasAiConfigured?: boolean;
+  readonly smsAiConfigured?: boolean;
   readonly startAiGeneration?: ReturnType<typeof vi.fn>;
   readonly startAiTransition?: TransitionStartFunction;
 }) {
@@ -73,17 +110,21 @@ function setup(input?: {
     },
     dispatch,
     aiDraft: input?.aiDraft ?? baseAiDraft,
-    selectedAliasRecord: {
-      id: "alias-1",
-      alias: "forest@adventuresci.org",
-      projectId: "project-1",
-      projectName: "Forest",
-      signature: "Best,\nForest Team",
-      isAiReady: true,
-      isAiConfigured: true,
-      hasCachedContent: true,
-    },
+    selectedAliasRecord:
+      input?.selectedAliasRecord === undefined
+        ? {
+            id: "alias-1",
+            alias: "forest@adventuresci.org",
+            projectId: "project-1",
+            projectName: "Forest",
+            signature: "Best,\nForest Team",
+            isAiReady: true,
+            isAiConfigured: true,
+            hasCachedContent: true,
+          }
+        : input.selectedAliasRecord,
     selectedAliasAiConfigured: input?.selectedAliasAiConfigured ?? true,
+    smsAiConfigured: input?.smsAiConfigured ?? true,
     replyContext: {
       contactId: "contact-1",
       contactDisplayName: "Ada Lovelace",
@@ -239,6 +280,31 @@ describe("useAiDraftRun", () => {
       prompt: "Draft with AI",
     });
     expect(startAiTransition).toHaveBeenCalledOnce();
+  });
+
+  it("starts an sms AI draft without a selected alias by sending a null project id", () => {
+    const startAiGeneration = vi.fn();
+    const { controls } = setup({
+      activeTab: "sms",
+      startAiGeneration,
+      selectedAliasRecord: null,
+      selectedAliasAiConfigured: false,
+      smsAiConfigured: true,
+    });
+
+    controls.runAiDraft();
+
+    expect(startAiGeneration).toHaveBeenCalledWith({
+      request: {
+        contactId: "contact-sms-1",
+        projectId: null,
+        intent: "reply",
+        threadCursor: "thread-cursor-1",
+        channel: "sms",
+        mode: "draft",
+      },
+      prompt: "Draft with AI",
+    });
   });
 
   it("editPromptAi resets the aiDraft to idle but does not clear the composer's aiDirective", () => {

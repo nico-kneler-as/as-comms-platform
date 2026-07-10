@@ -269,8 +269,9 @@ export function InboxComposerDetailPane({
     state.signatureOverride ?? selectedAliasDefaultSignature;
   const smsRecipientRequiresKnownContact =
     state.activeTab === "sms" && state.smsRecipient?.kind === "phone";
-  const smsAiConfigured =
-    selectedAliasRecord !== null && selectedAliasAiConfigured;
+  const smsAiConfigured = composerAliases.some(
+    (alias) => alias.isAiConfigured === true || alias.isAiReady,
+  );
   const runAiDraftDisabled =
     (state.activeTab === "sms"
       ? !smsAiConfigured || smsRecipientRequiresKnownContact
@@ -284,9 +285,7 @@ export function InboxComposerDetailPane({
       ? smsRecipientRequiresKnownContact
         ? "AI drafting requires a known volunteer contact."
         : !smsAiConfigured
-          ? selectedAliasRecord === null
-            ? "Choose a sender alias first."
-            : "AI is not configured for this project. Set it up in Settings → Integrations."
+          ? "AI is not configured for this project. Set it up in Settings → Integrations."
           : null
       : selectedAliasRecord === null
         ? "Choose a sender alias first."
@@ -359,6 +358,7 @@ export function InboxComposerDetailPane({
     aiDraft,
     selectedAliasRecord,
     selectedAliasAiConfigured,
+    smsAiConfigured,
     replyContext,
     composerPaneMode: composerPane.mode,
     startAiGeneration,

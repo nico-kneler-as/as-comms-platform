@@ -598,10 +598,31 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       value: body,
     } satisfies TextareaHTMLAttributes<HTMLTextAreaElement>),
   ComposerSmsSurface: ({
+    onRecipientChange,
+    onRunAiDraft,
+    runAiDraftDisabled,
+    runAiDraftDisabledReason,
     onSend,
     sendDisabledReason,
     smsEnabled,
   }: {
+    readonly onRecipientChange: (
+      recipient:
+        | {
+            readonly kind: "contact";
+            readonly contactId: string;
+            readonly displayName: string;
+            readonly phoneE164: string;
+          }
+        | {
+            readonly kind: "phone";
+            readonly phoneE164: string;
+          }
+        | null,
+    ) => void;
+    readonly onRunAiDraft: () => void;
+    readonly runAiDraftDisabled: boolean;
+    readonly runAiDraftDisabledReason: string | null;
     readonly onSend: () => void;
     readonly sendDisabledReason: string | null;
     readonly smsEnabled: boolean;
@@ -612,6 +633,46 @@ vi.mock("../../app/inbox/_components/composer-detail-surfaces", () => ({
       createElement(
         "button",
         {
+          type: "button",
+          onClick: () => {
+            onRecipientChange({
+              kind: "contact",
+              contactId: "contact:sms-known",
+              displayName: "Known Contact",
+              phoneE164: "+14065550124",
+            });
+          },
+        },
+        "Use known SMS contact",
+      ),
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => {
+            onRecipientChange({
+              kind: "phone",
+              phoneE164: "+14065550125",
+            });
+          },
+        },
+        "Use phone-only recipient",
+      ),
+      createElement(
+        "button",
+        {
+          "data-testid": "sms-ai-draft-button",
+          disabled: runAiDraftDisabled,
+          title: runAiDraftDisabledReason ?? undefined,
+          type: "button",
+          onClick: onRunAiDraft,
+        },
+        "Draft with AI",
+      ),
+      createElement(
+        "button",
+        {
+          "data-testid": "sms-send-button",
           disabled: !smsEnabled || sendDisabledReason !== null,
           title: !smsEnabled
             ? "SMS sending isn't wired up yet — coming soon"
@@ -1064,17 +1125,61 @@ describe("composer canonical modal", () => {
     await click(getByText("Open new draft"));
     await click(getByText("SMS"));
 
-    // Query the actual <button> inside the sms-surface mock — getByText would
-    // match the wrapper <div data-testid="sms-surface"> first, since it's
-    // earlier in document order and its textContent === "Send SMS".
     const sendSmsButton = document.querySelector<HTMLButtonElement>(
-      "[data-testid='sms-surface'] button",
+      "[data-testid='sms-send-button']",
     );
     expect(sendSmsButton).not.toBeNull();
     expect(sendSmsButton?.getAttribute("disabled")).not.toBeNull();
     expect(sendSmsButton?.getAttribute("title")).toBe(
       "SMS sending isn't wired up yet — coming soon",
     );
+  });
+
+  it("enables SMS Draft with AI for a known contact without requiring an email alias", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+    await click(getByText("SMS"));
+    await click(getByText("Use known SMS contact"));
+    await flushReact();
+
+    const aiButton = document.querySelector<HTMLButtonElement>(
+      "[data-testid='sms-ai-draft-button']",
+    );
+
+    expect(aiButton).not.toBeNull();
+    expect(aiButton?.disabled).toBe(false);
+    expect(aiButton?.getAttribute("title")).toBeNull();
+  });
+
+  it("keeps SMS Draft with AI disabled for phone-only recipients with the known-contact tooltip", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+    await click(getByText("SMS"));
+    await click(getByText("Use phone-only recipient"));
+    await flushReact();
+
+    const aiButton = document.querySelector<HTMLButtonElement>(
+      "[data-testid='sms-ai-draft-button']",
+    );
+
+    expect(aiButton).not.toBeNull();
+    expect(aiButton?.disabled).toBe(true);
+    expect(aiButton?.getAttribute("title")).toBe(
+      "AI drafting requires a known volunteer contact.",
+    );
+  });
+
+  it("keeps email Draft with AI blocked until an alias is selected", async () => {
+    await mount(<TestApp />);
+
+    await click(getByText("Open new draft"));
+
+    const aiButton = getByText("Draft with AI");
+
+    expect(aiButton.getAttribute("disabled")).not.toBeNull();
+    expect(aiButton.getAttribute("title")).toBe("Choose a sender alias first.");
   });
 
   it("opens reply and note entry points in the same modal state machine", async () => {
