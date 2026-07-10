@@ -102,6 +102,10 @@ export const deliveryStatusValues = [
 export const deliveryStatusSchema = z.enum(deliveryStatusValues);
 export type DeliveryStatus = z.infer<typeof deliveryStatusSchema>;
 
+export const subjectVariantValues = ["a", "b"] as const;
+export const subjectVariantSchema = z.enum(subjectVariantValues);
+export type SubjectVariant = z.infer<typeof subjectVariantSchema>;
+
 export const campaignRunProjectionProviderValues = [
   "postmark",
   "mailchimp",
@@ -303,6 +307,8 @@ const campaignRunEditableFieldsSchema = z.object({
   fromName: nullableStringSchema.default(null),
   replyToEmail: z.string().email().nullable().default(null),
   subjectTemplate: nullableStringSchema.default(null),
+  subjectTemplateB: nullableStringSchema.default(null),
+  abTestEnabled: z.boolean().default(false),
   bodyHtmlTemplate: nullableStringSchema.default(null),
   bodyDesignJson: z.unknown().nullable().default(null),
   bodyTextTemplate: nullableStringSchema.default(null),
@@ -385,6 +391,7 @@ const audienceSnapshotSchemaBase = z.object({
   frozenProjectId: nullableStringSchema.default(null),
   frozenAliasEmail: z.string().email().nullable().default(null),
   unsubscribeToken: z.string().min(1),
+  subjectVariant: subjectVariantSchema.nullable().default(null),
   deliveryStatus: deliveryStatusSchema.default("pending"),
   providerMessageId: nullableStringSchema.default(null),
   sentAt: nullableTimestampSchema.default(null),
@@ -410,6 +417,9 @@ export const newAudienceSnapshotSchema = audienceSnapshotSchemaBase
     campaignRunId: true,
     createdAt: true,
   })
+  .partial({
+    subjectVariant: true,
+  })
   .extend({
     deliveryStatus: deliveryStatusSchema.optional(),
     providerMessageId: nullableStringSchema.optional(),
@@ -423,7 +433,7 @@ export const newAudienceSnapshotSchema = audienceSnapshotSchemaBase
     lastEventAt: nullableTimestampSchema.optional(),
   })
   .superRefine(validateAudienceSnapshotRecipient);
-export type NewAudienceSnapshot = z.infer<typeof newAudienceSnapshotSchema>;
+export type NewAudienceSnapshot = z.input<typeof newAudienceSnapshotSchema>;
 
 export const contactConsentRecordSchema = z
   .object({
@@ -533,6 +543,8 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     fromName: true,
     replyToEmail: true,
     subjectTemplate: true,
+    subjectTemplateB: true,
+    abTestEnabled: true,
     bodyHtmlTemplate: true,
     bodyDesignJson: true,
     bodyTextTemplate: true,
@@ -545,7 +557,7 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     createdByUserId: nullableStringSchema.default(null),
     lastEditedByUserId: nullableStringSchema.default(null),
   });
-export type CreateDraftInput = z.infer<typeof createDraftInputSchema>;
+export type CreateDraftInput = z.input<typeof createDraftInputSchema>;
 
 export const updateDraftInputSchema = z.object({
   kind: campaignKindSchema.optional(),
@@ -556,6 +568,8 @@ export const updateDraftInputSchema = z.object({
   fromName: nullableStringSchema.optional(),
   replyToEmail: z.string().email().nullable().optional(),
   subjectTemplate: nullableStringSchema.optional(),
+  subjectTemplateB: nullableStringSchema.optional(),
+  abTestEnabled: z.boolean().optional(),
   bodyHtmlTemplate: nullableStringSchema.optional(),
   bodyDesignJson: z.unknown().optional(),
   bodyTextTemplate: nullableStringSchema.optional(),
@@ -565,7 +579,7 @@ export const updateDraftInputSchema = z.object({
   scheduledAt: nullableTimestampSchema.optional(),
   lastEditedByUserId: nullableStringSchema.optional(),
 });
-export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;
+export type UpdateDraftInput = z.input<typeof updateDraftInputSchema>;
 
 export const scheduleSendInputSchema = z.object({
   runId: idSchema,

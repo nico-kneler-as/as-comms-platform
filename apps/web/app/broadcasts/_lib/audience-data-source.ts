@@ -144,6 +144,8 @@ export interface CampaignWizardDraftData {
   readonly fromEmail: string | null;
   readonly replyToEmail: string | null;
   readonly subjectTemplate: string | null;
+  readonly subjectTemplateB?: string | null;
+  readonly abTestEnabled?: boolean;
   readonly bodyDesignJson: unknown;
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
@@ -235,6 +237,29 @@ function successResult<T>(data: T): UiSuccess<T> {
     data,
     requestId: newRequestId(),
   };
+}
+
+function mergeMissingTokensByContact(
+  ...entries: readonly Record<string, readonly string[]>[]
+): Record<string, readonly string[]> {
+  const merged = new Map<string, Set<string>>();
+
+  for (const entry of entries) {
+    for (const [contactId, tokens] of Object.entries(entry)) {
+      const existing = merged.get(contactId) ?? new Set<string>();
+      for (const token of tokens) {
+        existing.add(token);
+      }
+      merged.set(contactId, existing);
+    }
+  }
+
+  return Object.fromEntries(
+    [...merged.entries()].map(([contactId, tokens]) => [
+      contactId,
+      [...tokens],
+    ]),
+  );
 }
 
 async function appendCampaignAudit(input: {
@@ -486,6 +511,8 @@ function mapDraftRecord(
     fromEmail: record.fromEmail,
     replyToEmail: record.replyToEmail,
     subjectTemplate: record.subjectTemplate,
+    subjectTemplateB: record.subjectTemplateB,
+    abTestEnabled: record.abTestEnabled,
     bodyDesignJson: record.bodyDesignJson ?? null,
     bodyHtmlTemplate: record.bodyHtmlTemplate,
     bodyTextTemplate: record.bodyTextTemplate,
@@ -988,6 +1015,8 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
     fromName: null,
     replyToEmail: null,
     subjectTemplate: null,
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyHtmlTemplate: null,
     bodyTextTemplate: null,
     preheader: null,
@@ -1288,6 +1317,8 @@ export async function loadComposePreviewAction(input: {
   readonly criteria: AudienceCriteria;
   readonly fromEmail: string | null;
   readonly subjectTemplate: string;
+  readonly subjectTemplateB?: string | null;
+  readonly abTestEnabled?: boolean;
   readonly preheader: string;
   readonly bodyHtmlTemplate: string;
   readonly bodyTextTemplate: string;
@@ -1320,12 +1351,23 @@ export async function loadComposePreviewAction(input: {
       });
     }
 
-    const missingByContact = mergeRenderer.validateTokens(
-      {
-        subject: input.subjectTemplate,
-        bodyHtml: input.bodyHtmlTemplate,
-      },
-      audience,
+    const missingByContact = mergeMissingTokensByContact(
+      mergeRenderer.validateTokens(
+        {
+          subject: input.subjectTemplate,
+          bodyHtml: input.bodyHtmlTemplate,
+        },
+        audience,
+      ),
+      input.abTestEnabled && (input.subjectTemplateB?.trim().length ?? 0) > 0
+        ? mergeRenderer.validateTokens(
+            {
+              subject: input.subjectTemplateB ?? "",
+              bodyHtml: "",
+            },
+            audience,
+          )
+        : {},
     );
     const missingByRecipient = new Map(Object.entries(missingByContact));
     const normalizedSampleIndex =
@@ -1789,6 +1831,8 @@ export async function saveCampaignWizardDraftAction(input: {
   readonly fromEmail: string | null;
   readonly replyToEmail: string | null;
   readonly subjectTemplate: string | null;
+  readonly subjectTemplateB?: string | null;
+  readonly abTestEnabled?: boolean;
   readonly bodyDesignJson: unknown;
   readonly bodyHtmlTemplate: string | null;
   readonly bodyTextTemplate: string | null;
@@ -1817,6 +1861,8 @@ export async function saveCampaignWizardDraftAction(input: {
         fromEmail: input.fromEmail,
         replyToEmail: input.replyToEmail,
         subjectTemplate: input.subjectTemplate,
+        subjectTemplateB: input.subjectTemplateB ?? null,
+        abTestEnabled: input.abTestEnabled ?? false,
         bodyDesignJson: input.bodyDesignJson,
         bodyHtmlTemplate: input.bodyHtmlTemplate,
         bodyTextTemplate: input.bodyTextTemplate,

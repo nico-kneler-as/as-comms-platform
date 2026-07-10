@@ -159,6 +159,8 @@ function buildDraftFingerprint(input: {
   readonly fromEmail: string | null;
   readonly replyToEmail: string | null;
   readonly subject: string;
+  readonly subjectB: string;
+  readonly abTestEnabled: boolean;
   readonly preheader: string;
   readonly bodyPlaintext: string;
   readonly bodyHtml: string;
@@ -175,6 +177,8 @@ function buildDraftFingerprint(input: {
     fromEmail: isSmsLaunch ? null : input.fromEmail,
     replyToEmail: isSmsLaunch ? null : input.replyToEmail,
     subject: isSmsLaunch ? "" : input.subject,
+    subjectB: isSmsLaunch ? "" : input.subjectB,
+    abTestEnabled: isSmsLaunch ? false : input.abTestEnabled,
     preheader: isSmsLaunch ? "" : input.preheader,
     bodyPlaintext: input.bodyPlaintext,
     bodyHtml: isSmsLaunch ? "" : input.bodyHtml,
@@ -434,6 +438,8 @@ function hasMeaningfulDraftProgress(
     (draft.fromEmail?.trim().length ?? 0) > 0 ||
     (draft.replyToEmail?.trim().length ?? 0) > 0 ||
     (draft.subjectTemplate?.trim().length ?? 0) > 0 ||
+    (draft.subjectTemplateB?.trim().length ?? 0) > 0 ||
+    (draft.abTestEnabled ?? false) ||
     (draft.preheader?.trim().length ?? 0) > 0 ||
     hasDraftBodyContent(draft) ||
     criteria.initialFilter !== undefined ||
@@ -493,6 +499,12 @@ function hasCompletedComposeStep(draft: CampaignWizardDraftData): boolean {
   if ((draft.subjectTemplate?.trim().length ?? 0) === 0) {
     return false;
   }
+  if (
+    (draft.abTestEnabled ?? false) &&
+    (draft.subjectTemplateB?.trim().length ?? 0) === 0
+  ) {
+    return false;
+  }
 
   return draft.launchType === "html_email"
     ? (draft.bodyHtmlTemplate?.trim().length ?? 0) > 0 || hasBodyText
@@ -549,6 +561,10 @@ export function useNewCampaignWizardState({
   const [fromEmail, setFromEmail] = useState(draft.fromEmail);
   const [replyToEmail, setReplyToEmail] = useState(draft.replyToEmail);
   const [subject, setSubject] = useState(draft.subjectTemplate ?? "");
+  const [subjectB, setSubjectB] = useState(draft.subjectTemplateB ?? "");
+  const [abTestEnabled, setAbTestEnabled] = useState(
+    draft.abTestEnabled ?? false,
+  );
   const [preheader, setPreheader] = useState(draft.preheader ?? "");
   const [bodyPlaintext, setBodyPlaintext] = useState(
     draft.bodyTextTemplate ?? "",
@@ -646,8 +662,15 @@ export function useNewCampaignWizardState({
 
   const frozen = runState !== "draft";
   const previewFingerprint = useMemo(
-    () => JSON.stringify({ subject, bodyPlaintext, bodyHtml }),
-    [bodyHtml, bodyPlaintext, subject],
+    () =>
+      JSON.stringify({
+        subject,
+        subjectB,
+        abTestEnabled,
+        bodyPlaintext,
+        bodyHtml,
+      }),
+    [abTestEnabled, bodyHtml, bodyPlaintext, subject, subjectB],
   );
   const bodyDesignJsonFingerprint = useMemo(
     () => JSON.stringify(bodyDesignJson),
@@ -704,6 +727,8 @@ export function useNewCampaignWizardState({
         fromEmail,
         replyToEmail,
         subject,
+        subjectB,
+        abTestEnabled,
         preheader,
         bodyPlaintext,
         bodyHtml,
@@ -722,9 +747,11 @@ export function useNewCampaignWizardState({
       kind,
       launchType,
       name,
+      abTestEnabled,
       preheader,
       replyToEmail,
       subject,
+      subjectB,
     ],
   );
   const dirty = fingerprint !== savedFingerprintRef.current;
@@ -761,6 +788,8 @@ export function useNewCampaignWizardState({
       fromEmail: draft.fromEmail,
       replyToEmail: draft.replyToEmail,
       subject: draft.subjectTemplate ?? "",
+      subjectB: draft.subjectTemplateB ?? "",
+      abTestEnabled: draft.abTestEnabled ?? false,
       preheader: draft.preheader ?? "",
       bodyPlaintext: draft.bodyTextTemplate ?? "",
       bodyHtml: draft.bodyHtmlTemplate ?? "",
@@ -837,6 +866,7 @@ export function useNewCampaignWizardState({
       setBodyPlaintext("");
       setBodyHtml("");
       setBodyDesignJson(null);
+      setAbTestEnabled(false);
       setCriteria((current) => {
         if (current.initialFilter === "specific") {
           return {
@@ -1168,6 +1198,8 @@ export function useNewCampaignWizardState({
           criteria: toActionCriteria(criteria),
           fromEmail,
           subjectTemplate: subject,
+          subjectTemplateB: subjectB,
+          abTestEnabled,
           preheader,
           bodyHtmlTemplate: bodyHtml,
           bodyTextTemplate: bodyPlaintext,
@@ -1206,12 +1238,14 @@ export function useNewCampaignWizardState({
     preheader,
     sampleIndex,
     subject,
+    subjectB,
+    abTestEnabled,
   ]);
 
   useEffect(() => {
     setSampleIndex(0);
     setWarningDismissFingerprint(null);
-  }, [bodyHtml, bodyPlaintext, subject]);
+  }, [abTestEnabled, bodyHtml, bodyPlaintext, subject, subjectB]);
 
   useEffect(() => {
     if (!dirty || frozen) {
@@ -1280,6 +1314,10 @@ export function useNewCampaignWizardState({
     replyToEmail,
     subject,
     setSubject,
+    subjectB,
+    setSubjectB,
+    abTestEnabled,
+    setAbTestEnabled,
     preheader,
     setPreheader,
     bodyPlaintext,

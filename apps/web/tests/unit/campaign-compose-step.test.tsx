@@ -202,6 +202,8 @@ function readReactProps(element: Element): Record<string, unknown> {
 const baseProps: React.ComponentProps<typeof ComposeStep> = {
   launchType: "normal_email",
   subject: "",
+  subjectB: "",
+  abTestEnabled: false,
   preheader: "",
   bodyPlaintext: "",
   bodyHtml: "",
@@ -209,6 +211,8 @@ const baseProps: React.ComponentProps<typeof ComposeStep> = {
   selectedAliasSignature: "",
   frozen: false,
   onSubjectChange: () => undefined,
+  onSubjectBChange: () => undefined,
+  onAbTestEnabledChange: () => undefined,
   onPreheaderChange: () => undefined,
   onBodyChange: () => undefined,
   onBack: () => undefined,
@@ -275,6 +279,20 @@ describe("ComposeStep snapshots", () => {
     ).toMatchSnapshot();
   });
 
+  it("shows the A/B toggle for email and hides subject B until enabled", () => {
+    const markup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        subject="Gear pickup for {{firstName}}"
+        bodyPlaintext="See you soon"
+      />,
+    );
+
+    expect(markup).toContain("A/B test subject line");
+    expect(markup).toContain("campaign-ab-subject-test");
+    expect(markup).not.toContain('id="campaign-subject-b"');
+  });
+
   it("renders the markdown composer for normal_email", () => {
     const markup = renderToStaticMarkup(
       <ComposeStep
@@ -306,6 +324,7 @@ describe("ComposeStep snapshots", () => {
     expect(markup).toContain("chars");
     expect(markup).not.toContain('id="campaign-subject"');
     expect(markup).not.toContain('id="campaign-preheader"');
+    expect(markup).not.toContain("A/B test subject line");
   });
 
   it("gates SMS continue on a non-empty body only", () => {
@@ -324,6 +343,46 @@ describe("ComposeStep snapshots", () => {
       /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
     );
     expect(validMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+  });
+
+  it("requires both subject lines when A/B testing is enabled", () => {
+    const missingBMarkup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        subject="Subject A"
+        subjectB=""
+        abTestEnabled
+        bodyPlaintext="Body copy"
+      />,
+    );
+    const completeMarkup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        subject="Subject A"
+        subjectB="Subject B"
+        abTestEnabled
+        bodyPlaintext="Body copy"
+      />,
+    );
+    const singleSubjectMarkup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        subject="Single subject"
+        subjectB=""
+        abTestEnabled={false}
+        bodyPlaintext="Body copy"
+      />,
+    );
+
+    expect(missingBMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+    expect(completeMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+    expect(singleSubjectMarkup).not.toMatch(
       /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
     );
   });
@@ -370,6 +429,17 @@ describe("ComposeStep snapshots", () => {
 });
 
 describe("ComposeStep HTML upload mode", () => {
+  it("renders the subject B field when A/B testing is enabled", () => {
+    renderComposeStep({
+      subject: "Subject A",
+      subjectB: "Subject B",
+      abTestEnabled: true,
+      bodyPlaintext: "Body copy",
+    });
+
+    expect(document.querySelector("#campaign-subject-b")).not.toBeNull();
+  });
+
   it("switches from the editor to the upload UI", () => {
     renderComposeStep({
       launchType: "html_email",

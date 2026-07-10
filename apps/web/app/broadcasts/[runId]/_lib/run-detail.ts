@@ -18,8 +18,10 @@ import {
 import {
   listRunRecipients,
   readRunMetricCounts,
+  readRunVariantMetricCounts,
   type RecipientRowData,
   type RunMetricCounts,
+  type RunVariantMetricCounts,
 } from "../../_lib/run-recipients";
 
 function normalizeSqlResultRows<TRow>(
@@ -114,11 +116,25 @@ export interface RunDetailModel {
     totalClicks: number;
     uniqueClickers: number;
   }[];
+  readonly subjectVariantBreakdown: readonly SubjectVariantBreakdown[] | null;
   readonly audienceCriteria: AudienceCriteria;
   readonly projectLabelsById?: Readonly<Record<string, string>>;
   readonly canStopUnsent: boolean;
   readonly canDuplicate: boolean;
   readonly isAdmin: boolean;
+}
+
+export interface SubjectVariantBreakdown {
+  readonly variant: "a" | "b";
+  readonly label: "A" | "B";
+  readonly subject: string | null;
+  readonly assigned: number;
+  readonly delivered: number;
+  readonly deliveredRate: number;
+  readonly opened: number;
+  readonly openedRate: number;
+  readonly clicked: number;
+  readonly clickedRate: number;
 }
 
 interface ReplyRowDb {
@@ -335,7 +351,10 @@ function buildProjectionRun(
     fromName: null,
     replyToEmail: null,
     subjectTemplate: projection.subject,
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyHtmlTemplate: null,
+    bodyDesignJson: null,
     bodyTextTemplate: null,
     preheader: null,
     audienceCriteria: audienceCriteriaSchema.parse({}),
@@ -351,6 +370,49 @@ function buildProjectionRun(
     createdAt: projection.createdAt,
     updatedAt: projection.updatedAt,
   };
+}
+
+function buildSubjectVariantBreakdown(input: {
+  readonly run: CampaignRunRecord;
+  readonly counts: readonly RunVariantMetricCounts[];
+}): readonly SubjectVariantBreakdown[] {
+  const countsByVariant = new Map(
+    input.counts.map((entry) => [entry.subjectVariant, entry] as const),
+  );
+  const subjectA = input.run.subjectTemplate?.trim() ?? "";
+  const subjectB = input.run.subjectTemplateB?.trim() ?? "";
+
+  return ([
+    {
+      variant: "a",
+      label: "A",
+      subject: subjectA.length > 0 ? subjectA : null,
+    },
+    {
+      variant: "b",
+      label: "B",
+      subject: subjectB.length > 0 ? subjectB : null,
+    },
+  ] as const).map((variant) => {
+    const counts = countsByVariant.get(variant.variant);
+    const assigned = counts?.total ?? 0;
+    const delivered = counts?.delivered ?? 0;
+    const opened = counts?.opened ?? 0;
+    const clicked = counts?.clicked ?? 0;
+
+    return {
+      variant: variant.variant,
+      label: variant.label,
+      subject: variant.subject,
+      assigned,
+      delivered,
+      deliveredRate: formatPercentage(delivered, assigned),
+      opened,
+      openedRate: formatPercentage(opened, assigned),
+      clicked,
+      clickedRate: formatPercentage(clicked, assigned),
+    };
+  });
 }
 
 function estimateMinutesRemaining(input: {
@@ -536,11 +598,18 @@ export async function getRunDetailModel(input: {
     return null;
   }
 
-  const [mailchimpAggregates, metricCounts, recipientQuery, linkClicks] =
+  const [
+    mailchimpAggregates,
+    metricCounts,
+    variantMetricCounts,
+    recipientQuery,
+    linkClicks,
+  ] =
     provider === "mailchimp"
       ? await Promise.all([
           getMailchimpRepository(runtime).aggregateForCampaign(run.id),
           Promise.resolve<RunMetricCounts | null>(null),
+          Promise.resolve<readonly RunVariantMetricCounts[]>([]),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
           Promise.resolve<
             readonly {
@@ -553,6 +622,7 @@ export async function getRunDetailModel(input: {
       : await Promise.all([
           Promise.resolve<MailchimpCampaignAggregates | null>(null),
           readRunMetricCounts({ runId: run.id }),
+          readRunVariantMetricCounts({ runId: run.id }),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
           aggregateBroadcastLinkClicksForRun(run.id),
         ]);
@@ -690,6 +760,13 @@ export async function getRunDetailModel(input: {
       totalClicks: entry.totalClicks,
       uniqueClickers: entry.uniqueClickers,
     })),
+    subjectVariantBreakdown:
+      provider === "postmark" && run.abTestEnabled
+        ? buildSubjectVariantBreakdown({
+            run,
+            counts: variantMetricCounts,
+          })
+        : null,
     audienceCriteria: run.audienceCriteria,
     projectLabelsById: buildProjectLabelsById(allProjects),
     canStopUnsent:

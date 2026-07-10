@@ -20,7 +20,10 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
     fromName: null,
     replyToEmail: null,
     subjectTemplate: null,
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyHtmlTemplate: null,
+    bodyDesignJson: null,
     bodyTextTemplate: null,
     preheader: null,
     audienceCriteria: {

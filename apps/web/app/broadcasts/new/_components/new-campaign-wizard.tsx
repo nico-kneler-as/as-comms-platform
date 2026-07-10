@@ -459,6 +459,10 @@ export function NewCampaignWizard({
     replyToEmail,
     subject,
     setSubject,
+    subjectB,
+    setSubjectB,
+    abTestEnabled,
+    setAbTestEnabled,
     preheader,
     setPreheader,
     bodyPlaintext,
@@ -567,6 +571,9 @@ export function NewCampaignWizard({
           replyToEmail: isSmsLaunch ? null : replyToEmail,
           subjectTemplate:
             isSmsLaunch || subject.trim().length === 0 ? null : subject,
+          subjectTemplateB:
+            isSmsLaunch || subjectB.trim().length === 0 ? null : subjectB,
+          abTestEnabled: isSmsLaunch ? false : abTestEnabled,
           bodyDesignJson: isSmsLaunch ? null : bodyDesignJson,
           bodyHtmlTemplate:
             isSmsLaunch || bodyHtml.trim().length === 0 ? null : bodyHtml,
@@ -597,6 +604,14 @@ export function NewCampaignWizard({
             result.data.launchType === "sms"
               ? ""
               : (result.data.subjectTemplate ?? ""),
+          subjectB:
+            result.data.launchType === "sms"
+              ? ""
+              : (result.data.subjectTemplateB ?? ""),
+          abTestEnabled:
+            result.data.launchType === "sms"
+              ? false
+              : (result.data.abTestEnabled ?? false),
           preheader:
             result.data.launchType === "sms"
               ? ""
@@ -1004,6 +1019,8 @@ export function NewCampaignWizard({
                 <ComposeStep
                   launchType={launchType}
                   subject={subject}
+                  subjectB={subjectB}
+                  abTestEnabled={abTestEnabled}
                   preheader={preheader}
                   bodyPlaintext={bodyPlaintext}
                   bodyHtml={bodyHtml}
@@ -1012,6 +1029,8 @@ export function NewCampaignWizard({
                   frozen={frozen}
                   continuePending={savePending}
                   onSubjectChange={setSubject}
+                  onSubjectBChange={setSubjectB}
+                  onAbTestEnabledChange={setAbTestEnabled}
                   onPreheaderChange={setPreheader}
                   onBodyChange={(value) => {
                     setBodyDesignJson(value.bodyDesignJson);

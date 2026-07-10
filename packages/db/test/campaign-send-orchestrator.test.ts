@@ -45,7 +45,10 @@ function buildDraftInput(
     fromName: null,
     replyToEmail: null,
     subjectTemplate: "Hello {{firstName}}",
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyHtmlTemplate: "<p>{{projectName}}</p>",
+    bodyDesignJson: null,
     bodyTextTemplate: "{{aliasEmail}}",
     preheader: null,
     audienceCriteria: buildAudienceCriteria(),
@@ -165,6 +168,7 @@ function createMockPostmarkClient(input: {
   onBatch?: (
     messages: readonly {
       readonly To: string;
+      readonly Subject?: string;
       readonly HtmlBody?: string;
       readonly TextBody?: string;
       readonly MessageStream?: string;
@@ -181,9 +185,12 @@ function createMockPostmarkClient(input: {
     async sendBatch(req: {
       readonly messages: readonly {
         readonly To: string;
+        readonly Subject?: string;
         readonly HtmlBody?: string;
         readonly TextBody?: string;
         readonly MessageStream?: string;
+        readonly TrackOpens?: boolean;
+        readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
       }[];
     }) {
       calls += 1;
@@ -313,6 +320,78 @@ describe("Campaign send orchestrator", () => {
       true,
     );
     expect(refreshedRun?.state).toBe("complete");
+  });
+
+  it("assigns deterministic A/B subject variants at freeze and leaves non-A/B runs null", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 5);
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+    const abRunA = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-ab-freeze-a",
+        subjectTemplateB: "Hello from B",
+        abTestEnabled: true,
+      }),
+    );
+    const abRunB = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-ab-freeze-b",
+        subjectTemplateB: "Hello from B",
+        abTestEnabled: true,
+      }),
+    );
+    const controlRun = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-ab-freeze-control" }),
+    );
+
+    await runtime.orchestrator.freeze(
+      abRunA.id,
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    await runtime.orchestrator.freeze(
+      abRunB.id,
+      new Date("2026-05-15T12:01:00.000Z"),
+    );
+    await runtime.orchestrator.freeze(
+      controlRun.id,
+      new Date("2026-05-15T12:02:00.000Z"),
+    );
+
+    const firstSnapshots = await runtime.campaigns.audienceSnapshots.listForRun(
+      abRunA.id,
+    );
+    const secondSnapshots = await runtime.campaigns.audienceSnapshots.listForRun(
+      abRunB.id,
+    );
+    const controlSnapshots =
+      await runtime.campaigns.audienceSnapshots.listForRun(controlRun.id);
+
+    expect(
+      firstSnapshots.filter((snapshot) => snapshot.subjectVariant === "a"),
+    ).toHaveLength(3);
+    expect(
+      firstSnapshots.filter((snapshot) => snapshot.subjectVariant === "b"),
+    ).toHaveLength(2);
+    expect(
+      firstSnapshots
+        .map((snapshot) => ({
+          email: snapshot.frozenEmail,
+          subjectVariant: snapshot.subjectVariant,
+        }))
+        .sort((left, right) => left.email.localeCompare(right.email)),
+    ).toEqual(
+      secondSnapshots
+        .map((snapshot) => ({
+          email: snapshot.frozenEmail,
+          subjectVariant: snapshot.subjectVariant,
+        }))
+        .sort((left, right) => left.email.localeCompare(right.email)),
+    );
+    expect(
+      controlSnapshots.every((snapshot) => snapshot.subjectVariant === null),
+    ).toBe(true);
   });
 
   it("rethrows batch send failures so the worker can retry", async () => {
@@ -510,6 +589,116 @@ describe("Campaign send orchestrator", () => {
     const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
 
     expect(snapshot?.deliveryStatus).toBe("suppressed_at_send");
+  });
+
+  it("renders subject A and subject B per recipient variant assignment", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedProjectContact(context, {
+      id: "contact-taylor",
+      email: "taylor@example.org",
+      displayName: "Taylor",
+    });
+    await seedProjectContact(context, {
+      id: "contact-jordan",
+      email: "jordan@example.org",
+      displayName: "Jordan",
+    });
+    let sentMessages:
+      | readonly {
+          readonly To: string;
+          readonly Subject?: string;
+        }[]
+      | undefined;
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          sentMessages = messages;
+        },
+      }),
+      2,
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-ab-subject-send",
+        subjectTemplate: "Hello {{firstName}}",
+        subjectTemplateB: "Hello {{projectName}}",
+        abTestEnabled: true,
+      }),
+    );
+
+    await runtime.orchestrator.freeze(
+      run.id,
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    const subjectsByEmail = new Map(
+      (sentMessages ?? []).map((message) => [
+        message.To,
+        message.Subject ?? null,
+      ]),
+    );
+
+    expect(
+      new Set(snapshots.map((snapshot) => snapshot.subjectVariant)),
+    ).toEqual(new Set(["a", "b"]));
+    for (const snapshot of snapshots) {
+      expect(subjectsByEmail.get(snapshot.frozenEmail)).toBe(
+        snapshot.subjectVariant === "b"
+          ? "Hello Project One"
+          : `Hello ${snapshot.frozenFirstName ?? ""}`,
+      );
+    }
+  });
+
+  it("uses the primary subject for non-A/B sends", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedProjectContact(context, {
+      id: "contact-single",
+      email: "single@example.org",
+      displayName: "Taylor",
+    });
+    let sentMessages:
+      | readonly {
+          readonly To: string;
+          readonly Subject?: string;
+        }[]
+      | undefined;
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          sentMessages = messages;
+        },
+      }),
+      1,
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-single-subject-send",
+        subjectTemplate: "Hello {{firstName}}",
+        subjectTemplateB: "Unused B subject",
+        abTestEnabled: false,
+      }),
+    );
+
+    await runtime.orchestrator.freeze(
+      run.id,
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    expect(snapshot?.subjectVariant).toBeNull();
+    expect(sentMessages?.[0]?.Subject).toBe("Hello Taylor");
   });
 
   it("freezes csv uploads through project exclusions and keeps newsletter-only opt-outs", async () => {

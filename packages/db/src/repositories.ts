@@ -6953,6 +6953,8 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     fromName: row.fromName,
     replyToEmail: row.replyToEmail,
     subjectTemplate: row.subjectTemplate,
+    subjectTemplateB: row.subjectTemplateB,
+    abTestEnabled: row.abTestEnabled,
     bodyHtmlTemplate: row.bodyHtmlTemplate,
     bodyDesignJson: row.bodyDesignJson,
     bodyTextTemplate: row.bodyTextTemplate,
@@ -6986,6 +6988,7 @@ function mapAudienceSnapshotRow(
     frozenProjectId: row.frozenProjectId,
     frozenAliasEmail: row.frozenAliasEmail,
     unsubscribeToken: row.unsubscribeToken,
+    subjectVariant: row.subjectVariant,
     deliveryStatus: row.deliveryStatus,
     providerMessageId: row.providerMessageId,
     sentAt: toNullableIsoDate(row.sentAt),
@@ -7142,6 +7145,12 @@ function mapCampaignRunMutationFields(
   if ("subjectTemplate" in input && input.subjectTemplate !== undefined) {
     values.subjectTemplate = input.subjectTemplate;
   }
+  if ("subjectTemplateB" in input && input.subjectTemplateB !== undefined) {
+    values.subjectTemplateB = input.subjectTemplateB;
+  }
+  if ("abTestEnabled" in input && input.abTestEnabled !== undefined) {
+    values.abTestEnabled = input.abTestEnabled;
+  }
   if ("bodyHtmlTemplate" in input && input.bodyHtmlTemplate !== undefined) {
     values.bodyHtmlTemplate = input.bodyHtmlTemplate;
   }
@@ -7207,6 +7216,7 @@ function mapAudienceSnapshotInsert(
     frozenProjectId: parsed.frozenProjectId ?? null,
     frozenAliasEmail: parsed.frozenAliasEmail ?? null,
     unsubscribeToken: parsed.unsubscribeToken,
+    subjectVariant: parsed.subjectVariant ?? null,
     deliveryStatus: parsed.deliveryStatus ?? "pending",
     providerMessageId: parsed.providerMessageId ?? null,
     sentAt: toNullableDate(parsed.sentAt),
@@ -7249,6 +7259,9 @@ function mapAudienceSnapshotMutationFields(
   }
   if (input.unsubscribeToken !== undefined) {
     values.unsubscribeToken = input.unsubscribeToken;
+  }
+  if (input.subjectVariant !== undefined) {
+    values.subjectVariant = input.subjectVariant;
   }
   if (input.deliveryStatus !== undefined) {
     values.deliveryStatus = input.deliveryStatus;
@@ -7344,6 +7357,8 @@ export function createStage5RepositoryBundle(
             fromName: parsed.fromName,
             replyToEmail: parsed.replyToEmail,
             subjectTemplate: parsed.subjectTemplate,
+            subjectTemplateB: parsed.subjectTemplateB,
+            abTestEnabled: parsed.abTestEnabled,
             bodyHtmlTemplate: parsed.bodyHtmlTemplate,
             bodyDesignJson: parsed.bodyDesignJson,
             bodyTextTemplate: parsed.bodyTextTemplate,
