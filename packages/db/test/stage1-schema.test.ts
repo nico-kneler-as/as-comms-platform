@@ -13,6 +13,7 @@ import {
   aiKnowledgeEntries,
   audienceSnapshots,
   broadcastLinkClicks,
+  broadcastOpens,
   broadcastUploadedRecipients,
   canonicalEventAudience,
   canonicalEventLedger,
@@ -48,6 +49,7 @@ describe("Stage 1 DB schema", () => {
       "auditPolicyEvidence",
       "broadcastLinkClicks",
       "broadcastMediaAssets",
+      "broadcastOpens",
       "broadcastUploadedRecipients",
       "campaignRuns",
       "canonicalEventAudience",
@@ -116,6 +118,7 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(composerDrafts)).toBe("composer_drafts");
     expect(getTableName(audienceSnapshots)).toBe("audience_snapshots");
     expect(getTableName(broadcastLinkClicks)).toBe("broadcast_link_clicks");
+    expect(getTableName(broadcastOpens)).toBe("broadcast_opens");
     expect(getTableName(broadcastUploadedRecipients)).toBe(
       "broadcast_uploaded_recipients"
     );
@@ -204,6 +207,98 @@ describe("Stage 1 DB schema", () => {
     expect(row.leaseOwner).toBe("worker:test");
     expect(row.heartbeatAt).toBe("2026-01-05T00:04:00.000Z");
     expect(row.deadLetterCount).toBe(1);
+  });
+
+  it("adds bot-classification columns and the broadcast_opens table", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      const columnResult: unknown = await context.db.execute(sql<{
+        readonly tableName: string;
+        readonly columnName: string;
+        readonly dataType: string;
+        readonly isNullable: "YES" | "NO";
+      }>`
+        select
+          table_name as "tableName",
+          column_name as "columnName",
+          data_type as "dataType",
+          is_nullable as "isNullable"
+        from information_schema.columns
+        where table_schema = 'public'
+          and (
+            (table_name = 'broadcast_link_clicks' and column_name in ('is_bot', 'bot_reason'))
+            or (
+              table_name = 'broadcast_opens'
+              and column_name in (
+                'opened_at',
+                'is_bot',
+                'bot_reason',
+                'idempotency_key'
+              )
+            )
+          )
+        order by table_name, column_name
+      `);
+      const columns = Array.isArray(columnResult)
+        ? (columnResult as readonly {
+            readonly tableName: string;
+            readonly columnName: string;
+            readonly dataType: string;
+            readonly isNullable: "YES" | "NO";
+          }[])
+        : (
+            columnResult as {
+              readonly rows: readonly {
+                readonly tableName: string;
+                readonly columnName: string;
+                readonly dataType: string;
+                readonly isNullable: "YES" | "NO";
+              }[];
+            }
+          ).rows;
+
+      expect(columns).toEqual([
+        {
+          tableName: "broadcast_link_clicks",
+          columnName: "bot_reason",
+          dataType: "text",
+          isNullable: "YES",
+        },
+        {
+          tableName: "broadcast_link_clicks",
+          columnName: "is_bot",
+          dataType: "boolean",
+          isNullable: "NO",
+        },
+        {
+          tableName: "broadcast_opens",
+          columnName: "bot_reason",
+          dataType: "text",
+          isNullable: "YES",
+        },
+        {
+          tableName: "broadcast_opens",
+          columnName: "idempotency_key",
+          dataType: "text",
+          isNullable: "NO",
+        },
+        {
+          tableName: "broadcast_opens",
+          columnName: "is_bot",
+          dataType: "boolean",
+          isNullable: "NO",
+        },
+        {
+          tableName: "broadcast_opens",
+          columnName: "opened_at",
+          dataType: "timestamp with time zone",
+          isNullable: "NO",
+        },
+      ]);
+    } finally {
+      await context.dispose();
+    }
   });
 
   it("adds nullable lease and heartbeat columns to sync_state and preserves null round-trips", async () => {

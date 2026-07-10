@@ -1,6 +1,7 @@
 import { isNotNull, sql } from "drizzle-orm";
 import type {
   AiKnowledgeSource,
+  BroadcastActivityBotReason,
   BroadcastLinkClickClient,
   BroadcastLinkClickGeo,
   CanonicalEventProvenance,
@@ -1480,14 +1481,60 @@ export const broadcastLinkClicks = pgTable(
     client: jsonb("client").$type<BroadcastLinkClickClient | null>(),
     os: jsonb("os").$type<BroadcastLinkClickClient | null>(),
     geo: jsonb("geo").$type<BroadcastLinkClickGeo | null>(),
+    isBot: boolean("is_bot").notNull().default(false),
+    botReason: text("bot_reason").$type<BroadcastActivityBotReason | null>(),
     idempotencyKey: text("idempotency_key").notNull(),
     createdAt: createdAtColumn,
   },
   (table) => [
+    check(
+      "broadcast_link_clicks_bot_reason_check",
+      sql`${table.botReason} IS NULL OR ${table.botReason} IN ('machine_user_agent', 'fast_activity')`,
+    ),
     uniqueIndex("broadcast_link_clicks_idempotency_key_unique").on(
       table.idempotencyKey,
     ),
     index("broadcast_link_clicks_campaign_run_id_idx").on(table.campaignRunId),
+  ],
+);
+
+export const broadcastOpens = pgTable(
+  "broadcast_opens",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    audienceSnapshotId: text("audience_snapshot_id").references(
+      () => audienceSnapshots.id,
+      {
+        onDelete: "cascade",
+      },
+    ),
+    contactId: text("contact_id"),
+    openedAt: timestamp("opened_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    userAgent: text("user_agent"),
+    platform: text("platform"),
+    client: jsonb("client").$type<BroadcastLinkClickClient | null>(),
+    os: jsonb("os").$type<BroadcastLinkClickClient | null>(),
+    geo: jsonb("geo").$type<BroadcastLinkClickGeo | null>(),
+    isBot: boolean("is_bot").notNull().default(false),
+    botReason: text("bot_reason").$type<BroadcastActivityBotReason | null>(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    check(
+      "broadcast_opens_bot_reason_check",
+      sql`${table.botReason} IS NULL OR ${table.botReason} IN ('machine_user_agent', 'fast_activity')`,
+    ),
+    uniqueIndex("broadcast_opens_idempotency_key_unique").on(
+      table.idempotencyKey,
+    ),
+    index("broadcast_opens_campaign_run_id_idx").on(table.campaignRunId),
   ],
 );
 

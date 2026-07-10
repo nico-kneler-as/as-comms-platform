@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type {
-  BroadcastLinkClickRecord,
+  BroadcastLinkClickRecordInput,
   CreateDraftInput,
 } from "@as-comms/contracts";
 
@@ -13,6 +13,7 @@ import {
 import {
   aggregateBroadcastLinkClicksByRunId,
   insertBroadcastLinkClick,
+  listBroadcastLinkClicksForRun,
 } from "../src/broadcast-link-clicks-repository.js";
 import { createTestStage1Context, type TestStage1Context } from "./helpers.js";
 
@@ -111,9 +112,9 @@ async function seedNewsletterSubscriber(
 }
 
 function buildLinkClickRecord(
-  overrides: Partial<BroadcastLinkClickRecord> &
-    Pick<BroadcastLinkClickRecord, "id" | "idempotencyKey">,
-): BroadcastLinkClickRecord {
+  overrides: Partial<BroadcastLinkClickRecordInput> &
+    Pick<BroadcastLinkClickRecordInput, "id" | "idempotencyKey">,
+): BroadcastLinkClickRecordInput {
   const { id, idempotencyKey, ...rest } = overrides;
 
   return {
@@ -331,6 +332,59 @@ describe("broadcast link clicks repository", () => {
         originalLink: "https://example.org/b",
         totalClicks: 1,
         uniqueClickers: 1,
+      },
+    ]);
+  });
+
+  it("round-trips bot-classification fields through list reads", async () => {
+    await expect(
+      insertBroadcastLinkClick(
+        context.db,
+        buildLinkClickRecord({
+          id: "click-bot-1",
+          idempotencyKey: "dedupe-bot-1",
+          isBot: true,
+          botReason: "fast_activity",
+        }),
+      ),
+    ).resolves.toBe(true);
+
+    await expect(
+      listBroadcastLinkClicksForRun(context.db, "run-1"),
+    ).resolves.toEqual([
+      {
+        id: "click-bot-1",
+        campaignRunId: "run-1",
+        audienceSnapshotId: "snapshot-contact",
+        contactId: "contact-1",
+        originalLink: "https://example.org/a",
+        clickedAt: "2026-07-01T13:00:00.000Z",
+        userAgent: "Mozilla/5.0",
+        platform: "Desktop",
+        client: {
+          Name: "Chrome 137",
+          Company: "Google",
+          Family: "Chrome",
+        },
+        os: {
+          Name: "macOS 15",
+          Company: "Apple",
+          Family: "macOS",
+        },
+        geo: {
+          CountryISOCode: "US",
+          Country: "United States",
+          RegionISOCode: "MT",
+          Region: "Montana",
+          City: "Bozeman",
+          Zip: "59715",
+          Coords: "45.6770,-111.0429",
+          IP: "203.0.113.7",
+        },
+        isBot: true,
+        botReason: "fast_activity",
+        idempotencyKey: "dedupe-bot-1",
+        createdAt: "2026-07-01T13:00:00.000Z",
       },
     ]);
   });

@@ -5,6 +5,7 @@ import {
   broadcastLinkClickAggregateSchema,
   type BroadcastLinkClickAggregate,
   type BroadcastLinkClickRecord,
+  type BroadcastLinkClickRecordInput,
 } from "@as-comms/contracts";
 
 import {
@@ -32,6 +33,8 @@ function toBroadcastLinkClickRow(
     client: row.client,
     os: row.os,
     geo: row.geo,
+    is_bot: row.isBot,
+    bot_reason: row.botReason,
     idempotency_key: row.idempotencyKey,
     created_at: row.createdAt,
   };
@@ -39,7 +42,7 @@ function toBroadcastLinkClickRow(
 
 export async function insertBroadcastLinkClick(
   db: BroadcastLinkClicksDatabase,
-  record: BroadcastLinkClickRecord,
+  record: BroadcastLinkClickRecordInput,
 ): Promise<boolean> {
   const values = mapBroadcastLinkClickInsert(record);
   const [row] = await db
