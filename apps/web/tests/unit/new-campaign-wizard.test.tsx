@@ -1074,7 +1074,7 @@ describe("NewCampaignWizard", () => {
     );
   });
 
-  it("treats an org sender as newsletter-kind and gates the audience step to specific plus all-available modes", async () => {
+  it("treats an org sender as newsletter-kind and gates the audience step to specific, all-available, and CSV modes", async () => {
     await renderWizard({
       bootstrap: buildBootstrap({
         senderOptions: [
@@ -1116,7 +1116,7 @@ describe("NewCampaignWizard", () => {
       }),
     );
     expect(getByTestId("audience-available-modes").textContent).toBe(
-      "specific,all_available",
+      "specific,all_available,csv_upload",
     );
     expect(
       document.querySelector('[aria-label="mode-project-status"]'),

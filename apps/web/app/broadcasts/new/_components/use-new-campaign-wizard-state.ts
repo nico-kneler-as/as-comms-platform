@@ -78,7 +78,7 @@ export function readAllowedAudienceModesForSenderType(
   }
 
   return senderType === "org"
-    ? ["specific", "all_available"]
+    ? ["specific", "all_available", "csv_upload"]
     : ["project_status", "specific", "csv_upload"];
 }
 

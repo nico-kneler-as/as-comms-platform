@@ -215,6 +215,14 @@ describe("public unsubscribe page", () => {
       token: "token-project-csv",
       contactId: null,
     });
+    // Org-sender CSV recipient: newsletter-kind send, but no contact AND no
+    // newsletter subscriber — a one-off uploaded email, not a subscriber.
+    await seedTarget(runtime, {
+      kind: "newsletter",
+      token: "token-org-csv",
+      contactId: null,
+      newsletterSubscriberId: null,
+    });
   });
 
   afterEach(async () => {
@@ -321,6 +329,33 @@ describe("public unsubscribe page", () => {
         new Date(),
       ),
     ).toBe(true);
+  });
+
+  it("POST suppresses an org-sender CSV recipient (newsletter-kind, no subscriber) via the suppression list, not newsletter suppressions", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+
+    const response = await unsubscribePost(
+      new Request("http://localhost/u/token-org-csv/confirm", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-org-csv" }) },
+    );
+
+    expect(response.status).toBe(303);
+    // Suppressed via the general suppression list (which CSV sends honor).
+    expect(
+      await campaigns.suppressionList.isSuppressed(
+        "taylor@example.org",
+        new Date(),
+      ),
+    ).toBe(true);
+    // NOT added to newsletter suppressions (they didn't leave the newsletter).
+    expect(
+      await campaigns.newsletterSuppressions.findByEmail("taylor@example.org"),
+    ).toBeNull();
   });
 
   it("loads a valid newsletter page model for a null-contact recipient", async () => {

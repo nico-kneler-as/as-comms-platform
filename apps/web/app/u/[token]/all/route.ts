@@ -30,7 +30,7 @@ export async function POST(
   if (
     target !== null &&
     target.contactId === null &&
-    target.kind === "newsletter"
+    target.newsletterSubscriberId !== null
   ) {
     await runtime.campaigns.newsletterSuppressions.upsert({
       email: target.email,
@@ -38,13 +38,13 @@ export async function POST(
       source: "recipient_click",
     });
   }
-  // No-contact broadcast recipient (e.g. CSV import): suppress by email. The
-  // suppression list already applies to every send, so this is effectively
+  // No-contact, no-subscriber recipient (CSV import, any kind): suppress by
+  // email. The suppression list applies to every send, so this is effectively
   // "unsubscribe from all" for a recipient with no contact record.
   if (
     target !== null &&
     target.contactId === null &&
-    target.kind !== "newsletter"
+    target.newsletterSubscriberId === null
   ) {
     await runtime.campaigns.suppressionList.upsertFromBounce(
       target.email,

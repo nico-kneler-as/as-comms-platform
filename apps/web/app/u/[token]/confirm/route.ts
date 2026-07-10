@@ -30,10 +30,13 @@ export async function POST(
       });
     }
   }
+  // No-contact recipients are keyed off whether they're a real newsletter
+  // subscriber, NOT the run kind — an org-sender CSV send is "newsletter"-kind
+  // but its recipients are one-off emails, not subscribers.
   if (
     target !== null &&
     target.contactId === null &&
-    target.kind === "newsletter"
+    target.newsletterSubscriberId !== null
   ) {
     await runtime.campaigns.newsletterSuppressions.upsert({
       email: target.email,
@@ -41,13 +44,14 @@ export async function POST(
       source: "recipient_click",
     });
   }
-  // No-contact broadcast recipient (e.g. a CSV-imported project send): opt out
+  // No-contact, no-subscriber recipient (CSV-imported list, any kind): opt out
   // by email via the suppression list, which the exclusion filter honors for
-  // every future send.
+  // every future send (CSV sends respect the suppression list, not the
+  // newsletter suppressions).
   if (
     target !== null &&
     target.contactId === null &&
-    target.kind !== "newsletter"
+    target.newsletterSubscriberId === null
   ) {
     await runtime.campaigns.suppressionList.upsertFromBounce(
       target.email,
