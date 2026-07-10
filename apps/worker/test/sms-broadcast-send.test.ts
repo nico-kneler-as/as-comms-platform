@@ -296,6 +296,7 @@ describe("sms broadcast send task", () => {
     });
     const run = await wrapper.campaigns.campaignRuns.findById("run-1");
     expect(run?.state).toBe("complete");
+    expect(run?.completedAt).toBe("2026-07-02T12:03:00.000Z");
   });
 
   it("suppresses rows whose consent is revoked at send time", async () => {
