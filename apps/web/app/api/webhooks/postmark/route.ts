@@ -3,11 +3,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import {
+  classifyBroadcastActivity,
   createStage1PersistenceService,
   type CanonicalEventRecord,
   type IdentityResolutionCase,
 } from "@as-comms/domain";
 import {
+  type BroadcastActivityBotReason,
   canonicalEventTypeSchema,
   type DeliveryStatus,
   type SuppressionReason,
@@ -22,6 +24,7 @@ import { readWebEnv } from "@/src/server/env";
 import {
   getStage1WebRuntime,
   recordBroadcastLinkClick,
+  recordBroadcastOpen,
 } from "@/src/server/stage1-runtime";
 
 export const dynamic = "force-dynamic";
@@ -138,6 +141,18 @@ function buildClickIdempotencyKey(
   );
 }
 
+function buildOpenIdempotencyKey(
+  event: Extract<PostmarkWebhookEvent, { RecordType: "Open" }>,
+): string {
+  return sha256(
+    JSON.stringify([
+      "postmark-open",
+      event.MessageID,
+      event.ReceivedAt,
+    ]),
+  );
+}
+
 function buildPayloadRef(event: PostmarkWebhookEvent): string {
   return `postmark://webhooks/${event.RecordType}/${encodeURIComponent(buildProviderRecordId(event))}`;
 }
@@ -196,15 +211,31 @@ function readCampaignRunIdFromMetadata(event: PostmarkWebhookEvent): string | nu
     : null;
 }
 
+function classifyActivity(input: {
+  userAgent: string | null;
+  platform: string | null;
+  occurredAt: string;
+  deliveredAt: string | Date | null;
+}): { isBot: boolean; botReason: BroadcastActivityBotReason | null } {
+  const result = classifyBroadcastActivity(input);
+
+  return {
+    isBot: result.isBot,
+    botReason: result.reason,
+  };
+}
+
+interface ActivitySnapshot {
+  readonly id: string;
+  readonly campaignRunId: string;
+  readonly contactId: string | null;
+  readonly deliveredAt: string | Date | null;
+  readonly sentAt: string | Date | null;
+}
+
 async function recordClickEvent(input: {
   readonly event: Extract<PostmarkWebhookEvent, { RecordType: "Click" }>;
-  readonly snapshot:
-    | {
-        readonly id: string;
-        readonly campaignRunId: string;
-        readonly contactId: string | null;
-      }
-    | null;
+  readonly snapshot: ActivitySnapshot | null;
 }): Promise<boolean> {
   const campaignRunId =
     input.snapshot?.campaignRunId ?? readCampaignRunIdFromMetadata(input.event);
@@ -212,6 +243,13 @@ async function recordClickEvent(input: {
   if (campaignRunId === null) {
     return false;
   }
+
+  const classification = classifyActivity({
+    userAgent: input.event.UserAgent,
+    platform: input.event.Platform,
+    occurredAt: input.event.ReceivedAt,
+    deliveredAt: input.snapshot?.deliveredAt ?? input.snapshot?.sentAt ?? null,
+  });
 
   return recordBroadcastLinkClick({
     id: randomUUID(),
@@ -225,7 +263,45 @@ async function recordClickEvent(input: {
     client: input.event.Client ?? null,
     os: input.event.OS ?? null,
     geo: input.event.Geo ?? null,
+    isBot: classification.isBot,
+    botReason: classification.botReason,
     idempotencyKey: buildClickIdempotencyKey(input.event),
+    createdAt: new Date().toISOString(),
+  });
+}
+
+async function recordOpenEvent(input: {
+  readonly event: Extract<PostmarkWebhookEvent, { RecordType: "Open" }>;
+  readonly snapshot: ActivitySnapshot | null;
+}): Promise<boolean> {
+  const campaignRunId =
+    input.snapshot?.campaignRunId ?? readCampaignRunIdFromMetadata(input.event);
+
+  if (campaignRunId === null) {
+    return false;
+  }
+
+  const classification = classifyActivity({
+    userAgent: input.event.UserAgent,
+    platform: input.event.Platform,
+    occurredAt: input.event.ReceivedAt,
+    deliveredAt: input.snapshot?.deliveredAt ?? input.snapshot?.sentAt ?? null,
+  });
+
+  return recordBroadcastOpen({
+    id: randomUUID(),
+    campaignRunId,
+    audienceSnapshotId: input.snapshot?.id ?? null,
+    contactId: input.snapshot?.contactId ?? null,
+    openedAt: input.event.ReceivedAt,
+    userAgent: input.event.UserAgent,
+    platform: input.event.Platform,
+    client: input.event.Client ?? null,
+    os: input.event.OS ?? null,
+    geo: input.event.Geo ?? null,
+    isBot: classification.isBot,
+    botReason: classification.botReason,
+    idempotencyKey: buildOpenIdempotencyKey(input.event),
     createdAt: new Date().toISOString(),
   });
 }
@@ -344,6 +420,13 @@ async function processEvent(
   try {
     if (event.RecordType === "Click") {
       await recordClickEvent({
+        event,
+        snapshot,
+      });
+    }
+
+    if (event.RecordType === "Open") {
+      await recordOpenEvent({
         event,
         snapshot,
       });
