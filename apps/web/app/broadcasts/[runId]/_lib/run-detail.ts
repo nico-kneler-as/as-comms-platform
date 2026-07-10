@@ -17,10 +17,12 @@ import {
 
 import {
   listRunRecipients,
+  readRunEngagementBreakdown,
   readRunMetricCounts,
   readSmsRunMetricCounts,
   readRunVariantMetricCounts,
   type RecipientRowData,
+  type RunEngagementBreakdown,
   type RunMetricCounts,
   type RunVariantMetricCounts,
 } from "../../_lib/run-recipients";
@@ -118,9 +120,22 @@ export interface RunDetailModel {
   readonly recentReplies: readonly ReplyPreviewRow[];
   readonly inboxRecipientsHref: string;
   readonly auditEntries: readonly RunAuditEntry[];
+  readonly botActivity: {
+    readonly opens: {
+      readonly human: number;
+      readonly bot: number;
+      readonly hasEventData: boolean;
+    };
+    readonly clicks: {
+      readonly human: number;
+      readonly bot: number;
+      readonly hasEventData: boolean;
+    };
+  };
   readonly linkClicks: readonly {
     url: string;
     totalClicks: number;
+    botClicks: number;
     uniqueClickers: number;
   }[];
   readonly subjectVariantBreakdown: readonly SubjectVariantBreakdown[] | null;
@@ -159,6 +174,11 @@ interface MailchimpCampaignAggregates {
   readonly unsubscribed: number;
   readonly distinctMembers: number;
 }
+
+const EMPTY_RUN_ENGAGEMENT_BREAKDOWN: RunEngagementBreakdown = {
+  opens: { human: 0, bot: 0, hasEventData: false },
+  clicks: { human: 0, bot: 0, hasEventData: false },
+};
 
 function formatPercentage(value: number, total: number): number {
   if (total <= 0) {
@@ -678,6 +698,7 @@ export async function getRunDetailModel(input: {
     metricCounts,
     variantMetricCounts,
     recipientQuery,
+    engagementBreakdown,
     linkClicks,
   ] =
     provider === "mailchimp"
@@ -686,10 +707,12 @@ export async function getRunDetailModel(input: {
           Promise.resolve<RunMetricCounts | null>(null),
           Promise.resolve<readonly RunVariantMetricCounts[]>([]),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
+          Promise.resolve(EMPTY_RUN_ENGAGEMENT_BREAKDOWN),
           Promise.resolve<
             readonly {
               originalLink: string;
               totalClicks: number;
+              botClicks: number;
               uniqueClickers: number;
             }[]
           >([]),
@@ -700,10 +723,12 @@ export async function getRunDetailModel(input: {
             readSmsRunMetricCounts({ runId: run.id }),
             Promise.resolve<readonly RunVariantMetricCounts[]>([]),
             listRunRecipients({ runId: run.id, provider: "sms", limit: 100 }),
+            Promise.resolve(EMPTY_RUN_ENGAGEMENT_BREAKDOWN),
             Promise.resolve<
               readonly {
                 originalLink: string;
                 totalClicks: number;
+                botClicks: number;
                 uniqueClickers: number;
               }[]
             >([]),
@@ -713,6 +738,7 @@ export async function getRunDetailModel(input: {
           readRunMetricCounts({ runId: run.id }),
           readRunVariantMetricCounts({ runId: run.id }),
           listRunRecipients({ runId: run.id, provider, limit: 100 }),
+          readRunEngagementBreakdown(run.id),
           aggregateBroadcastLinkClicksForRun(run.id),
         ]);
   const totalAudience =
@@ -834,6 +860,28 @@ export async function getRunDetailModel(input: {
       }));
     }
   }
+  const postmarkMetricCounts = metricCounts ?? {
+    queued: 0,
+    sent: 0,
+    delivered: 0,
+    failed: 0,
+    suppressed: 0,
+    opened: 0,
+    clicked: 0,
+    bounced: 0,
+    unsubscribed: 0,
+    complained: 0,
+    total: 0,
+  };
+  const adjustedMetricCounts: RunMetricCounts = {
+    ...postmarkMetricCounts,
+    opened: engagementBreakdown.opens.hasEventData
+      ? engagementBreakdown.opens.human
+      : postmarkMetricCounts.opened,
+    clicked: engagementBreakdown.clicks.hasEventData
+      ? engagementBreakdown.clicks.human
+      : postmarkMetricCounts.clicked,
+  };
   const metrics =
     provider === "mailchimp" && mailchimpAggregates !== null
       ? buildMailchimpMetricTiles(mailchimpAggregates)
@@ -855,23 +903,7 @@ export async function getRunDetailModel(input: {
             totalAudience,
             repliesCount,
           )
-        : buildMetricTiles(
-          metricCounts ?? {
-            queued: 0,
-            sent: 0,
-            delivered: 0,
-            failed: 0,
-            suppressed: 0,
-            opened: 0,
-            clicked: 0,
-            bounced: 0,
-            unsubscribed: 0,
-            complained: 0,
-            total: 0,
-          },
-          totalAudience,
-          repliesCount,
-        );
+        : buildMetricTiles(adjustedMetricCounts, totalAudience, repliesCount);
   const sentCount =
     provider === "mailchimp"
       ? mailchimpAggregates?.sent ?? 0
@@ -919,9 +951,11 @@ export async function getRunDetailModel(input: {
     recentReplies,
     inboxRecipientsHref: "/inbox",
     auditEntries: audits.map(buildAuditEntry),
+    botActivity: engagementBreakdown,
     linkClicks: linkClicks.map((entry) => ({
       url: entry.originalLink,
       totalClicks: entry.totalClicks,
+      botClicks: entry.botClicks,
       uniqueClickers: entry.uniqueClickers,
     })),
     subjectVariantBreakdown:

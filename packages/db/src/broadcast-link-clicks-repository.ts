@@ -61,6 +61,9 @@ export async function aggregateBroadcastLinkClicksByRunId(
   runId: string,
 ): Promise<readonly BroadcastLinkClickAggregate[]> {
   const totalClicks = sql<number>`count(*)::int`;
+  const botClicks = sql<number>`
+    count(*) filter (where ${broadcastLinkClicks.isBot} = true)::int
+  `;
   const uniqueClickers = sql<number>`
     count(
       distinct coalesce(
@@ -74,6 +77,7 @@ export async function aggregateBroadcastLinkClicksByRunId(
     .select({
       originalLink: broadcastLinkClicks.originalLink,
       totalClicks,
+      botClicks,
       uniqueClickers,
     })
     .from(broadcastLinkClicks)
@@ -85,6 +89,7 @@ export async function aggregateBroadcastLinkClicksByRunId(
     broadcastLinkClickAggregateSchema.parse({
       originalLink: row.originalLink,
       totalClicks: row.totalClicks,
+      botClicks: row.botClicks,
       uniqueClickers: row.uniqueClickers,
     }),
   );
