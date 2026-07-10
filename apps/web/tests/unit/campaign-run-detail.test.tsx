@@ -101,6 +101,7 @@ import {
   EmailContentPanel,
   LinkClicksPanel,
   SendDetailsPanel,
+  SubjectVariantBreakdownPanel,
 } from "../../app/broadcasts/[runId]/_components/run-detail-panels";
 import { RunDetailShell } from "../../app/broadcasts/[runId]/_components/run-detail-shell";
 import {
@@ -111,53 +112,63 @@ import {
 
 function buildPostmarkModel(
   state: RunDetailModel["run"]["state"],
-  overrides: Partial<Pick<RunDetailModel, "linkClicks">> = {},
+  overrides: {
+    readonly linkClicks?: RunDetailModel["linkClicks"];
+    readonly subjectVariantBreakdown?: RunDetailModel["subjectVariantBreakdown"];
+    readonly run?: Partial<RunDetailModel["run"]>;
+  } = {},
 ): RunDetailModel {
+  const run: RunDetailModel["run"] = {
+    id: `run-${state}`,
+    kind: "project",
+    launchType: "normal_email",
+    state,
+    projectId: "project-1",
+    name: null,
+    fromEmail: "forests@adventurescientists.org",
+    fromName: "Adventure Scientists",
+    replyToEmail: "forests@adventurescientists.org",
+    subjectTemplate: `Broadcast ${state}`,
+    subjectTemplateB: null,
+    abTestEnabled: false,
+    bodyHtmlTemplate: "<p>Hello</p>",
+    bodyDesignJson: null,
+    bodyTextTemplate: "Hello",
+    preheader: "Important update",
+    audienceCriteria: {
+      projectId: "project-1",
+      projectIds: ["project-1"],
+      statuses: ["Waitlist"],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
+      hasClicked: "either",
+    },
+    audienceSize: 3,
+    scheduledAt: "2026-05-15T12:00:00.000Z",
+    startedAt:
+      state === "sending" || state === "complete" || state === "finalized"
+        ? "2026-05-15T12:05:00.000Z"
+        : null,
+    completedAt:
+      state === "complete" || state === "finalized"
+        ? "2026-05-15T12:12:00.000Z"
+        : null,
+    finalizedAt: state === "finalized" ? "2026-06-15T12:12:00.000Z" : null,
+    cancelledAt: state === "cancelled" ? "2026-05-15T12:08:00.000Z" : null,
+    cancelledReason: state === "cancelled" ? "operator_cancelled" : null,
+    createdByUserId: "user-1",
+    lastEditedByUserId: "user-1",
+    createdAt: "2026-05-15T12:00:00.000Z",
+    updatedAt: "2026-05-15T12:12:00.000Z",
+    ...overrides.run,
+  };
+
   return {
     provider: "postmark",
-    run: {
-      id: `run-${state}`,
-      kind: "project",
-      launchType: "normal_email",
-      state,
-      projectId: "project-1",
-      name: null,
-      fromEmail: "forests@adventurescientists.org",
-      fromName: "Adventure Scientists",
-      replyToEmail: "forests@adventurescientists.org",
-      subjectTemplate: `Broadcast ${state}`,
-      bodyHtmlTemplate: "<p>Hello</p>",
-      bodyTextTemplate: "Hello",
-      preheader: "Important update",
-      audienceCriteria: {
-        projectId: "project-1",
-        projectIds: ["project-1"],
-        statuses: ["Waitlist"],
-        contactIds: [],
-        newsletterSubscriberIds: [],
-        expeditionIds: [],
-        lastActivityWindow: "all_time",
-        hasReplied: "either",
-        hasClicked: "either",
-      },
-      audienceSize: 3,
-      scheduledAt: "2026-05-15T12:00:00.000Z",
-      startedAt:
-        state === "sending" || state === "complete" || state === "finalized"
-          ? "2026-05-15T12:05:00.000Z"
-          : null,
-      completedAt:
-        state === "complete" || state === "finalized"
-          ? "2026-05-15T12:12:00.000Z"
-          : null,
-      finalizedAt: state === "finalized" ? "2026-06-15T12:12:00.000Z" : null,
-      cancelledAt: state === "cancelled" ? "2026-05-15T12:08:00.000Z" : null,
-      cancelledReason: state === "cancelled" ? "operator_cancelled" : null,
-      createdByUserId: "user-1",
-      lastEditedByUserId: "user-1",
-      createdAt: "2026-05-15T12:00:00.000Z",
-      updatedAt: "2026-05-15T12:12:00.000Z",
-    },
+    run,
     totalAudience: 3,
     senderAlias: "forests@adventurescientists.org",
     kindLabel: "Project",
@@ -271,6 +282,7 @@ function buildPostmarkModel(
           uniqueClickers: 1,
         },
       ],
+    subjectVariantBreakdown: overrides.subjectVariantBreakdown ?? null,
     audienceCriteria: {
       projectIds: ["project-1"],
       statuses: ["Waitlist"],
@@ -300,7 +312,10 @@ function buildMailchimpModel(): RunDetailModel {
       fromName: null,
       replyToEmail: null,
       subjectTemplate: "April newsletter",
+      subjectTemplateB: null,
+      abTestEnabled: false,
       bodyHtmlTemplate: null,
+      bodyDesignJson: null,
       bodyTextTemplate: null,
       preheader: null,
       audienceCriteria: {
@@ -375,6 +390,7 @@ function buildMailchimpModel(): RunDetailModel {
     inboxRecipientsHref: "/inbox",
     auditEntries: [],
     linkClicks: [],
+    subjectVariantBreakdown: null,
     audienceCriteria: {
       projectIds: [],
       statuses: [],
@@ -413,6 +429,7 @@ function renderShell(model: RunDetailModel) {
       emailContentSection={
         <>
           <EmailContentPanel model={model} />
+          <SubjectVariantBreakdownPanel model={model} />
           <LinkClicksPanel model={model} />
         </>
       }
@@ -520,6 +537,8 @@ describe("broadcast run detail", () => {
         fromName: "Adventure Scientists",
         replyToEmail: "project-one@adventurescientists.org",
         subjectTemplate: "Field update",
+        subjectTemplateB: null,
+        abTestEnabled: false,
         bodyHtmlTemplate: "<p>Hello</p>",
         bodyTextTemplate: "Hello",
         bodyDesignJson: null,
@@ -670,6 +689,159 @@ describe("broadcast run detail", () => {
     expect(renderShell(buildPostmarkModel("sending"))).toMatchSnapshot();
   });
 
+  it("returns per-variant subject metrics for A/B runs", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      const { campaigns } = runtime.runtime;
+
+      await runtime.context.repositories.projectDimensions.upsert({
+        projectId: "project-1",
+        projectName: "Project One",
+        projectAlias: "project-one",
+        connectedToProjectId: null,
+        source: "manual",
+        isActive: true,
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+      });
+
+      const run = await campaigns.campaignRuns.create({
+        id: "run-detail-ab-metrics",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: "project-1",
+        name: null,
+        fromEmail: "project-one@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "project-one@adventurescientists.org",
+        subjectTemplate: "Subject A",
+        subjectTemplateB: "Subject B",
+        abTestEnabled: true,
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 4,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      await campaigns.audienceSnapshots.bulkInsert(run.id, [
+        {
+          id: "snapshot-a-1",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "variant-a-1@example.org",
+          frozenFirstName: "Variant",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-a-1",
+          deliveryStatus: "delivered",
+          providerMessageId: "pm-a-1",
+          subjectVariant: "a",
+        },
+        {
+          id: "snapshot-a-2",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "variant-a-2@example.org",
+          frozenFirstName: "Variant",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-a-2",
+          deliveryStatus: "delivered",
+          providerMessageId: "pm-a-2",
+          openedAt: "2026-07-02T13:00:00.000Z",
+          clickedAt: "2026-07-02T13:01:00.000Z",
+          subjectVariant: "a",
+        },
+        {
+          id: "snapshot-b-1",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "variant-b-1@example.org",
+          frozenFirstName: "Variant",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-b-1",
+          deliveryStatus: "sent",
+          providerMessageId: "pm-b-1",
+          subjectVariant: "b",
+        },
+        {
+          id: "snapshot-b-2",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "variant-b-2@example.org",
+          frozenFirstName: "Variant",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "token-b-2",
+          deliveryStatus: "delivered",
+          providerMessageId: "pm-b-2",
+          openedAt: "2026-07-02T13:02:00.000Z",
+          subjectVariant: "b",
+        },
+      ]);
+
+      const model = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+
+      expect(model?.subjectVariantBreakdown).toEqual([
+        {
+          variant: "a",
+          label: "A",
+          subject: "Subject A",
+          assigned: 2,
+          delivered: 2,
+          deliveredRate: 100,
+          opened: 1,
+          openedRate: 50,
+          clicked: 1,
+          clickedRate: 50,
+        },
+        {
+          variant: "b",
+          label: "B",
+          subject: "Subject B",
+          assigned: 2,
+          delivered: 1,
+          deliveredRate: 50,
+          opened: 1,
+          openedRate: 50,
+          clicked: 0,
+          clickedRate: 0,
+        },
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("renders populated and empty link-click states", () => {
     const populatedHtml = renderToStaticMarkup(
       <LinkClicksPanel model={buildPostmarkModel("complete")} />,
@@ -684,6 +856,55 @@ describe("broadcast run detail", () => {
     expect(populatedHtml).toContain("4 clicks");
     expect(populatedHtml).toContain("2 unique");
     expect(emptyHtml).toContain("No link clicks recorded yet.");
+  });
+
+  it("renders the A/B subject breakdown only when enabled", () => {
+    const abModel = buildPostmarkModel("complete", {
+      run: {
+        subjectTemplate: "Subject A",
+        subjectTemplateB: "Subject B",
+        abTestEnabled: true,
+      },
+      subjectVariantBreakdown: [
+        {
+          variant: "a",
+          label: "A",
+          subject: "Subject A",
+          assigned: 51,
+          delivered: 42,
+          deliveredRate: 82.4,
+          opened: 20,
+          openedRate: 39.2,
+          clicked: 6,
+          clickedRate: 11.8,
+        },
+        {
+          variant: "b",
+          label: "B",
+          subject: "Subject B",
+          assigned: 49,
+          delivered: 40,
+          deliveredRate: 81.6,
+          opened: 18,
+          openedRate: 36.7,
+          clicked: 5,
+          clickedRate: 10.2,
+        },
+      ],
+    });
+    const abHtml = renderToStaticMarkup(
+      <SubjectVariantBreakdownPanel model={abModel} />,
+    );
+    const controlHtml = renderToStaticMarkup(
+      <SubjectVariantBreakdownPanel model={buildPostmarkModel("complete")} />,
+    );
+
+    expect(abHtml).toContain("Variant A");
+    expect(abHtml).toContain("Subject A");
+    expect(abHtml).toContain("51 recipients");
+    expect(abHtml).toContain("39.2%");
+    expect(abHtml).toContain("Subject B");
+    expect(controlHtml).toBe("");
   });
 
   it("renders email HTML visually and falls back to plain text", () => {

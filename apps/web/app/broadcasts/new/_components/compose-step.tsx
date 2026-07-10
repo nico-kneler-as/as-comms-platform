@@ -53,6 +53,8 @@ const UnlayerHost = dynamic<
 interface ComposeStepProps {
   readonly launchType: LaunchType;
   readonly subject: string;
+  readonly subjectB?: string;
+  readonly abTestEnabled?: boolean;
   readonly preheader: string;
   readonly bodyPlaintext: string;
   readonly bodyHtml: string;
@@ -66,6 +68,8 @@ interface ComposeStepProps {
    */
   readonly continuePending?: boolean;
   readonly onSubjectChange: (value: string) => void;
+  readonly onSubjectBChange?: (value: string) => void;
+  readonly onAbTestEnabledChange?: (value: boolean) => void;
   readonly onPreheaderChange: (value: string) => void;
   readonly onBodyChange: (value: {
     readonly bodyDesignJson: unknown;
@@ -147,6 +151,8 @@ function EditorLoadingSkeleton() {
 export function ComposeStep({
   launchType,
   subject,
+  subjectB = "",
+  abTestEnabled = false,
   preheader,
   bodyPlaintext,
   bodyHtml,
@@ -155,12 +161,16 @@ export function ComposeStep({
   frozen,
   continuePending = false,
   onSubjectChange,
+  onSubjectBChange = () => undefined,
+  onAbTestEnabledChange = () => undefined,
   onPreheaderChange,
   onBodyChange,
   onBack,
   onContinue,
 }: ComposeStepProps) {
   const unlayerHostRef = useRef<UnlayerHostHandle | null>(null);
+  const subjectInputRef = useRef<HTMLInputElement>(null);
+  const subjectBInputRef = useRef<HTMLInputElement>(null);
   const [htmlComposeMode, setHtmlComposeMode] = useState<HtmlComposeMode>(() =>
     readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }),
   );
@@ -180,10 +190,16 @@ export function ComposeStep({
       : "",
   );
   const [uploadWarnings, setUploadWarnings] = useState<readonly string[]>([]);
+  const [activeSubjectField, setActiveSubjectField] = useState<"a" | "b">("a");
   const smsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isSmsLaunch = launchType === "sms";
   const subjectLen = subject.length;
   const subjectOverLimit = subjectLen > 70;
+  const subjectBLen = subjectB.length;
+  const subjectBOverLimit = subjectBLen > 70;
+  const hasRequiredSubjects =
+    subject.trim().length > 0 &&
+    (!abTestEnabled || subjectB.trim().length > 0);
   const wordCount = bodyPlaintext.trim()
     ? bodyPlaintext.trim().split(/\s+/u).length
     : 0;
@@ -191,7 +207,7 @@ export function ComposeStep({
   const smsSegmentMetrics = smsMetrics(smsBodyWithFooter);
   const canContinue = isSmsLaunch
     ? bodyPlaintext.trim().length > 0
-    : subject.trim().length > 0 &&
+    : hasRequiredSubjects &&
       (launchType === "normal_email"
         ? bodyPlaintext.trim().length > 0
         : htmlComposeMode === "upload"
@@ -209,6 +225,12 @@ export function ComposeStep({
       launchType !== "html_email" || htmlComposeMode === "upload",
     );
   }, [htmlComposeMode, launchType]);
+
+  useEffect(() => {
+    if (!abTestEnabled) {
+      setActiveSubjectField("a");
+    }
+  }, [abTestEnabled]);
 
   function insertSmsMergeToken(token: string) {
     const textarea = smsTextareaRef.current;
@@ -234,17 +256,20 @@ export function ComposeStep({
   }
 
   function insertHtmlSubjectMergeToken(token: (typeof MERGE_TOKENS)[number]) {
-    const subjectInput =
-      typeof document === "undefined"
-        ? null
-        : document.getElementById("campaign-subject");
+    const targetField =
+      abTestEnabled && activeSubjectField === "b" ? "b" : "a";
     const input =
-      subjectInput instanceof HTMLInputElement ? subjectInput : null;
-    const selectionStart = input?.selectionStart ?? subject.length;
-    const selectionEnd = input?.selectionEnd ?? subject.length;
+      targetField === "b" ? subjectBInputRef.current : subjectInputRef.current;
+    const currentValue = targetField === "b" ? subjectB : subject;
+    const onChange =
+      targetField === "b" ? onSubjectBChange : onSubjectChange;
+    const selectionStart = input?.selectionStart ?? currentValue.length;
+    const selectionEnd = input?.selectionEnd ?? currentValue.length;
     const nextValue =
-      subject.slice(0, selectionStart) + token + subject.slice(selectionEnd);
-    onSubjectChange(nextValue);
+      currentValue.slice(0, selectionStart) +
+      token +
+      currentValue.slice(selectionEnd);
+    onChange(nextValue);
     const nextCaret = selectionStart + token.length;
     requestAnimationFrame(() => {
       if (input !== null) {
@@ -268,6 +293,140 @@ export function ComposeStep({
       bodyPlaintext: htmlToPlaintext(result.html),
       bodyHtml: result.html,
     });
+  }
+
+  function renderEmailSubjectFields() {
+    return (
+      <>
+        <div className="border-b border-slate-200 bg-slate-50/40 px-4 py-3">
+          <label className="inline-flex items-center gap-2 text-[12px] font-medium text-slate-700">
+            <input
+              id="campaign-ab-subject-test"
+              type="checkbox"
+              checked={abTestEnabled}
+              disabled={frozen}
+              onChange={(event) => {
+                onAbTestEnabledChange(event.currentTarget.checked);
+              }}
+              aria-label="Enable A/B subject test"
+              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+            />
+            <span>A/B test subject line</span>
+          </label>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Split the frozen audience 50/50 between subject A and subject B.
+          </p>
+        </div>
+
+        <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
+          <label
+            htmlFor="campaign-subject"
+            className="w-[72px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+          >
+            {abTestEnabled ? "Subject A" : "Subject"}
+          </label>
+          <Input
+            ref={subjectInputRef}
+            id="campaign-subject"
+            value={subject}
+            onChange={(event) => {
+              onSubjectChange(event.currentTarget.value);
+            }}
+            onFocus={() => {
+              setActiveSubjectField("a");
+            }}
+            disabled={frozen}
+            placeholder="What recipients see in their inbox"
+            className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
+            aria-label={abTestEnabled ? "Broadcast subject A" : "Broadcast subject"}
+          />
+          <span
+            className={
+              subjectOverLimit
+                ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
+                : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
+            }
+          >
+            {subjectLen}/70
+          </span>
+        </div>
+
+        {abTestEnabled ? (
+          <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
+            <label
+              htmlFor="campaign-subject-b"
+              className="w-[72px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+            >
+              Subject B
+            </label>
+            <Input
+              ref={subjectBInputRef}
+              id="campaign-subject-b"
+              value={subjectB}
+              onChange={(event) => {
+                onSubjectBChange(event.currentTarget.value);
+              }}
+              onFocus={() => {
+                setActiveSubjectField("b");
+              }}
+              disabled={frozen}
+              placeholder="Alternate subject line for the B split"
+              className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
+              aria-label="Broadcast subject B"
+            />
+            <span
+              className={
+                subjectBOverLimit
+                  ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
+                  : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
+              }
+            >
+              {subjectBLen}/70
+            </span>
+          </div>
+        ) : null}
+
+        <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
+          <label
+            htmlFor="campaign-preheader"
+            className="w-[72px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
+          >
+            Preview
+          </label>
+          <Input
+            id="campaign-preheader"
+            value={preheader}
+            onChange={(event) => {
+              onPreheaderChange(event.currentTarget.value);
+            }}
+            disabled={frozen}
+            placeholder="Preheader text - shown next to the subject in most clients"
+            className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
+            aria-label="Broadcast preheader"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
+          <span className="font-medium text-slate-600">Merge tags:</span>
+          {MERGE_TOKENS.map((token) => (
+            <button
+              key={token}
+              type="button"
+              onClick={() => {
+                insertHtmlSubjectMergeToken(token);
+              }}
+              disabled={frozen}
+              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {token}
+            </button>
+          ))}
+          <span className="ml-auto text-[10.5px] text-slate-500">
+            Inserts into the active subject field.
+          </span>
+        </div>
+      </>
+    );
   }
 
   return (
@@ -361,71 +520,7 @@ export function ComposeStep({
           </>
         ) : launchType === "html_email" ? (
           <>
-            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
-              <label
-                htmlFor="campaign-subject"
-                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-              >
-                Subject
-              </label>
-              <Input
-                id="campaign-subject"
-                value={subject}
-                onChange={(event) => {
-                  onSubjectChange(event.currentTarget.value);
-                }}
-                disabled={frozen}
-                placeholder="What recipients see in their inbox"
-                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
-                aria-label="Broadcast subject"
-              />
-              <span
-                className={
-                  subjectOverLimit
-                    ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
-                    : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
-                }
-              >
-                {subjectLen}/70
-              </span>
-            </div>
-
-            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
-              <label
-                htmlFor="campaign-preheader"
-                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-              >
-                Preview
-              </label>
-              <Input
-                id="campaign-preheader"
-                value={preheader}
-                onChange={(event) => {
-                  onPreheaderChange(event.currentTarget.value);
-                }}
-                disabled={frozen}
-                placeholder="Preheader text - shown next to the subject in most clients"
-                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
-                aria-label="Broadcast preheader"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
-              <span className="font-medium text-slate-600">Merge tags:</span>
-              {MERGE_TOKENS.map((token) => (
-                <button
-                  key={token}
-                  type="button"
-                  onClick={() => {
-                    insertHtmlSubjectMergeToken(token);
-                  }}
-                  disabled={frozen}
-                  className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {token}
-                </button>
-              ))}
-            </div>
+            {renderEmailSubjectFields()}
 
             <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
               <div
@@ -561,54 +656,7 @@ export function ComposeStep({
           </>
         ) : (
           <>
-            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
-              <label
-                htmlFor="campaign-subject"
-                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-              >
-                Subject
-              </label>
-              <Input
-                id="campaign-subject"
-                value={subject}
-                onChange={(event) => {
-                  onSubjectChange(event.currentTarget.value);
-                }}
-                disabled={frozen}
-                placeholder="What recipients see in their inbox"
-                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[14.5px] font-semibold tracking-tight text-slate-900 shadow-none placeholder:font-normal focus-visible:ring-0"
-                aria-label="Broadcast subject"
-              />
-              <span
-                className={
-                  subjectOverLimit
-                    ? "shrink-0 font-mono text-[10.5px] tabular-nums text-amber-700"
-                    : "shrink-0 font-mono text-[10.5px] tabular-nums text-slate-500"
-                }
-              >
-                {subjectLen}/70
-              </span>
-            </div>
-
-            <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2">
-              <label
-                htmlFor="campaign-preheader"
-                className="w-[46px] shrink-0 text-[9.5px] font-medium uppercase tracking-[0.1em] text-slate-500"
-              >
-                Preview
-              </label>
-              <Input
-                id="campaign-preheader"
-                value={preheader}
-                onChange={(event) => {
-                  onPreheaderChange(event.currentTarget.value);
-                }}
-                disabled={frozen}
-                placeholder="Preheader text - shown next to the subject in most clients"
-                className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
-                aria-label="Broadcast preheader"
-              />
-            </div>
+            {renderEmailSubjectFields()}
 
             <RichTextComposerEditor
               bodyPlaintext={bodyPlaintext}

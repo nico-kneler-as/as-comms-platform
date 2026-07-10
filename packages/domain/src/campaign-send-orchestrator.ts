@@ -100,6 +100,8 @@ interface CampaignSendRepositories {
   };
 }
 
+type SubjectVariant = NonNullable<AudienceSnapshotRecord["subjectVariant"]>;
+
 function normalizeReason(reason: string): string | null {
   const trimmed = reason.trim();
   return trimmed.length === 0 ? null : trimmed;
@@ -149,7 +151,10 @@ async function resolveSenderFields(
   };
 }
 
-function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
+function buildFreezeSnapshot(
+  member: AudienceMember,
+  subjectVariant: SubjectVariant | null,
+): NewAudienceSnapshot {
   return {
     id: randomUUID(),
     contactId: member.contactId,
@@ -160,6 +165,7 @@ function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
     frozenProjectId: member.frozenProjectId,
     frozenAliasEmail: member.frozenAliasEmail,
     unsubscribeToken: randomUUID(),
+    subjectVariant,
     deliveryStatus: "pending",
     providerMessageId: null,
     sentAt: null,
@@ -171,6 +177,50 @@ function buildFreezeSnapshot(member: AudienceMember): NewAudienceSnapshot {
     unsubscribedAt: null,
     lastEventAt: null,
   };
+}
+
+function buildDeterministicShuffle(length: number): readonly number[] {
+  const indices = Array.from({ length }, (_, index) => index);
+  let seed = (length * 0x9e3779b1) >>> 0;
+
+  for (let index = indices.length - 1; index > 0; index -= 1) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const swapIndex = seed % (index + 1);
+    const current = indices[index];
+    indices[index] = indices[swapIndex] ?? index;
+    indices[swapIndex] = current ?? swapIndex;
+  }
+
+  return indices;
+}
+
+function buildFreezeSnapshots(
+  members: readonly AudienceMember[],
+  abTestEnabled: boolean,
+): readonly NewAudienceSnapshot[] {
+  if (!abTestEnabled) {
+    return members.map((member) => buildFreezeSnapshot(member, null));
+  }
+
+  const subjectVariants: (SubjectVariant | null)[] = Array.from(
+    { length: members.length },
+    () => null,
+  );
+  const shuffledIndices = buildDeterministicShuffle(members.length);
+  const variantACount = Math.ceil(members.length / 2);
+
+  for (let orderIndex = 0; orderIndex < shuffledIndices.length; orderIndex += 1) {
+    const memberIndex = shuffledIndices[orderIndex];
+    if (memberIndex === undefined) {
+      continue;
+    }
+
+    subjectVariants[memberIndex] = orderIndex < variantACount ? "a" : "b";
+  }
+
+  return members.map((member, index) =>
+    buildFreezeSnapshot(member, subjectVariants[index] ?? null),
+  );
 }
 
 function filterAudienceMembersBySelectedContacts(
@@ -305,10 +355,14 @@ export function createCampaignSendOrchestrator(deps: {
         runId,
         at,
       );
+      const freezeSnapshots = buildFreezeSnapshots(
+        exclusions.eligible,
+        run.abTestEnabled,
+      );
 
       await deps.repositories.audienceSnapshots.bulkInsert(
         runId,
-        exclusions.eligible.map(buildFreezeSnapshot),
+        freezeSnapshots,
       );
 
       const senderFields = await resolveSenderFields(deps.repositories, run);
@@ -472,7 +526,10 @@ export function createCampaignSendOrchestrator(deps: {
 
           const rendered = deps.mergeRenderer.render(
             {
-              subject: run.subjectTemplate ?? "",
+              subject:
+                snapshot.subjectVariant === "b"
+                  ? run.subjectTemplateB ?? run.subjectTemplate ?? ""
+                  : run.subjectTemplate ?? "",
               bodyHtml: composed.bodyHtml,
               bodyText: composed.bodyText,
             },

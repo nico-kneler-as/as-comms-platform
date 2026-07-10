@@ -557,6 +557,8 @@ function buildDraft(
     fromEmail: "forests@example.org",
     replyToEmail: "forests@example.org",
     subjectTemplate: "Default subject",
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyDesignJson: null,
     bodyHtmlTemplate: "<p>Hello {{firstName}}</p>",
     bodyTextTemplate: "Hello {{firstName}}",
@@ -589,6 +591,8 @@ function buildFreshDraft(
     fromEmail: null,
     replyToEmail: null,
     subjectTemplate: null,
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyDesignJson: null,
     bodyHtmlTemplate: null,
     bodyTextTemplate: null,
@@ -664,6 +668,8 @@ interface SaveActionInput {
   readonly replyToEmail: string | null;
   readonly runId: string;
   readonly subjectTemplate: string | null;
+  readonly subjectTemplateB?: string | null;
+  readonly abTestEnabled?: boolean;
 }
 
 function buildSaveResult(
@@ -680,6 +686,8 @@ function buildSaveResult(
       fromEmail: input.fromEmail,
       replyToEmail: input.replyToEmail,
       subjectTemplate: input.subjectTemplate,
+      subjectTemplateB: input.subjectTemplateB ?? null,
+      abTestEnabled: input.abTestEnabled ?? false,
       bodyHtmlTemplate: input.bodyHtmlTemplate,
       bodyTextTemplate: input.bodyTextTemplate,
       preheader: input.preheader,

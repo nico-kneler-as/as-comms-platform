@@ -11,6 +11,7 @@ import {
   EmailContentPanel,
   LinkClicksPanel,
   SendDetailsPanel,
+  SubjectVariantBreakdownPanel,
 } from "./_components/run-detail-panels";
 import {
   DetailCardSkeleton,
@@ -57,6 +58,7 @@ async function EmailContentSection({
   return (
     <>
       <EmailContentPanel model={model} />
+      <SubjectVariantBreakdownPanel model={model} />
       <LinkClicksPanel model={model} />
     </>
   );

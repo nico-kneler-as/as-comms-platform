@@ -1276,6 +1276,8 @@ export const campaignRuns = pgTable(
     fromName: text("from_name"),
     replyToEmail: text("reply_to_email"),
     subjectTemplate: text("subject_template"),
+    subjectTemplateB: text("subject_template_b"),
+    abTestEnabled: boolean("ab_test_enabled").notNull().default(false),
     bodyHtmlTemplate: text("body_html_template"),
     bodyTextTemplate: text("body_text_template"),
     bodyDesignJson: jsonb("body_design_json").$type<unknown>(),
@@ -1362,6 +1364,7 @@ export const audienceSnapshots = pgTable(
     frozenProjectId: text("frozen_project_id"),
     frozenAliasEmail: text("frozen_alias_email"),
     unsubscribeToken: text("unsubscribe_token").notNull(),
+    subjectVariant: text("subject_variant").$type<"a" | "b" | null>(),
     deliveryStatus: text("delivery_status")
       .$type<DeliveryStatus>()
       .notNull()
@@ -1409,6 +1412,10 @@ export const audienceSnapshots = pgTable(
     check(
       "audience_snapshots_recipient_check",
       sql`num_nonnulls(${table.contactId}, ${table.newsletterSubscriberId}) <= 1`,
+    ),
+    check(
+      "audience_snapshots_subject_variant_check",
+      sql`${table.subjectVariant} IS NULL OR ${table.subjectVariant} IN ('a', 'b')`,
     ),
     index("audience_snapshots_run_id_idx").on(table.campaignRunId),
     index("audience_snapshots_contact_id_idx").on(table.contactId),

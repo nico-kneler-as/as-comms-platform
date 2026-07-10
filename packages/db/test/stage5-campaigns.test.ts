@@ -48,6 +48,8 @@ function buildDraftInput(
     fromName: null,
     replyToEmail: null,
     subjectTemplate: null,
+    subjectTemplateB: null,
+    abTestEnabled: false,
     bodyHtmlTemplate: null,
     bodyDesignJson: null,
     bodyTextTemplate: null,
@@ -165,6 +167,8 @@ describe("Stage 5 campaigns repositories", () => {
         fromName: "Adventure Scientists",
         replyToEmail: "forest@adventurescientists.org",
         subjectTemplate: "Field update",
+        subjectTemplateB: "Field update B",
+        abTestEnabled: true,
         bodyHtmlTemplate: "<p>Hello</p>",
         bodyTextTemplate: "Hello",
         preheader: "Important field update",
@@ -186,6 +190,7 @@ describe("Stage 5 campaigns repositories", () => {
         unsubscribeToken: "token-insert-read",
         deliveryStatus: "pending",
         providerMessageId: "pm-insert-read",
+        subjectVariant: "b",
       },
     ]);
     const snapshots = await campaigns.audienceSnapshots.listForRun(created.id);
@@ -230,7 +235,10 @@ describe("Stage 5 campaigns repositories", () => {
     });
 
     expect(fetched).toEqual(created);
+    expect(created.subjectTemplateB).toBe("Field update B");
+    expect(created.abTestEnabled).toBe(true);
     expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.subjectVariant).toBe("b");
     expect(byToken?.id).toBe("snapshot-insert-read");
     expect(byProviderMessage?.id).toBe("snapshot-insert-read");
     expect(consentRows).toHaveLength(1);

@@ -75,6 +75,22 @@ export interface RunMetricCounts {
   readonly total: number;
 }
 
+export interface RunVariantMetricCounts {
+  readonly subjectVariant: "a" | "b";
+  readonly delivered: number;
+  readonly opened: number;
+  readonly clicked: number;
+  readonly total: number;
+}
+
+interface MutableRunVariantMetricCounts {
+  subjectVariant: "a" | "b";
+  delivered: number;
+  opened: number;
+  clicked: number;
+  total: number;
+}
+
 interface RecipientRowDb {
   readonly snapshotId: string;
   readonly contactId: string | null;
@@ -102,6 +118,12 @@ interface MailchimpRecipientRowSource {
 
 const DEFAULT_RECIPIENT_LIMIT = 100;
 const MAX_RECIPIENT_LIMIT = 200;
+
+function isSubjectVariant(
+  value: AudienceSnapshotRecord["subjectVariant"],
+): value is RunVariantMetricCounts["subjectVariant"] {
+  return value === "a" || value === "b";
+}
 
 export function resolveRecipientLatestState(
   snapshot: AudienceSnapshotRecord,
@@ -530,6 +552,72 @@ export async function readRunMetricCounts(input: {
   );
 }
 
+export async function readRunVariantMetricCounts(input: {
+  readonly runId: string;
+}): Promise<readonly RunVariantMetricCounts[]> {
+  const runtime = await getStage1WebRuntime();
+
+  if (runtime.connection === null) {
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(
+      input.runId,
+    );
+    return countSnapshotsBySubjectVariant(snapshots);
+  }
+
+  const result = await runtime.connection.db.execute(sql<{
+    readonly subjectVariant: "a" | "b" | null;
+    readonly delivered: number | string;
+    readonly opened: number | string;
+    readonly clicked: number | string;
+    readonly total: number | string;
+  }>`
+    select
+      subject_variant as "subjectVariant",
+      count(*) filter (
+        where delivery_status = 'delivered'
+          or opened_at is not null
+          or clicked_at is not null
+      )::int as "delivered",
+      count(*) filter (where opened_at is not null)::int as "opened",
+      count(*) filter (where clicked_at is not null)::int as "clicked",
+      count(*)::int as "total"
+    from audience_snapshots
+    where campaign_run_id = ${input.runId}
+      and subject_variant is not null
+    group by subject_variant
+    order by subject_variant asc
+  `);
+  const rows = normalizeSqlResultRows<{
+    readonly subjectVariant: "a" | "b" | null;
+    readonly delivered: number | string;
+    readonly opened: number | string;
+    readonly clicked: number | string;
+    readonly total: number | string;
+  }>(result as {
+    readonly rows?: readonly {
+      readonly subjectVariant: "a" | "b" | null;
+      readonly delivered: number | string;
+      readonly opened: number | string;
+      readonly clicked: number | string;
+      readonly total: number | string;
+    }[];
+  });
+
+  return rows.flatMap((row) =>
+    isSubjectVariant(row.subjectVariant)
+      ? [
+          {
+            subjectVariant: row.subjectVariant,
+            delivered: Number(row.delivered),
+            opened: Number(row.opened),
+            clicked: Number(row.clicked),
+            total: Number(row.total),
+          } satisfies RunVariantMetricCounts,
+        ]
+      : [],
+  );
+}
+
 export function countSnapshots(
   snapshots: readonly AudienceSnapshotRecord[],
 ): RunMetricCounts {
@@ -591,4 +679,41 @@ export function countSnapshots(
     complained,
     total: snapshots.length,
   };
+}
+
+export function countSnapshotsBySubjectVariant(
+  snapshots: readonly AudienceSnapshotRecord[],
+): readonly RunVariantMetricCounts[] {
+  const countsByVariant: Record<
+    RunVariantMetricCounts["subjectVariant"],
+    MutableRunVariantMetricCounts
+  > = {
+    a: { subjectVariant: "a", delivered: 0, opened: 0, clicked: 0, total: 0 },
+    b: { subjectVariant: "b", delivered: 0, opened: 0, clicked: 0, total: 0 },
+  };
+
+  for (const snapshot of snapshots) {
+    if (!isSubjectVariant(snapshot.subjectVariant)) {
+      continue;
+    }
+
+    const counts = countsByVariant[snapshot.subjectVariant];
+    counts.total += 1;
+
+    if (
+      snapshot.deliveryStatus === "delivered" ||
+      snapshot.openedAt !== null ||
+      snapshot.clickedAt !== null
+    ) {
+      counts.delivered += 1;
+    }
+    if (snapshot.openedAt !== null) {
+      counts.opened += 1;
+    }
+    if (snapshot.clickedAt !== null) {
+      counts.clicked += 1;
+    }
+  }
+
+  return Object.values(countsByVariant).filter((counts) => counts.total > 0);
 }

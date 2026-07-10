@@ -430,8 +430,26 @@ async function resolveSenderFieldsForRun(
   };
 }
 
+type SubjectVariant = "a" | "b";
+
+function buildDeterministicShuffle(length: number): readonly number[] {
+  const indices = Array.from({ length }, (_, index) => index);
+  let seed = (length * 0x9e3779b1) >>> 0;
+
+  for (let index = indices.length - 1; index > 0; index -= 1) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    const swapIndex = seed % (index + 1);
+    const current = indices[index];
+    indices[index] = indices[swapIndex] ?? index;
+    indices[swapIndex] = current ?? swapIndex;
+  }
+
+  return indices;
+}
+
 function buildAudienceSnapshot(
   member: Awaited<ReturnType<typeof resolveStoredCampaignAudience>>[number],
+  subjectVariant: SubjectVariant | null,
 ) {
   return {
     id: randomUUID(),
@@ -443,6 +461,7 @@ function buildAudienceSnapshot(
     frozenProjectId: member.frozenProjectId,
     frozenAliasEmail: member.frozenAliasEmail,
     unsubscribeToken: randomUUID(),
+    subjectVariant,
     deliveryStatus: "pending" as const,
     providerMessageId: null,
     sentAt: null,
@@ -454,6 +473,35 @@ function buildAudienceSnapshot(
     unsubscribedAt: null,
     lastEventAt: null,
   };
+}
+
+function buildAudienceSnapshots(
+  members: readonly Awaited<ReturnType<typeof resolveStoredCampaignAudience>>[number][],
+  abTestEnabled: boolean,
+) {
+  if (!abTestEnabled) {
+    return members.map((member) => buildAudienceSnapshot(member, null));
+  }
+
+  const subjectVariants: (SubjectVariant | null)[] = Array.from(
+    { length: members.length },
+    () => null,
+  );
+  const shuffledIndices = buildDeterministicShuffle(members.length);
+  const variantACount = Math.ceil(members.length / 2);
+
+  for (let orderIndex = 0; orderIndex < shuffledIndices.length; orderIndex += 1) {
+    const memberIndex = shuffledIndices[orderIndex];
+    if (memberIndex === undefined) {
+      continue;
+    }
+
+    subjectVariants[memberIndex] = orderIndex < variantACount ? "a" : "b";
+  }
+
+  return members.map((member, index) =>
+    buildAudienceSnapshot(member, subjectVariants[index] ?? null),
+  );
 }
 
 async function readFrozenAudienceResult(
@@ -528,10 +576,14 @@ async function freezeNewsletterAudienceForSend(input: {
     input.runId,
     input.at,
   );
+  const freezeSnapshots = buildAudienceSnapshots(
+    exclusions.eligible,
+    run.abTestEnabled,
+  );
 
   await input.transaction.campaigns.audienceSnapshots.bulkInsert(
     input.runId,
-    exclusions.eligible.map(buildAudienceSnapshot),
+    freezeSnapshots,
   );
 
   const senderFields = await resolveSenderFieldsForRun(input.transaction, run);
@@ -1548,7 +1600,10 @@ export async function duplicateCampaignRun(
       fromName: existing.fromName,
       replyToEmail: existing.replyToEmail,
       subjectTemplate: existing.subjectTemplate,
+      subjectTemplateB: existing.subjectTemplateB,
+      abTestEnabled: existing.abTestEnabled,
       bodyHtmlTemplate: existing.bodyHtmlTemplate,
+      bodyDesignJson: existing.bodyDesignJson,
       bodyTextTemplate: existing.bodyTextTemplate,
       preheader: existing.preheader,
       audienceCriteria: existing.audienceCriteria,

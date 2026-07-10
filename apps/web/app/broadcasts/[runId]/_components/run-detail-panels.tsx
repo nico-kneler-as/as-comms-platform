@@ -39,6 +39,10 @@ function SummaryRow({
   );
 }
 
+function formatRate(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
 export function EmailContentPanel({
   model,
 }: {
@@ -106,6 +110,78 @@ export function EmailContentPanel({
               : "No message body was saved for this run."}
           </div>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+export function SubjectVariantBreakdownPanel({
+  model,
+}: {
+  readonly model: RunDetailModel;
+}) {
+  if (
+    model.provider === "mailchimp" ||
+    !model.run.abTestEnabled ||
+    model.subjectVariantBreakdown === null
+  ) {
+    return null;
+  }
+
+  return (
+    <Panel title="Subject variants">
+      <div className="grid gap-3 md:grid-cols-2">
+        {model.subjectVariantBreakdown.map((variant) => (
+          <section
+            key={variant.variant}
+            className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50/40"
+          >
+            <div className="border-b border-slate-200 bg-white px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Variant {variant.label}
+                </h3>
+                <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
+                  {variant.assigned.toLocaleString()} recipients
+                </span>
+              </div>
+              <p className="mt-2 text-[13px] font-medium leading-5 text-slate-900">
+                {variant.subject ?? "(no subject)"}
+              </p>
+            </div>
+            <dl className="grid grid-cols-3 gap-px bg-slate-200">
+              {[
+                {
+                  label: "Delivered",
+                  count: variant.delivered,
+                  rate: variant.deliveredRate,
+                },
+                {
+                  label: "Opened",
+                  count: variant.opened,
+                  rate: variant.openedRate,
+                },
+                {
+                  label: "Clicked",
+                  count: variant.clicked,
+                  rate: variant.clickedRate,
+                },
+              ].map((metric) => (
+                <div key={metric.label} className="bg-white px-4 py-3">
+                  <dt className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+                    {metric.label}
+                  </dt>
+                  <dd className="mt-1 text-[14px] font-semibold tabular-nums text-slate-900">
+                    {metric.count.toLocaleString()}
+                  </dd>
+                  <p className="mt-1 text-[11px] tabular-nums text-slate-500">
+                    {formatRate(metric.rate)}
+                  </p>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
       </div>
     </Panel>
   );
