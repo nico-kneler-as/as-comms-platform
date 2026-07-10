@@ -48,6 +48,20 @@ export function EmailContentPanel({
 }: {
   readonly model: RunDetailModel;
 }) {
+  if (model.channel === "sms") {
+    const bodyText = model.run.bodyTextTemplate?.trim() ?? "";
+
+    return (
+      <Panel title="Message">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[12.5px] leading-6 text-slate-700 whitespace-pre-wrap">
+          {bodyText.length > 0
+            ? bodyText
+            : "No message body was saved for this run."}
+        </div>
+      </Panel>
+    );
+  }
+
   if (model.provider === "mailchimp") {
     return (
       <Panel title="Email content">
@@ -121,6 +135,7 @@ export function SubjectVariantBreakdownPanel({
   readonly model: RunDetailModel;
 }) {
   if (
+    model.channel === "sms" ||
     model.provider === "mailchimp" ||
     !model.run.abTestEnabled ||
     model.subjectVariantBreakdown === null
@@ -192,6 +207,10 @@ export function LinkClicksPanel({
 }: {
   readonly model: RunDetailModel;
 }) {
+  if (model.channel === "sms") {
+    return null;
+  }
+
   if (model.provider === "mailchimp") {
     return (
       <Panel title="Link clicks">
@@ -351,8 +370,12 @@ export function SendDetailsPanel({
           label={sendDateLabel}
           value={<LocalDateTime iso={sendDateIso} />}
         />
-        <SummaryRow label="From" value={fromLabel} />
-        <SummaryRow label="Reply-to" value={replyToLabel} />
+        {model.channel === "sms" ? null : (
+          <SummaryRow label="From" value={fromLabel} />
+        )}
+        {model.channel === "sms" ? null : (
+          <SummaryRow label="Reply-to" value={replyToLabel} />
+        )}
         <SummaryRow label="Audience" value={audienceLabel} />
         <SummaryRow label="Auto-excluded" value={autoExcludedLabel} />
       </div>

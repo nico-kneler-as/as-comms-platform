@@ -1,6 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { sql } from "drizzle-orm";
 
 Object.assign(globalThis, { React });
 process.env.TZ = "UTC";
@@ -91,7 +92,10 @@ import type {
   RunDetailHeaderModel,
   RunDetailModel,
 } from "../../app/broadcasts/[runId]/_lib/run-detail";
-import { getRunDetailModel } from "../../app/broadcasts/[runId]/_lib/run-detail";
+import {
+  getRunDetailHeaderModel,
+  getRunDetailModel,
+} from "../../app/broadcasts/[runId]/_lib/run-detail";
 import { MetricTiles } from "../../app/broadcasts/[runId]/_components/metric-tiles";
 import { RecipientsTable } from "../../app/broadcasts/[runId]/_components/recipients-table";
 import { RepliesInInboxPanel } from "../../app/broadcasts/[runId]/_components/replies-in-inbox-panel";
@@ -168,6 +172,7 @@ function buildPostmarkModel(
 
   return {
     provider: "postmark",
+    channel: "email",
     run,
     totalAudience: 3,
     senderAlias: "forests@adventurescientists.org",
@@ -242,6 +247,7 @@ function buildPostmarkModel(
         contactId: "contact-1",
         name: "Taylor",
         email: "taylor@example.org",
+        phone: null,
         project: "Forests",
         latestState: "opened",
         latestStateLabel: "Opened",
@@ -301,6 +307,7 @@ function buildPostmarkModel(
 function buildMailchimpModel(): RunDetailModel {
   return {
     provider: "mailchimp",
+    channel: "email",
     run: {
       id: "mailchimp-run-1",
       kind: "newsletter",
@@ -378,6 +385,7 @@ function buildMailchimpModel(): RunDetailModel {
         contactId: null,
         name: "member-1",
         email: null,
+        phone: null,
         project: null,
         latestState: "opened",
         latestStateLabel: "Opened",
@@ -405,11 +413,141 @@ function buildMailchimpModel(): RunDetailModel {
   };
 }
 
+function buildSmsModel(
+  state: RunDetailModel["run"]["state"] = "complete",
+): RunDetailModel {
+  return {
+    provider: "sms",
+    channel: "sms",
+    run: {
+      id: "sms-run-1",
+      kind: "project",
+      launchType: "sms",
+      state,
+      projectId: "project-1",
+      name: "Trailhead reminder",
+      fromEmail: null,
+      fromName: null,
+      replyToEmail: null,
+      subjectTemplate: null,
+      subjectTemplateB: null,
+      abTestEnabled: false,
+      bodyHtmlTemplate: null,
+      bodyDesignJson: null,
+      bodyTextTemplate: "Meet at the trailhead at 7:30 AM.",
+      preheader: null,
+      audienceCriteria: {
+        projectId: "project-1",
+        projectIds: ["project-1"],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
+      audienceSize: 6,
+      scheduledAt: null,
+      startedAt: "2026-07-10T12:00:00.000Z",
+      completedAt: "2026-07-10T12:10:00.000Z",
+      finalizedAt: null,
+      cancelledAt: null,
+      cancelledReason: null,
+      createdByUserId: null,
+      lastEditedByUserId: null,
+      createdAt: "2026-07-10T11:55:00.000Z",
+      updatedAt: "2026-07-10T12:10:00.000Z",
+    },
+    totalAudience: 6,
+    senderAlias: null,
+    kindLabel: "Project",
+    dateLabel: "Completed",
+    dateIso: "2026-07-10T12:10:00.000Z",
+    metrics: [
+      { key: "queued", label: "Queued", value: 1, percentage: 16.7, subtitle: null },
+      {
+        key: "sent",
+        label: "Sent",
+        value: 3,
+        percentage: 50,
+        subtitle: "Accepted by Twilio",
+      },
+      {
+        key: "delivered",
+        label: "Delivered",
+        value: 2,
+        percentage: 33.3,
+        subtitle: null,
+      },
+      { key: "failed", label: "Failed", value: 1, percentage: 16.7, subtitle: null },
+      {
+        key: "suppressed",
+        label: "Suppressed",
+        value: 1,
+        percentage: 16.7,
+        subtitle: null,
+      },
+      { key: "replied", label: "Replied", value: 1, percentage: 16.7, subtitle: null },
+    ],
+    sentCount: 3,
+    queuedCount: 1,
+    progressPercent: 50,
+    estimatedMinutesRemaining: null,
+    recipients: [
+      {
+        snapshotId: "sms-1",
+        contactId: "contact-1",
+        name: "Taylor",
+        email: null,
+        phone: "+15555550123",
+        project: null,
+        latestState: "delivered",
+        latestStateLabel: "Delivered",
+        lastEventAt: "2026-07-10T12:01:00.000Z",
+      },
+    ],
+    recipientTotal: 1,
+    repliesCount: 1,
+    recentReplies: [
+      {
+        contactId: "contact-1",
+        contactName: "Taylor",
+        email: "+15555550123",
+        occurredAt: "2026-07-10T12:20:00.000Z",
+      },
+    ],
+    inboxRecipientsHref: "/inbox",
+    auditEntries: [],
+    linkClicks: [],
+    subjectVariantBreakdown: null,
+    audienceCriteria: {
+      projectIds: ["project-1"],
+      statuses: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time",
+      hasReplied: "either",
+      hasClicked: "either",
+    },
+    canStopUnsent: false,
+    canDuplicate: true,
+    isAdmin: true,
+  };
+}
+
 function buildHeader(model: RunDetailModel): RunDetailHeaderModel {
+  const subjectTemplate = model.run.subjectTemplate?.trim() ?? "";
+  const runName = model.run.name?.trim() ?? "";
+
   return {
     runId: model.run.id,
     state: model.run.state,
-    subject: model.run.subjectTemplate ?? "Untitled broadcast",
+    subject:
+      subjectTemplate.length > 0
+        ? subjectTemplate
+        : runName.length > 0
+          ? runName
+          : "Untitled broadcast",
     preheader: model.run.preheader,
     senderAlias: model.senderAlias,
     kindLabel: model.kindLabel,
@@ -452,9 +590,9 @@ function renderShell(model: RunDetailModel) {
                   subtitle: "0 replies tracked.",
                   emptyMessage:
                     "Reply tracking is not available for historical Mailchimp imports; replies to those campaigns went into Mailchimp's reply tracking.",
-                }
-              : {})}
-            showInboxLink={model.provider === "postmark"}
+            }
+          : {})}
+            showInboxLink={model.provider !== "mailchimp"}
           />
           <SendDetailsPanel model={model} />
           <AudienceCriteriaPanel model={model} />
@@ -465,6 +603,70 @@ function renderShell(model: RunDetailModel) {
       }
     />,
   );
+}
+
+async function seedProjectForRunTests(
+  runtime: Awaited<ReturnType<typeof createStage1WebTestRuntime>>,
+  projectId = "project-1",
+) {
+  await runtime.context.repositories.projectDimensions.upsert({
+    projectId,
+    projectName: "Project One",
+    projectAlias: "project-one",
+    connectedToProjectId: null,
+    source: "manual",
+    isActive: true,
+    aiKnowledgeUrl: null,
+    aiKnowledgeSyncedAt: null,
+    aiKnowledgeSources: [],
+    aiOperatingContext: "",
+    aiAutoSyncSchedule: "never",
+    aiOptimizedSynthesizedAt: null,
+    aiOptimizedInputHash: null,
+  });
+}
+
+async function seedContactForRunTests(
+  runtime: Awaited<ReturnType<typeof createStage1WebTestRuntime>>,
+  input: {
+    readonly id: string;
+    readonly name: string;
+    readonly email?: string | null;
+    readonly phone?: string | null;
+  },
+) {
+  await runtime.context.repositories.contacts.upsert({
+    id: input.id,
+    salesforceContactId: null,
+    displayName: input.name,
+    primaryEmail: input.email ?? null,
+    primaryPhone: input.phone ?? null,
+    createdAt: "2026-07-10T12:00:00.000Z",
+    updatedAt: "2026-07-10T12:00:00.000Z",
+  });
+}
+
+async function seedSmsSenderForRunTests(
+  runtime: Awaited<ReturnType<typeof createStage1WebTestRuntime>>,
+) {
+  await runtime.context.db.execute(sql`
+    insert into sms_senders (
+      id,
+      phone_e164,
+      display_name,
+      is_active,
+      created_at,
+      updated_at
+    )
+    values (
+      'sender-sms-1',
+      '+15555550999',
+      'Primary SMS Sender',
+      true,
+      '2026-07-10T12:00:00.000Z'::timestamptz,
+      '2026-07-10T12:00:00.000Z'::timestamptz
+    )
+  `);
 }
 
 describe("broadcast run detail", () => {
@@ -689,6 +891,478 @@ describe("broadcast run detail", () => {
     expect(renderShell(buildPostmarkModel("sending"))).toMatchSnapshot();
   });
 
+  it("loads SMS metrics from sms_messages and excludes inbound rows", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      await seedProjectForRunTests(runtime);
+      await seedContactForRunTests(runtime, {
+        id: "contact-sms-1",
+        name: "Taylor",
+        phone: "+15555550101",
+      });
+      await seedContactForRunTests(runtime, {
+        id: "contact-sms-2",
+        name: "Jordan",
+        phone: "+15555550102",
+      });
+      await seedSmsSenderForRunTests(runtime);
+
+      const run = await runtime.runtime.campaigns.campaignRuns.create({
+        id: "run-detail-sms-metrics",
+        kind: "project",
+        launchType: "sms",
+        projectId: "project-1",
+        name: "Trailhead reminder",
+        fromEmail: null,
+        fromName: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Meet at the trailhead at 7:30 AM.",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 6,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      const rows = [
+        {
+          id: "sms-queued",
+          contactId: "contact-sms-1",
+          phoneE164: "+15555550101",
+          sendStatus: "queued" as const,
+          sentAt: null,
+        },
+        {
+          id: "sms-suppressed",
+          contactId: "contact-sms-1",
+          phoneE164: "+15555550101",
+          sendStatus: "suppressed" as const,
+          sentAt: null,
+        },
+        {
+          id: "sms-sent",
+          contactId: "contact-sms-1",
+          phoneE164: "+15555550101",
+          sendStatus: "sent" as const,
+          sentAt: new Date("2026-07-10T12:01:00.000Z"),
+        },
+        {
+          id: "sms-delivered",
+          contactId: "contact-sms-2",
+          phoneE164: "+15555550102",
+          sendStatus: "delivered" as const,
+          sentAt: new Date("2026-07-10T12:02:00.000Z"),
+        },
+        {
+          id: "sms-failed",
+          contactId: "contact-sms-2",
+          phoneE164: "+15555550102",
+          sendStatus: "failed" as const,
+          sentAt: null,
+        },
+        {
+          id: "sms-undelivered",
+          contactId: "contact-sms-2",
+          phoneE164: "+15555550102",
+          sendStatus: "undelivered" as const,
+          sentAt: new Date("2026-07-10T12:03:00.000Z"),
+        },
+      ];
+
+      for (const [index, row] of rows.entries()) {
+        const createdAtIso = `2026-07-10T12:0${String(index)}:00.000Z`;
+        await runtime.context.repositories.smsMessages.insert({
+          id: row.id,
+          twilioMessageSid: `SM${row.id}`,
+          direction: "outbound",
+          contactId: row.contactId,
+          phoneE164: row.phoneE164,
+          senderId: "sender-sms-1",
+          broadcastRunId: run.id,
+          body: `Body ${row.id}`,
+          segments: 1,
+          encoding: "GSM-7",
+          mediaUrls: null,
+          sendStatus: row.sendStatus,
+          failedReason: null,
+          failedDetail: null,
+          sentAt: row.sentAt,
+          receivedAt: null,
+          actorId: null,
+          createdAt: new Date(createdAtIso),
+          updatedAt: new Date(createdAtIso),
+        });
+      }
+
+      await runtime.context.repositories.smsMessages.insert({
+        id: "sms-inbound-received",
+        twilioMessageSid: "SMinbound",
+        direction: "inbound",
+        contactId: "contact-sms-1",
+        phoneE164: "+15555550101",
+        senderId: "sender-sms-1",
+        broadcastRunId: null,
+        body: "Reply message",
+        segments: 1,
+        encoding: "GSM-7",
+        mediaUrls: null,
+        sendStatus: "received",
+        failedReason: null,
+        failedDetail: null,
+        sentAt: null,
+        receivedAt: new Date("2026-07-10T12:04:00.000Z"),
+        actorId: null,
+        createdAt: new Date("2026-07-10T12:04:00.000Z"),
+        updatedAt: new Date("2026-07-10T12:04:00.000Z"),
+      });
+
+      const model = await getRunDetailModel({
+        runId: run.id,
+        isAdmin: true,
+      });
+
+      expect(model?.provider).toBe("sms");
+      expect(model?.channel).toBe("sms");
+      expect(model?.metrics).toEqual([
+        expect.objectContaining({ key: "queued", value: 1, percentage: 16.7 }),
+        expect.objectContaining({ key: "sent", value: 3, percentage: 50 }),
+        expect.objectContaining({ key: "delivered", value: 1, percentage: 16.7 }),
+        expect.objectContaining({ key: "failed", value: 2, percentage: 33.3 }),
+        expect.objectContaining({ key: "suppressed", value: 1, percentage: 16.7 }),
+        expect.objectContaining({ key: "replied", value: 0, percentage: 0 }),
+      ]);
+      expect(model?.totalAudience).toBe(6);
+      expect(model?.recipientTotal).toBe(6);
+      expect(model?.recipients.map((row) => row.latestState)).toEqual([
+        "queued",
+        "suppressed",
+        "sent",
+        "delivered",
+        "failed",
+        "failed",
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("counts SMS replies after completion only for run recipients", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      await seedProjectForRunTests(runtime);
+      await seedContactForRunTests(runtime, {
+        id: "contact-sms-1",
+        name: "Taylor",
+        phone: "+15555550101",
+      });
+      await seedContactForRunTests(runtime, {
+        id: "contact-sms-2",
+        name: "Jordan",
+        phone: "+15555550102",
+      });
+      await seedSmsSenderForRunTests(runtime);
+
+      const run = await runtime.runtime.campaigns.campaignRuns.create({
+        id: "run-detail-sms-replies",
+        kind: "project",
+        launchType: "sms",
+        projectId: "project-1",
+        name: "Gear check",
+        fromEmail: null,
+        fromName: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Reply if you need a gear check.",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 1,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+      await runtime.runtime.campaigns.campaignRuns.update(run.id, {
+        state: "complete",
+        startedAt: "2026-07-10T12:05:00.000Z",
+        completedAt: "2026-07-10T12:10:00.000Z",
+      });
+
+      await runtime.context.repositories.smsMessages.insert({
+        id: "sms-run-recipient",
+        twilioMessageSid: "SMrecipient",
+        direction: "outbound",
+        contactId: "contact-sms-1",
+        phoneE164: "+15555550101",
+        senderId: "sender-sms-1",
+        broadcastRunId: run.id,
+        body: "Reply if you need a gear check.",
+        segments: 1,
+        encoding: "GSM-7",
+        mediaUrls: null,
+        sendStatus: "delivered",
+        failedReason: null,
+        failedDetail: null,
+        sentAt: new Date("2026-07-10T12:05:00.000Z"),
+        receivedAt: null,
+        actorId: null,
+        createdAt: new Date("2026-07-10T12:05:00.000Z"),
+        updatedAt: new Date("2026-07-10T12:05:00.000Z"),
+      });
+
+      const sourceEvidenceIds = [
+        "source-sms-before",
+        "source-sms-after",
+        "source-sms-nonrecipient",
+      ] as const;
+      for (const sourceEvidenceId of sourceEvidenceIds) {
+        await runtime.context.repositories.sourceEvidence.append({
+          id: sourceEvidenceId,
+          provider: "twilio",
+          providerRecordType: "message",
+          providerRecordId: sourceEvidenceId,
+          receivedAt: "2026-07-10T12:20:00.000Z",
+          occurredAt: "2026-07-10T12:20:00.000Z",
+          payloadRef: `payloads/twilio/${sourceEvidenceId}.json`,
+          idempotencyKey: `twilio:${sourceEvidenceId}`,
+          checksum: `checksum:${sourceEvidenceId}`,
+        });
+      }
+
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: "canonical-sms-before",
+        contactId: "contact-sms-1",
+        eventType: "communication.sms.inbound",
+        channel: "sms",
+        occurredAt: "2026-07-10T12:09:00.000Z",
+        sourceEvidenceId: "source-sms-before",
+        idempotencyKey: "canonical-sms-before",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "twilio",
+          primarySourceEvidenceId: "source-sms-before",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "source-sms-before",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "+15555550101",
+            providerThreadId: "+15555550101",
+          },
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: "canonical-sms-after",
+        contactId: "contact-sms-1",
+        eventType: "communication.sms.inbound",
+        channel: "sms",
+        occurredAt: "2026-07-10T12:20:00.000Z",
+        sourceEvidenceId: "source-sms-after",
+        idempotencyKey: "canonical-sms-after",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "twilio",
+          primarySourceEvidenceId: "source-sms-after",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "source-sms-after",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "+15555550101",
+            providerThreadId: "+15555550101",
+          },
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+      await runtime.context.repositories.canonicalEvents.upsert({
+        id: "canonical-sms-nonrecipient",
+        contactId: "contact-sms-2",
+        eventType: "communication.sms.inbound",
+        channel: "sms",
+        occurredAt: "2026-07-10T12:25:00.000Z",
+        sourceEvidenceId: "source-sms-nonrecipient",
+        idempotencyKey: "canonical-sms-nonrecipient",
+        contentFingerprint: null,
+        provenance: {
+          primaryProvider: "twilio",
+          primarySourceEvidenceId: "source-sms-nonrecipient",
+          supportingSourceEvidenceIds: [],
+          winnerReason: "single_source",
+          sourceRecordType: "message",
+          sourceRecordId: "source-sms-nonrecipient",
+          messageKind: "one_to_one",
+          campaignRef: null,
+          threadRef: {
+            crossProviderCollapseKey: "+15555550102",
+            providerThreadId: "+15555550102",
+          },
+          direction: "inbound",
+          notes: null,
+        },
+        reviewState: "clear",
+      });
+
+      const model = await getRunDetailModel({
+        runId: run.id,
+        isAdmin: true,
+      });
+
+      expect(model?.repliesCount).toBe(1);
+      expect(model?.metrics.find((metric) => metric.key === "replied")?.value).toBe(1);
+      expect(model?.recentReplies).toEqual([
+        {
+          contactId: "contact-sms-1",
+          contactName: "Taylor",
+          email: "+15555550101",
+          occurredAt: "2026-07-10T12:20:00.000Z",
+        },
+      ]);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("falls back the header title from subject to name to Untitled broadcast", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      const audienceCriteria = {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time" as const,
+        hasReplied: "either" as const,
+        hasClicked: "either" as const,
+      };
+      const { campaigns } = runtime.runtime;
+      await campaigns.campaignRuns.create({
+        id: "run-header-subject",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: null,
+        name: null,
+        fromEmail: null,
+        fromName: null,
+        replyToEmail: null,
+        subjectTemplate: "  Subject wins  ",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: null,
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria,
+        audienceSize: null,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+      await campaigns.campaignRuns.create({
+        id: "run-header-name",
+        kind: "project",
+        launchType: "sms",
+        projectId: null,
+        name: null,
+        fromEmail: null,
+        fromName: null,
+        replyToEmail: null,
+        subjectTemplate: "   ",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: null,
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria,
+        audienceSize: null,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+      await campaigns.campaignRuns.create({
+        id: "run-header-untitled",
+        kind: "project",
+        launchType: "sms",
+        projectId: null,
+        name: null,
+        fromEmail: null,
+        fromName: null,
+        replyToEmail: null,
+        subjectTemplate: "   ",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: null,
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria,
+        audienceSize: null,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      await campaigns.campaignRuns.update("run-header-subject", {
+        name: "  Saved name  ",
+      });
+      await campaigns.campaignRuns.update("run-header-name", {
+        name: "  Name fallback  ",
+      });
+      await campaigns.campaignRuns.update("run-header-untitled", {
+        name: "   ",
+      });
+
+      const [subjectHeader, nameHeader, untitledHeader] = await Promise.all([
+        getRunDetailHeaderModel({ runId: "run-header-subject", isAdmin: true }),
+        getRunDetailHeaderModel({ runId: "run-header-name", isAdmin: true }),
+        getRunDetailHeaderModel({ runId: "run-header-untitled", isAdmin: true }),
+      ]);
+
+      expect(subjectHeader?.subject).toBe("Subject wins");
+      expect(nameHeader?.subject).toBe("Name fallback");
+      expect(untitledHeader?.subject).toBe("Untitled broadcast");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
   it("returns per-variant subject metrics for A/B runs", async () => {
     const runtime = await createStage1WebTestRuntime();
 
@@ -856,6 +1530,28 @@ describe("broadcast run detail", () => {
     expect(populatedHtml).toContain("4 clicks");
     expect(populatedHtml).toContain("2 unique");
     expect(emptyHtml).toContain("No link clicks recorded yet.");
+  });
+
+  it("renders SMS detail panels and hides email-only panels", () => {
+    const html = renderShell(buildSmsModel());
+
+    expect(html).toContain(">Queued<");
+    expect(html).toContain(">Sent<");
+    expect(html).toContain(">Delivered<");
+    expect(html).toContain(">Failed<");
+    expect(html).toContain(">Suppressed<");
+    expect(html).toContain(">Replied<");
+    expect(html).toContain(">Message<");
+    expect(html).toContain("Meet at the trailhead at 7:30 AM.");
+    expect(html).not.toContain(">Opened<");
+    expect(html).not.toContain(">Clicked<");
+    expect(html).not.toContain(">Bounced<");
+    expect(html).not.toContain(">Unsubscribed<");
+    expect(html).not.toContain(">Complained<");
+    expect(html).not.toContain(">Link clicks<");
+    expect(html).not.toContain(">Subject variants<");
+    expect(html).not.toContain(">From<");
+    expect(html).not.toContain(">Reply-to<");
   });
 
   it("renders the A/B subject breakdown only when enabled", () => {

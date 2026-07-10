@@ -18,11 +18,15 @@ import {
 import {
   listRunRecipients,
   readRunMetricCounts,
+  readSmsRunMetricCounts,
   readRunVariantMetricCounts,
   type RecipientRowData,
   type RunMetricCounts,
   type RunVariantMetricCounts,
 } from "../../_lib/run-recipients";
+
+type RunChannel = "email" | "sms";
+type RunProvider = "postmark" | "mailchimp" | "sms";
 
 function normalizeSqlResultRows<TRow>(
   result:
@@ -51,6 +55,8 @@ export interface RunMetricTileData {
     | "sent"
     | "replied"
     | "delivered"
+    | "failed"
+    | "suppressed"
     | "opened"
     | "clicked"
     | "bounced"
@@ -93,7 +99,8 @@ export interface RunDetailHeaderModel {
 }
 
 export interface RunDetailModel {
-  readonly provider: "postmark" | "mailchimp";
+  readonly provider: RunProvider;
+  readonly channel: RunChannel;
   readonly run: CampaignRunRecord;
   readonly totalAudience: number;
   readonly senderAlias: string | null;
@@ -257,6 +264,57 @@ function buildMetricTiles(
       label: "Complained",
       value: counts.complained,
       percentage: formatPercentage(counts.complained, total),
+      subtitle: null,
+    },
+  ];
+}
+
+function buildSmsMetricTiles(
+  counts: RunMetricCounts,
+  total: number,
+  repliesCount: number,
+): readonly RunMetricTileData[] {
+  return [
+    {
+      key: "queued",
+      label: "Queued",
+      value: counts.queued,
+      percentage: formatPercentage(counts.queued, total),
+      subtitle: null,
+    },
+    {
+      key: "sent",
+      label: "Sent",
+      value: counts.sent,
+      percentage: formatPercentage(counts.sent, total),
+      subtitle: "Accepted by Twilio",
+    },
+    {
+      key: "delivered",
+      label: "Delivered",
+      value: counts.delivered,
+      percentage: formatPercentage(counts.delivered, total),
+      subtitle: null,
+    },
+    {
+      key: "failed",
+      label: "Failed",
+      value: counts.failed,
+      percentage: formatPercentage(counts.failed, total),
+      subtitle: null,
+    },
+    {
+      key: "suppressed",
+      label: "Suppressed",
+      value: counts.suppressed,
+      percentage: formatPercentage(counts.suppressed, total),
+      subtitle: null,
+    },
+    {
+      key: "replied",
+      label: "Replied",
+      value: repliesCount,
+      percentage: formatPercentage(repliesCount, total),
       subtitle: null,
     },
   ];
@@ -502,7 +560,7 @@ function resolvePrimaryProjectLabel(input: {
 }
 
 function buildHeaderModel(input: {
-  readonly provider: "postmark" | "mailchimp";
+  readonly provider: RunProvider;
   readonly run: CampaignRunRecord;
   readonly senderAlias: string | null;
   readonly isAdmin: boolean;
@@ -510,12 +568,18 @@ function buildHeaderModel(input: {
   readonly projectLabel: string | null;
 }): RunDetailHeaderModel {
   const { label: dateLabel, iso: dateIso } = resolveRunDate(input.run);
-  const subject = input.run.subjectTemplate?.trim() ?? "";
+  const subjectTemplate = input.run.subjectTemplate?.trim() ?? "";
+  const runName = input.run.name?.trim() ?? "";
 
   return {
     runId: input.run.id,
     state: input.run.state,
-    subject: subject.length > 0 ? subject : "Untitled broadcast",
+    subject:
+      subjectTemplate.length > 0
+        ? subjectTemplate
+        : runName.length > 0
+          ? runName
+          : "Untitled broadcast",
     preheader: (() => {
       const trimmed = input.run.preheader?.trim() ?? "";
       return trimmed.length > 0 ? trimmed : null;
@@ -525,11 +589,11 @@ function buildHeaderModel(input: {
     dateLabel,
     dateIso,
     canStopUnsent:
-      input.provider === "postmark" &&
+      input.provider !== "mailchimp" &&
       input.isAdmin &&
       (input.run.state === "sending" || input.run.state === "scheduled"),
     canDuplicate:
-      input.provider === "postmark" &&
+      input.provider !== "mailchimp" &&
       (input.run.state === "complete" ||
         input.run.state === "finalized" ||
         input.run.state === "cancelled"),
@@ -540,25 +604,30 @@ function buildHeaderModel(input: {
 
 export async function getRunDetailHeaderModel(input: {
   readonly runId: string;
-  readonly provider?: "postmark" | "mailchimp";
+  readonly provider?: "postmark" | "mailchimp" | "sms";
   readonly isAdmin: boolean;
 }): Promise<RunDetailHeaderModel | null> {
   const runtime = await getStage1WebRuntime();
-  const provider = input.provider ?? "postmark";
+  const requestedProvider =
+    input.provider === "mailchimp" ? "mailchimp" : "postmark";
   const projectionReader = createCampaignRunProjectionReader({
     repositories: runtime.campaigns,
   });
-  const projection = await projectionReader.getDetail(input.runId, provider);
+  const projection =
+    requestedProvider === "mailchimp"
+      ? await projectionReader.getDetail(input.runId, "mailchimp")
+      : null;
   const run =
     projection === null
-      ? provider === "postmark"
-        ? await runtime.campaigns.campaignRuns.findById(input.runId)
-        : null
+      ? await runtime.campaigns.campaignRuns.findById(input.runId)
       : buildProjectionRun(projection);
 
   if (run === null) {
     return null;
   }
+
+  const provider: RunProvider =
+    run.launchType === "sms" ? "sms" : requestedProvider;
 
   const totalAudience =
     provider === "mailchimp"
@@ -569,7 +638,8 @@ export async function getRunDetailHeaderModel(input: {
   return buildHeaderModel({
     provider,
     run,
-    senderAlias: run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp" : null),
+    senderAlias:
+      provider === "mailchimp" ? "Mailchimp" : (run.fromEmail ?? null),
     isAdmin: input.isAdmin,
     totalAudience,
     projectLabel: resolvePrimaryProjectLabel({ projects: allProjects, run }),
@@ -578,16 +648,17 @@ export async function getRunDetailHeaderModel(input: {
 
 export async function getRunDetailModel(input: {
   readonly runId: string;
-  readonly provider?: "postmark" | "mailchimp";
+  readonly provider?: "postmark" | "mailchimp" | "sms";
   readonly isAdmin: boolean;
 }): Promise<RunDetailModel | null> {
   const runtime = await getStage1WebRuntime();
-  const provider = input.provider ?? "postmark";
+  const requestedProvider =
+    input.provider === "mailchimp" ? "mailchimp" : "postmark";
   const projectionReader = createCampaignRunProjectionReader({
     repositories: runtime.campaigns,
   });
   const projection =
-    provider === "mailchimp"
+    requestedProvider === "mailchimp"
       ? await projectionReader.getDetail(input.runId, "mailchimp")
       : null;
   const run =
@@ -597,6 +668,10 @@ export async function getRunDetailModel(input: {
   if (run === null) {
     return null;
   }
+
+  const provider: RunProvider =
+    run.launchType === "sms" ? "sms" : requestedProvider;
+  const channel: RunChannel = provider === "sms" ? "sms" : "email";
 
   const [
     mailchimpAggregates,
@@ -619,6 +694,20 @@ export async function getRunDetailModel(input: {
             }[]
           >([]),
         ])
+      : provider === "sms"
+        ? await Promise.all([
+            Promise.resolve<MailchimpCampaignAggregates | null>(null),
+            readSmsRunMetricCounts({ runId: run.id }),
+            Promise.resolve<readonly RunVariantMetricCounts[]>([]),
+            listRunRecipients({ runId: run.id, provider: "sms", limit: 100 }),
+            Promise.resolve<
+              readonly {
+                originalLink: string;
+                totalClicks: number;
+                uniqueClickers: number;
+              }[]
+            >([]),
+          ])
       : await Promise.all([
           Promise.resolve<MailchimpCampaignAggregates | null>(null),
           readRunMetricCounts({ runId: run.id }),
@@ -636,34 +725,19 @@ export async function getRunDetailModel(input: {
   let recentReplies: readonly ReplyPreviewRow[] = [];
   if (
     runtime.connection !== null &&
-    provider === "postmark" &&
     run.completedAt !== null
   ) {
     const threshold = run.completedAt;
-    const replyRowsResult = await runtime.connection.db.execute(sql<ReplyRowDb>`
-      select
-        cel.contact_id as "contactId",
-        c.display_name as "contactName",
-        c.primary_email as "email",
-        cel.occurred_at as "occurredAt"
-      from canonical_event_ledger cel
-      inner join contacts c
-        on c.id = cel.contact_id
-      where cel.event_type = 'communication.email.inbound'
-        and cel.occurred_at > ${threshold}::timestamptz
-        and exists (
-          select 1
-          from audience_snapshots snapshot
-          where snapshot.campaign_run_id = ${run.id}
-            and snapshot.contact_id = cel.contact_id
-        )
-      order by cel.occurred_at desc, cel.id desc
-      limit 5
-    `);
-    const countResult = await runtime.connection.db.execute(
-      sql<{ readonly count: number }>`
-        select count(*)::int as "count"
+    if (provider === "postmark") {
+      const replyRowsResult = await runtime.connection.db.execute(sql<ReplyRowDb>`
+        select
+          cel.contact_id as "contactId",
+          c.display_name as "contactName",
+          c.primary_email as "email",
+          cel.occurred_at as "occurredAt"
         from canonical_event_ledger cel
+        inner join contacts c
+          on c.id = cel.contact_id
         where cel.event_type = 'communication.email.inbound'
           and cel.occurred_at > ${threshold}::timestamptz
           and exists (
@@ -672,33 +746,122 @@ export async function getRunDetailModel(input: {
             where snapshot.campaign_run_id = ${run.id}
               and snapshot.contact_id = cel.contact_id
           )
-      `,
-    );
-    const recentReplyRows = normalizeSqlResultRows<ReplyRowDb>(
-      replyRowsResult as { readonly rows?: readonly ReplyRowDb[] },
-    );
-    const [countRow] = normalizeSqlResultRows<{ readonly count: number }>(
-      countResult as {
-        readonly rows?: readonly { readonly count: number }[];
-      },
-    );
+        order by cel.occurred_at desc, cel.id desc
+        limit 5
+      `);
+      const countResult = await runtime.connection.db.execute(
+        sql<{ readonly count: number }>`
+          select count(*)::int as "count"
+          from canonical_event_ledger cel
+          where cel.event_type = 'communication.email.inbound'
+            and cel.occurred_at > ${threshold}::timestamptz
+            and exists (
+              select 1
+              from audience_snapshots snapshot
+              where snapshot.campaign_run_id = ${run.id}
+                and snapshot.contact_id = cel.contact_id
+            )
+        `,
+      );
+      const recentReplyRows = normalizeSqlResultRows<ReplyRowDb>(
+        replyRowsResult as { readonly rows?: readonly ReplyRowDb[] },
+      );
+      const [countRow] = normalizeSqlResultRows<{ readonly count: number }>(
+        countResult as {
+          readonly rows?: readonly { readonly count: number }[];
+        },
+      );
 
-    repliesCount = countRow?.count ?? 0;
-    recentReplies = recentReplyRows.map((row) => ({
-      contactId: row.contactId,
-      contactName: row.contactName ?? row.email ?? row.contactId,
-      email: row.email,
-      occurredAt: requireIsoTimestamp(row.occurredAt),
-    }));
+      repliesCount = countRow?.count ?? 0;
+      recentReplies = recentReplyRows.map((row) => ({
+        contactId: row.contactId,
+        contactName: row.contactName ?? row.email ?? row.contactId,
+        email: row.email,
+        occurredAt: requireIsoTimestamp(row.occurredAt),
+      }));
+    } else if (provider === "sms") {
+      const replyRowsResult = await runtime.connection.db.execute(sql<ReplyRowDb>`
+        select
+          cel.contact_id as "contactId",
+          c.display_name as "contactName",
+          c.primary_phone as "email",
+          cel.occurred_at as "occurredAt"
+        from canonical_event_ledger cel
+        inner join contacts c
+          on c.id = cel.contact_id
+        where cel.event_type = 'communication.sms.inbound'
+          and cel.occurred_at > ${threshold}::timestamptz
+          and exists (
+            select 1
+            from sms_messages sms
+            where sms.broadcast_run_id = ${run.id}
+              and sms.direction = 'outbound'
+              and sms.contact_id = cel.contact_id
+          )
+        order by cel.occurred_at desc, cel.id desc
+        limit 5
+      `);
+      const countResult = await runtime.connection.db.execute(
+        sql<{ readonly count: number }>`
+          select count(*)::int as "count"
+          from canonical_event_ledger cel
+          where cel.event_type = 'communication.sms.inbound'
+            and cel.occurred_at > ${threshold}::timestamptz
+            and exists (
+              select 1
+              from sms_messages sms
+              where sms.broadcast_run_id = ${run.id}
+                and sms.direction = 'outbound'
+                and sms.contact_id = cel.contact_id
+            )
+        `,
+      );
+      const recentReplyRows = normalizeSqlResultRows<ReplyRowDb>(
+        replyRowsResult as { readonly rows?: readonly ReplyRowDb[] },
+      );
+      const [countRow] = normalizeSqlResultRows<{ readonly count: number }>(
+        countResult as {
+          readonly rows?: readonly { readonly count: number }[];
+        },
+      );
+
+      repliesCount = countRow?.count ?? 0;
+      recentReplies = recentReplyRows.map((row) => ({
+        contactId: row.contactId,
+        contactName: row.contactName ?? row.email ?? row.contactId,
+        email: row.email,
+        occurredAt: requireIsoTimestamp(row.occurredAt),
+      }));
+    }
   }
   const metrics =
     provider === "mailchimp" && mailchimpAggregates !== null
       ? buildMailchimpMetricTiles(mailchimpAggregates)
-      : buildMetricTiles(
+      : provider === "sms"
+        ? buildSmsMetricTiles(
+            metricCounts ?? {
+              queued: 0,
+              sent: 0,
+              delivered: 0,
+              failed: 0,
+              suppressed: 0,
+              opened: 0,
+              clicked: 0,
+              bounced: 0,
+              unsubscribed: 0,
+              complained: 0,
+              total: 0,
+            },
+            totalAudience,
+            repliesCount,
+          )
+        : buildMetricTiles(
           metricCounts ?? {
             queued: 0,
             sent: 0,
             delivered: 0,
+            failed: 0,
+            suppressed: 0,
             opened: 0,
             clicked: 0,
             bounced: 0,
@@ -737,10 +900,11 @@ export async function getRunDetailModel(input: {
 
   return {
     provider,
+    channel,
     run,
     totalAudience,
     senderAlias:
-      run.fromEmail ?? (provider === "mailchimp" ? "Mailchimp" : null),
+      provider === "mailchimp" ? "Mailchimp" : (run.fromEmail ?? null),
     kindLabel: run.kind === "project" ? "Project" : "Newsletter",
     dateLabel,
     dateIso,
@@ -770,11 +934,11 @@ export async function getRunDetailModel(input: {
     audienceCriteria: run.audienceCriteria,
     projectLabelsById: buildProjectLabelsById(allProjects),
     canStopUnsent:
-      provider === "postmark" &&
+      provider !== "mailchimp" &&
       input.isAdmin &&
       (run.state === "sending" || run.state === "scheduled"),
     canDuplicate:
-      provider === "postmark" &&
+      provider !== "mailchimp" &&
       (run.state === "complete" ||
         run.state === "finalized" ||
         run.state === "cancelled"),

@@ -27,6 +27,8 @@ const METRIC_META: Record<
   queued: { Icon: Users, tone: "slate" },
   sent: { Icon: CheckCheck, tone: "emerald" },
   delivered: { Icon: CheckCheck, tone: "emerald" },
+  failed: { Icon: AlertCircle, tone: "rose" },
+  suppressed: { Icon: ArrowDownLeft, tone: "amber" },
   opened: { Icon: Eye, tone: "sky" },
   clicked: { Icon: MousePointerClick, tone: "indigo" },
   replied: { Icon: CornerUpLeft, tone: "emerald" },

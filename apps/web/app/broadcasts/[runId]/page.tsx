@@ -100,7 +100,7 @@ async function RightRailSection({
                 "Reply tracking is not available for historical Mailchimp imports; replies to those campaigns went into Mailchimp's reply tracking.",
             }
           : {})}
-        showInboxLink={model.provider === "postmark"}
+        showInboxLink={model.provider !== "mailchimp"}
       />
       <SendDetailsPanel model={model} />
       <AudienceCriteriaPanel model={model} />

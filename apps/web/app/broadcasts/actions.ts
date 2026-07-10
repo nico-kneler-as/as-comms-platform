@@ -101,8 +101,10 @@ const recipientFilterSchema = z.enum([
   "clicked",
   "bounced",
   "unsubscribed",
+  "failed",
+  "suppressed",
 ] satisfies [RecipientFilter, ...RecipientFilter[]]);
-const campaignProviderSchema = z.enum(["postmark", "mailchimp"]);
+const campaignProviderSchema = z.enum(["postmark", "mailchimp", "sms"]);
 
 const listCampaignRecipientsInputSchema = z.object({
   runId: z.string().trim().min(1),
@@ -1399,7 +1401,7 @@ export async function testSend(
 
 export async function listCampaignRecipients(input: {
   readonly runId: string;
-  readonly provider?: "postmark" | "mailchimp";
+  readonly provider?: "postmark" | "mailchimp" | "sms";
   readonly filter?: RecipientFilter;
   readonly query?: string;
   readonly limit?: number;

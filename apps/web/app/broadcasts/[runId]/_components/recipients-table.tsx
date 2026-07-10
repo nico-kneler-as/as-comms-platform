@@ -26,7 +26,7 @@ const TABLE_HEIGHT = 520;
 const OVERSCAN = 6;
 const PAGE_SIZE = 100;
 
-const FILTER_LABELS: Record<RecipientFilter, string> = {
+const EMAIL_FILTER_LABELS: Record<RecipientFilter, string> = {
   all: "All",
   sent: "Sent",
   delivered: "Delivered",
@@ -34,6 +34,20 @@ const FILTER_LABELS: Record<RecipientFilter, string> = {
   clicked: "Clicked",
   bounced: "Bounced",
   unsubscribed: "Unsubscribed",
+  failed: "Failed",
+  suppressed: "Suppressed",
+};
+
+const SMS_FILTER_LABELS: Record<RecipientFilter, string> = {
+  all: "All",
+  sent: "Sent",
+  delivered: "Delivered",
+  opened: "Opened",
+  clicked: "Clicked",
+  bounced: "Failed",
+  unsubscribed: "Suppressed",
+  failed: "Failed",
+  suppressed: "Suppressed",
 };
 
 const RECIPIENT_STATE_CLASS: Record<RecipientLatestState, string> = {
@@ -82,10 +96,23 @@ export function RecipientsTable({
   total,
 }: {
   readonly runId: string;
-  readonly provider: "postmark" | "mailchimp";
+  readonly provider: "postmark" | "mailchimp" | "sms";
   readonly rows: readonly RecipientRowData[];
   readonly total: number;
 }) {
+  const isSms = provider === "sms";
+  const filterLabels = isSms ? SMS_FILTER_LABELS : EMAIL_FILTER_LABELS;
+  const visibleFilters = isSms
+    ? (["all", "sent", "delivered", "failed", "suppressed"] as const)
+    : ([
+        "all",
+        "sent",
+        "delivered",
+        "opened",
+        "clicked",
+        "bounced",
+        "unsubscribed",
+      ] as const);
   const [filter, setFilter] = useState<RecipientFilter>("all");
   const [query, setQuery] = useState("");
   const [serverRows, setServerRows] = useState(rows);
@@ -195,7 +222,7 @@ export function RecipientsTable({
           onChange={(event) => {
             setQuery(event.target.value);
           }}
-          placeholder="Search name, email, or project"
+          placeholder={isSms ? "Search name or phone" : "Search name, email, or project"}
           className="h-8 w-full max-w-[260px] text-[12px]"
         />
       </div>
@@ -207,7 +234,7 @@ export function RecipientsTable({
       ) : null}
 
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 px-3 py-2">
-        {(Object.keys(FILTER_LABELS) as RecipientFilter[]).map((value) => (
+        {visibleFilters.map((value) => (
           <button
             key={value}
             type="button"
@@ -221,7 +248,7 @@ export function RecipientsTable({
                 : "text-slate-700 hover:bg-slate-100",
             )}
           >
-            {FILTER_LABELS[value]}
+            {filterLabels[value]}
           </button>
         ))}
       </div>
@@ -230,7 +257,7 @@ export function RecipientsTable({
         <div className="min-w-[760px]">
           <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_160px_150px] border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
             <div>Recipient</div>
-            <div>Project</div>
+            <div>{isSms ? "Phone" : "Project"}</div>
             <div>Latest state</div>
             <div>Last event</div>
           </div>
@@ -261,7 +288,9 @@ export function RecipientsTable({
                           {row.name}
                         </div>
                         <div className="truncate text-[11.5px] text-slate-500">
-                          {row.email ?? "No email retained from import"}
+                          {isSms
+                            ? (row.phone ?? "No phone")
+                            : (row.email ?? "No email retained from import")}
                         </div>
                         <div
                           className="mt-1 text-[10.5px] text-slate-400"
@@ -271,7 +300,7 @@ export function RecipientsTable({
                         </div>
                       </div>
                       <div className="truncate text-slate-600">
-                        {row.project ?? "No project"}
+                        {isSms ? (row.phone ?? "No phone") : (row.project ?? "No project")}
                       </div>
                       <div>
                         <RecipientStateChip state={row.latestState} />
@@ -298,11 +327,13 @@ export function RecipientsTable({
                           {row.name}
                         </div>
                         <div className="truncate text-[11.5px] text-slate-500">
-                          {row.email ?? "No email retained from import"}
+                          {isSms
+                            ? (row.phone ?? "No phone")
+                            : (row.email ?? "No email retained from import")}
                         </div>
                       </div>
                       <div className="truncate text-slate-600">
-                        {row.project ?? "No project"}
+                        {isSms ? (row.phone ?? "No phone") : (row.project ?? "No project")}
                       </div>
                       <div>
                         <RecipientStateChip state={row.latestState} />
