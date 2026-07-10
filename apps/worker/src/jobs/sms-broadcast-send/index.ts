@@ -178,6 +178,9 @@ export async function processSmsBroadcastRun(
     runId,
     "sending",
     "complete",
+    {
+      completedAt: sentAt().toISOString(),
+    },
   );
 }
 
