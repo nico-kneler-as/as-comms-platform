@@ -239,6 +239,24 @@ describe("ComposeStep snapshots", () => {
     expect(markup).not.toContain("Next sample contact");
   });
 
+  it("rehydrates the upload textarea from persisted bodyHtml on mount", () => {
+    const uploaded =
+      "<!doctype html><html><body><p>Corals survey CTA</p></body></html>";
+    const markup = renderToStaticMarkup(
+      <ComposeStep
+        {...baseProps}
+        launchType="html_email"
+        savedDesign={null}
+        bodyHtml={uploaded}
+      />,
+    );
+
+    // Upload-mode paste box is seeded with the persisted HTML (was empty before
+    // the fix — the "lost file" symptom when returning to this step).
+    expect(markup).toContain("campaign-html-paste");
+    expect(markup).toContain("&lt;p&gt;Corals survey CTA&lt;/p&gt;");
+  });
+
   it("renders populated subject and body controls", () => {
     expect(
       renderToStaticMarkup(

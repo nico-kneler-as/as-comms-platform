@@ -167,7 +167,18 @@ export function ComposeStep({
   const [htmlEditorReady, setHtmlEditorReady] = useState(
     launchType !== "html_email",
   );
-  const [uploadedHtmlValue, setUploadedHtmlValue] = useState("");
+  // Seed the paste/upload textarea from the persisted bodyHtml so returning to
+  // this step (or reopening the draft) shows the uploaded HTML instead of an
+  // empty box. bodyHtml is hydrated from the draft at the wizard level, so a
+  // remount here restores the file. (Mount-only: a sync effect would fight a
+  // user intentionally clearing the textarea, since clearing it deliberately
+  // leaves bodyHtml untouched.)
+  const [uploadedHtmlValue, setUploadedHtmlValue] = useState(() =>
+    readInitialHtmlComposeMode({ launchType, bodyHtml, savedDesign }) ===
+    "upload"
+      ? bodyHtml
+      : "",
+  );
   const [uploadWarnings, setUploadWarnings] = useState<readonly string[]>([]);
   const smsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isSmsLaunch = launchType === "sms";
