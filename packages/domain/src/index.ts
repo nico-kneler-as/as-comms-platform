@@ -1,4 +1,5 @@
 export * from "./audience-resolver.js";
+export * from "./broadcast-activity-classifier.js";
 export * from "./broadcast-email-render.js";
 export * from "./canonical-event-audience.js";
 export * from "./campaign-run-projection.js";
