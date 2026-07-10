@@ -25,6 +25,7 @@ import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import {
   aiDraftRequestSchema,
   generateAiDraft,
+  resolveSmsDraftProjectId,
   type AiDraftRequestPayload,
   type AiDraftResponse,
 } from "@/src/server/ai";
@@ -1638,6 +1639,20 @@ export async function draftWithAiAction(
   try {
     const runtime = await getStage1WebRuntime();
     const provider = getAiProviderConfig();
+    const request =
+      parsedInput.data.channel === "sms" && parsedInput.data.projectId === null
+        ? {
+            ...parsedInput.data,
+            projectId: await resolveSmsDraftProjectId(
+              {
+                repositories: runtime.repositories,
+                aliases: runtime.settings.aliases,
+                timelinePresentation: runtime.timelinePresentation,
+              },
+              parsedInput.data.contactId,
+            ),
+          }
+        : parsedInput.data;
     const response = await generateAiDraft(
       {
         repositories: runtime.repositories,
@@ -1651,7 +1666,7 @@ export async function draftWithAiAction(
             : provider.maxTokens,
         dailyCapUsd: provider.dailyCapUsd,
       },
-      parsedInput.data,
+      request,
     );
 
     return {

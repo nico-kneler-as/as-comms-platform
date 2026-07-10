@@ -8,3 +8,4 @@ export {
   type AiDraftWarning,
 } from "./types";
 export { generateAiDraft, type GenerateAiDraftDeps } from "./draft-generator";
+export { resolveSmsDraftProjectId } from "./resolve-sms-draft-project";
