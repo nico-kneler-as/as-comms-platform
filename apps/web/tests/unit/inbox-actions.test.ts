@@ -54,6 +54,29 @@ function buildCurrentUser() {
   };
 }
 
+function buildAiDraftResponse() {
+  return {
+    draft: "Generated draft",
+    requestMode: "draft" as const,
+    mode: "generated" as const,
+    grounding: [],
+    warnings: [],
+    costEstimateUsd: 0,
+    providerStatus: "ready" as const,
+    draftId: "11111111-1111-4111-8111-111111111111",
+    repromptIndex: 0,
+    promptPreview: "preview",
+    model: {
+      name: "claude-test",
+      temperature: 0.2,
+      maxTokens: 512,
+      inputTokens: 12,
+      outputTokens: 24,
+      stopReason: "stop",
+    },
+  };
+}
+
 async function seedActionFixture(runtime: InboxTestRuntime): Promise<void> {
   await seedInboxContact(runtime.context, {
     contactId: "contact:sarah-martinez",
@@ -553,5 +576,54 @@ describe("server-backed follow-up actions", () => {
       expect.any(Error),
     );
     errorSpy.mockRestore();
+  });
+
+  it("resolves a missing SMS project id on the server before generating the draft", async () => {
+    if (runtime === null) {
+      throw new Error("runtime not initialized");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:alias-history",
+      projectName: "Alias History Project",
+      projectAlias: "Alias History Project",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.settings.users.upsert(buildCurrentUser());
+    await runtime.context.settings.aliases.replaceForProject({
+      projectId: "project:alias-history",
+      aliases: ["alias-history@example.org"],
+      actorId: "user:nico",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "sarah-inbound-alias-history",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-14T14:00:00.000Z",
+      direction: "inbound",
+      subject: "Latest alias-routed note",
+      snippet: "Most recent inbound message",
+      projectInboxAlias: "alias-history@example.org",
+    });
+    generateAiDraft.mockResolvedValueOnce(buildAiDraftResponse());
+
+    const result = await draftWithAiAction({
+      mode: "draft",
+      channel: "sms",
+      contactId: "contact:sarah-martinez",
+      projectId: null,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+    });
+    expect(generateAiDraft).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        channel: "sms",
+        contactId: "contact:sarah-martinez",
+        projectId: "project:alias-history",
+      }),
+    );
   });
 });

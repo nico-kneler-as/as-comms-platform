@@ -20,6 +20,7 @@ export function useAiDraftRun({
   aiDraft,
   selectedAliasRecord,
   selectedAliasAiConfigured,
+  smsAiConfigured,
   replyContext,
   composerPaneMode,
   startAiGeneration,
@@ -39,6 +40,7 @@ export function useAiDraftRun({
   readonly aiDraft: AiDraftState;
   readonly selectedAliasRecord: InboxComposerAliasOption | null;
   readonly selectedAliasAiConfigured: boolean;
+  readonly smsAiConfigured: boolean;
   readonly replyContext: InboxComposerReplyContext | null;
   readonly composerPaneMode: ComposerPaneState["mode"];
   readonly startAiGeneration: (input: {
@@ -74,11 +76,12 @@ export function useAiDraftRun({
       return null;
     }
 
-    if (!selectedAliasAiConfigured) {
+    const isSms = state.activeTab === "sms";
+
+    if (isSms ? !smsAiConfigured : !selectedAliasAiConfigured) {
       return null;
     }
 
-    const isSms = state.activeTab === "sms";
     const contactId =
       isSms && state.smsRecipient?.kind === "contact"
         ? state.smsRecipient.contactId
