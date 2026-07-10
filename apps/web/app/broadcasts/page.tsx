@@ -581,13 +581,21 @@ export default async function CampaignsPage({
                 messages
               </p>
             </div>
-            {currentUser.role === "admin" ? (
-              <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
+              <Link
+                href="/broadcasts/media"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900"
+              >
+                Media library ↗
+              </Link>
+              {currentUser.role === "admin" ? (
                 <Button asChild size="sm">
                   <Link href="/broadcasts/new">+ New broadcast</Link>
                 </Button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </header>
         </div>
       </div>

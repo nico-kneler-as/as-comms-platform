@@ -255,6 +255,9 @@ describe("ComposeStep snapshots", () => {
     // the fix — the "lost file" symptom when returning to this step).
     expect(markup).toContain("campaign-html-paste");
     expect(markup).toContain("&lt;p&gt;Corals survey CTA&lt;/p&gt;");
+    expect(markup).toContain("{{firstName}}");
+    expect(markup).toContain("{{projectName}}");
+    expect(markup).toContain("{{aliasEmail}}");
   });
 
   it("renders populated subject and body controls", () => {
@@ -325,7 +328,7 @@ describe("ComposeStep snapshots", () => {
     );
   });
 
-  it("renders the Unlayer host for html_email", () => {
+  it("renders the Unlayer host, merge tags, and media-library link for html_email", () => {
     const markup = renderToStaticMarkup(
       <ComposeStep
         {...baseProps}
@@ -339,6 +342,12 @@ describe("ComposeStep snapshots", () => {
     expect(markup).toContain('data-unlayer-host="true"');
     expect(markup).toContain("Design in editor");
     expect(markup).toContain("Upload HTML");
+    expect(markup).toContain("{{firstName}}");
+    expect(markup).toContain("{{projectName}}");
+    expect(markup).toContain("{{aliasEmail}}");
+    expect(markup).toContain('href="/broadcasts/media"');
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noopener noreferrer"');
   });
 
   it("passes savedDesign through to the Unlayer host", () => {
@@ -389,9 +398,9 @@ describe("ComposeStep HTML upload mode", () => {
     expect(
       document.querySelector("textarea#campaign-html-paste"),
     ).not.toBeNull();
-    expect(document.body.textContent).toContain(
-      "Need image URLs? Open the media library ->",
-    );
+    expect(document.body.textContent).toContain("{{firstName}}");
+    expect(document.body.textContent).toContain("{{projectName}}");
+    expect(document.body.textContent).toContain("{{aliasEmail}}");
   });
 
   it("processes pasted html through prepareUploadedHtml, shows warnings, and clears design json", () => {

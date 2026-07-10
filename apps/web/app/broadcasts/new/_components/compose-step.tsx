@@ -233,6 +233,27 @@ export function ComposeStep({
     });
   }
 
+  function insertHtmlSubjectMergeToken(token: (typeof MERGE_TOKENS)[number]) {
+    const subjectInput =
+      typeof document === "undefined"
+        ? null
+        : document.getElementById("campaign-subject");
+    const input =
+      subjectInput instanceof HTMLInputElement ? subjectInput : null;
+    const selectionStart = input?.selectionStart ?? subject.length;
+    const selectionEnd = input?.selectionEnd ?? subject.length;
+    const nextValue =
+      subject.slice(0, selectionStart) + token + subject.slice(selectionEnd);
+    onSubjectChange(nextValue);
+    const nextCaret = selectionStart + token.length;
+    requestAnimationFrame(() => {
+      if (input !== null) {
+        input.focus();
+        input.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  }
+
   function applyUploadedHtml(
     rawHtml: string,
     options?: { readonly syncTextareaValue?: boolean },
@@ -267,6 +288,18 @@ export function ComposeStep({
                 ? "Upload or paste a full HTML document. We store the translated HTML directly, surface import warnings, and append the platform footer during preview and send."
                 : "Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step."
               : "Draft the subject, preheader, and body. The rendered email preview comes next."
+        }
+        rightSlot={
+          isSmsLaunch ? undefined : (
+            <Link
+              href="/broadcasts/media"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center text-[11.5px] font-medium text-slate-600 underline underline-offset-4 hover:text-slate-900"
+            >
+              Media library ↗
+            </Link>
+          )
         }
       />
 
@@ -375,6 +408,23 @@ export function ComposeStep({
                 className="h-auto flex-1 border-none bg-transparent px-0 py-0 text-[12.5px] text-slate-800 shadow-none focus-visible:ring-0"
                 aria-label="Broadcast preheader"
               />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
+              <span className="font-medium text-slate-600">Merge tags:</span>
+              {MERGE_TOKENS.map((token) => (
+                <button
+                  key={token}
+                  type="button"
+                  onClick={() => {
+                    insertHtmlSubjectMergeToken(token);
+                  }}
+                  disabled={frozen}
+                  className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {token}
+                </button>
+              ))}
             </div>
 
             <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
@@ -498,12 +548,6 @@ export function ComposeStep({
                     <Info className="size-3" aria-hidden="true" />
                     AS footer and unsubscribe links are appended automatically.
                   </span>
-                  <Link
-                    href="/broadcasts/media"
-                    className="font-medium text-slate-700 underline underline-offset-4"
-                  >
-                    Need image URLs? Open the media library -&gt;
-                  </Link>
                 </div>
               </div>
             ) : (

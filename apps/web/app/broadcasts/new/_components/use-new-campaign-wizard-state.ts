@@ -400,6 +400,133 @@ function toActionCriteria(
   };
 }
 
+function buildInitialCriteria(
+  draft: CampaignWizardDraftData,
+  initialFilter: AudienceInitialFilter | undefined,
+): CampaignAudienceCriteria {
+  return {
+    ...draft.audienceCriteria,
+    projectId:
+      draft.audienceCriteria.projectId ??
+      draft.audienceCriteria.projectIds[0] ??
+      null,
+    contactIds: draft.audienceCriteria.contactIds ?? [],
+    newsletterSubscriberIds: draft.audienceCriteria.newsletterSubscriberIds ?? [],
+    initialFilter,
+  };
+}
+
+function hasDraftBodyContent(draft: CampaignWizardDraftData): boolean {
+  return (
+    (draft.bodyTextTemplate?.trim().length ?? 0) > 0 ||
+    (draft.bodyHtmlTemplate?.trim().length ?? 0) > 0 ||
+    draft.bodyDesignJson !== null
+  );
+}
+
+function hasMeaningfulDraftProgress(
+  draft: CampaignWizardDraftData,
+  criteria: CampaignAudienceCriteria,
+): boolean {
+  return (
+    draft.launchType !== "normal_email" ||
+    (draft.name?.trim().length ?? 0) > 0 ||
+    (draft.fromEmail?.trim().length ?? 0) > 0 ||
+    (draft.replyToEmail?.trim().length ?? 0) > 0 ||
+    (draft.subjectTemplate?.trim().length ?? 0) > 0 ||
+    (draft.preheader?.trim().length ?? 0) > 0 ||
+    hasDraftBodyContent(draft) ||
+    criteria.initialFilter !== undefined ||
+    draft.audienceSize !== null
+  );
+}
+
+function hasCompletedSetupStep(input: {
+  readonly bootstrap: AudienceBuilderBootstrap;
+  readonly draft: CampaignWizardDraftData;
+}): boolean {
+  if ((input.draft.name?.trim().length ?? 0) === 0) {
+    return false;
+  }
+
+  if (input.draft.launchType === "sms") {
+    return input.bootstrap.activeSmsSender !== null;
+  }
+
+  return (input.draft.fromEmail?.trim().length ?? 0) > 0;
+}
+
+function hasCompletedAudienceStep(
+  draft: CampaignWizardDraftData,
+  criteria: CampaignAudienceCriteria,
+): boolean {
+  if (criteria.initialFilter === undefined || (draft.audienceSize ?? 0) <= 0) {
+    return false;
+  }
+
+  const selectedProjectIds = readProjectIds(criteria);
+  if (draft.launchType === "sms" && selectedProjectIds.length === 0) {
+    return false;
+  }
+
+  switch (criteria.initialFilter) {
+    case "project_status":
+      return selectedProjectIds.length > 0 && criteria.statuses.length > 0;
+    case "specific":
+      return (
+        (criteria.contactIds?.length ?? 0) > 0 ||
+        (criteria.newsletterSubscriberIds?.length ?? 0) > 0
+      );
+    case "all_approved":
+    case "all_available":
+    case "csv_upload":
+      return true;
+  }
+}
+
+function hasCompletedComposeStep(draft: CampaignWizardDraftData): boolean {
+  const hasBodyText = (draft.bodyTextTemplate?.trim().length ?? 0) > 0;
+  if (draft.launchType === "sms") {
+    return hasBodyText;
+  }
+
+  if ((draft.subjectTemplate?.trim().length ?? 0) === 0) {
+    return false;
+  }
+
+  return draft.launchType === "html_email"
+    ? (draft.bodyHtmlTemplate?.trim().length ?? 0) > 0 || hasBodyText
+    : hasBodyText;
+}
+
+function deriveInitialCurrentStep(input: {
+  readonly bootstrap: AudienceBuilderBootstrap;
+  readonly draft: CampaignWizardDraftData;
+  readonly criteria: CampaignAudienceCriteria;
+}): number {
+  if (input.draft.state !== "draft") {
+    return 5;
+  }
+
+  if (!hasMeaningfulDraftProgress(input.draft, input.criteria)) {
+    return 0;
+  }
+
+  if (!hasCompletedSetupStep(input)) {
+    return 1;
+  }
+
+  if (!hasCompletedAudienceStep(input.draft, input.criteria)) {
+    return 2;
+  }
+
+  if (!hasCompletedComposeStep(input.draft)) {
+    return 3;
+  }
+
+  return 4;
+}
+
 export function useNewCampaignWizardState({
   bootstrap,
   draft,
@@ -409,8 +536,13 @@ export function useNewCampaignWizardState({
 }) {
   const initialSchedule = buildDenverInputDefaults(new Date());
   const initialAudienceMode = deriveInitialFilter(draft);
+  const initialCriteria = buildInitialCriteria(draft, initialAudienceMode);
   const [currentStep, setCurrentStep] = useState(
-    draft.state === "draft" ? 0 : 5,
+    deriveInitialCurrentStep({
+      bootstrap,
+      draft,
+      criteria: initialCriteria,
+    }),
   );
   const [launchType, setLaunchType] = useState<LaunchType>(draft.launchType);
   const [name, setName] = useState(draft.name ?? "");
@@ -426,33 +558,13 @@ export function useNewCampaignWizardState({
     draft.bodyDesignJson ?? null,
   );
   const [selectedAliasSignature, setSelectedAliasSignature] = useState("");
-  const [criteria, setCriteria] = useState<CampaignAudienceCriteria>({
-    ...draft.audienceCriteria,
-    projectId:
-      draft.audienceCriteria.projectId ??
-      draft.audienceCriteria.projectIds[0] ??
-      null,
-    contactIds: draft.audienceCriteria.contactIds ?? [],
-    newsletterSubscriberIds:
-      draft.audienceCriteria.newsletterSubscriberIds ?? [],
-    initialFilter: initialAudienceMode,
-  });
+  const [criteria, setCriteria] = useState(initialCriteria);
   const [hasPickedAudienceMode, setHasPickedAudienceMode] = useState(
     initialAudienceMode !== undefined,
   );
   const [countState, setCountState] = useState({
     count: draft.audienceSize ?? 0,
-    hasAppliedFilters: hasAppliedAudienceFilters({
-      ...draft.audienceCriteria,
-      projectId:
-        draft.audienceCriteria.projectId ??
-        draft.audienceCriteria.projectIds[0] ??
-        null,
-      contactIds: draft.audienceCriteria.contactIds ?? [],
-      newsletterSubscriberIds:
-        draft.audienceCriteria.newsletterSubscriberIds ?? [],
-      initialFilter: initialAudienceMode,
-    }),
+    hasAppliedFilters: hasAppliedAudienceFilters(initialCriteria),
   });
   const [previewRows, setPreviewRows] = useState<readonly AudiencePreviewRow[]>(
     [],
@@ -635,17 +747,10 @@ export function useNewCampaignWizardState({
     const initialSenderType =
       bootstrap.senderOptions.find((option) => option.email === draft.fromEmail)
         ?.senderType ?? null;
-    const initialCriteria = {
-      ...draft.audienceCriteria,
-      projectId:
-        draft.audienceCriteria.projectId ??
-        draft.audienceCriteria.projectIds[0] ??
-        null,
-      contactIds: draft.audienceCriteria.contactIds ?? [],
-      newsletterSubscriberIds:
-        draft.audienceCriteria.newsletterSubscriberIds ?? [],
-      initialFilter: initialAudienceMode,
-    };
+    const initialCriteriaForDraft = buildInitialCriteria(
+      draft,
+      initialAudienceMode,
+    );
     savedFingerprintRef.current = buildDraftFingerprint({
       launchType: draft.launchType,
       kind:
@@ -660,7 +765,7 @@ export function useNewCampaignWizardState({
       bodyPlaintext: draft.bodyTextTemplate ?? "",
       bodyHtml: draft.bodyHtmlTemplate ?? "",
       bodyDesignJsonFingerprint: JSON.stringify(draft.bodyDesignJson ?? null),
-      criteria: initialCriteria,
+      criteria: initialCriteriaForDraft,
       audienceSize: draft.audienceSize,
     });
   }, [bootstrap.senderOptions, draft, initialAudienceMode]);

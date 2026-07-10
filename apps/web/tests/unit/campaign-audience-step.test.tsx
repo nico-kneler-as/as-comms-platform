@@ -752,18 +752,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -1001,18 +992,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -1249,18 +1231,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
@@ -1502,18 +1475,9 @@ describe("AudienceBuilderStep initial filter gate", () => {
     });
     await settleAsyncWork();
 
-    const launchContinueButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Launch continue");
-    if (!(launchContinueButton instanceof HTMLButtonElement)) {
-      throw new Error("Launch continue button not found");
-    }
-
-    act(() => {
-      launchContinueButton.click();
-    });
-    await settleAsyncWork();
-
+    // The wizard now opens a draft with a sender but no name at the
+    // name & sender step (land-on-last-step), so step 0 isn't shown; advance
+    // from there via "Sender continue".
     const senderContinueButton = Array.from(
       document.querySelectorAll("button"),
     ).find((button) => button.textContent === "Sender continue");
