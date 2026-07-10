@@ -3,6 +3,7 @@ export * from "./jobs.js";
 export * from "./settings.js";
 export * from "./settings-records.js";
 export * from "./stage5-broadcast-link-clicks.js";
+export * from "./stage5-broadcast-opens.js";
 export * from "./stage5-broadcast-uploaded-recipients.js";
 export * from "./stage5-campaigns.js";
 export * from "./stage5-newsletter.js";

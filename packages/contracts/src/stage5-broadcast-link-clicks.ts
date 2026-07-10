@@ -4,6 +4,14 @@ const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
 const nullableStringSchema = z.string().min(1).nullable();
 
+export const broadcastActivityBotReasonSchema = z.enum([
+  "machine_user_agent",
+  "fast_activity",
+]);
+export type BroadcastActivityBotReason = z.infer<
+  typeof broadcastActivityBotReasonSchema
+>;
+
 export const broadcastLinkClickClientSchema = z.object({
   Name: nullableStringSchema.default(null),
   Company: nullableStringSchema.default(null),
@@ -39,6 +47,8 @@ export const broadcastLinkClickRecordSchema = z.object({
   client: broadcastLinkClickClientSchema.nullable().default(null),
   os: broadcastLinkClickClientSchema.nullable().default(null),
   geo: broadcastLinkClickGeoSchema.nullable().default(null),
+  isBot: z.boolean().default(false),
+  botReason: broadcastActivityBotReasonSchema.nullable().default(null),
   idempotencyKey: z.string().min(1),
   createdAt: timestampSchema,
 });

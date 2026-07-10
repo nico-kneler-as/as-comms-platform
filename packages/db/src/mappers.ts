@@ -2,6 +2,7 @@ import {
   aiKnowledgeSourcesSchema,
   aiKnowledgeEntrySchema,
   auditEvidenceSchema,
+  broadcastOpenRecordSchema,
   broadcastLinkClickRecordSchema,
   broadcastUploadedRecipientInputSchema,
   broadcastUploadedRecipientRecordSchema,
@@ -27,6 +28,7 @@ import {
   type BroadcastLinkClickClient,
   type BroadcastLinkClickGeo,
   type BroadcastLinkClickRecord as BroadcastLinkClickContractRecord,
+  type BroadcastOpenRecord as BroadcastOpenContractRecord,
   type BroadcastUploadedRecipientInput,
   type BroadcastUploadedRecipientRecord as BroadcastUploadedRecipientContractRecord,
   newsletterSubscriberRecordSchema,
@@ -97,6 +99,7 @@ import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
   broadcastLinkClicks,
+  broadcastOpens,
   broadcastUploadedRecipients,
   canonicalEventLedger,
   canonicalEventAudience,
@@ -176,6 +179,7 @@ type SalesforceReconciliationRunRow =
 type ComposerDraftDbRow = typeof composerDrafts.$inferSelect;
 type ComposerDraftDbRowInsert = typeof composerDrafts.$inferInsert;
 type BroadcastLinkClickDbRowInsert = typeof broadcastLinkClicks.$inferInsert;
+type BroadcastOpenDbRowInsert = typeof broadcastOpens.$inferInsert;
 type BroadcastUploadedRecipientDbRowInsert =
   typeof broadcastUploadedRecipients.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
@@ -324,6 +328,8 @@ export type BroadcastLinkClickRow = Readonly<{
   client: BroadcastLinkClickClient | null;
   os: BroadcastLinkClickClient | null;
   geo: BroadcastLinkClickGeo | null;
+  is_bot: boolean;
+  bot_reason: BroadcastLinkClickContractRecord["botReason"];
   idempotency_key: string;
   created_at: Date;
 }>;
@@ -335,6 +341,29 @@ export type BroadcastLinkClickInsert = z.input<
 >;
 
 export type BroadcastLinkClickRecord = BroadcastLinkClickContractRecord;
+
+export type BroadcastOpenRow = Readonly<{
+  id: string;
+  campaign_run_id: string;
+  audience_snapshot_id: string | null;
+  contact_id: string | null;
+  opened_at: Date;
+  user_agent: string | null;
+  platform: string | null;
+  client: BroadcastLinkClickClient | null;
+  os: BroadcastLinkClickClient | null;
+  geo: BroadcastLinkClickGeo | null;
+  is_bot: boolean;
+  bot_reason: BroadcastOpenContractRecord["botReason"];
+  idempotency_key: string;
+  created_at: Date;
+}>;
+
+export type BroadcastOpenRowInsert = BroadcastOpenDbRowInsert;
+
+export type BroadcastOpenInsert = z.input<typeof broadcastOpenRecordSchema>;
+
+export type BroadcastOpenRecord = BroadcastOpenContractRecord;
 
 export type BroadcastUploadedRecipientRow = Readonly<{
   id: string;
@@ -529,6 +558,8 @@ export function mapBroadcastLinkClickRow(
     client: row.client,
     os: row.os,
     geo: row.geo,
+    isBot: row.is_bot,
+    botReason: row.bot_reason,
     idempotencyKey: row.idempotency_key,
     createdAt: row.created_at.toISOString(),
   });
@@ -551,6 +582,50 @@ export function mapBroadcastLinkClickInsert(
     client: parsed.client,
     os: parsed.os,
     geo: parsed.geo,
+    isBot: parsed.isBot,
+    botReason: parsed.botReason,
+    idempotencyKey: parsed.idempotencyKey,
+    createdAt: toDate(parsed.createdAt),
+  };
+}
+
+export function mapBroadcastOpenRow(row: BroadcastOpenRow): BroadcastOpenRecord {
+  return broadcastOpenRecordSchema.parse({
+    id: row.id,
+    campaignRunId: row.campaign_run_id,
+    audienceSnapshotId: row.audience_snapshot_id,
+    contactId: row.contact_id,
+    openedAt: row.opened_at.toISOString(),
+    userAgent: row.user_agent,
+    platform: row.platform,
+    client: row.client,
+    os: row.os,
+    geo: row.geo,
+    isBot: row.is_bot,
+    botReason: row.bot_reason,
+    idempotencyKey: row.idempotency_key,
+    createdAt: row.created_at.toISOString(),
+  });
+}
+
+export function mapBroadcastOpenInsert(
+  record: BroadcastOpenInsert,
+): BroadcastOpenRowInsert {
+  const parsed = broadcastOpenRecordSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    campaignRunId: parsed.campaignRunId,
+    audienceSnapshotId: parsed.audienceSnapshotId,
+    contactId: parsed.contactId,
+    openedAt: toDate(parsed.openedAt),
+    userAgent: parsed.userAgent,
+    platform: parsed.platform,
+    client: parsed.client,
+    os: parsed.os,
+    geo: parsed.geo,
+    isBot: parsed.isBot,
+    botReason: parsed.botReason,
     idempotencyKey: parsed.idempotencyKey,
     createdAt: toDate(parsed.createdAt),
   };
