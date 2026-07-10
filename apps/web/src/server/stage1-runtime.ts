@@ -7,6 +7,7 @@ import {
   createMediaAsset,
   createDatabaseConnection,
   insertBroadcastLinkClick,
+  insertBroadcastOpen,
   listBroadcastUploadedRecipientsForRun,
   listSendableNewsletterSubscribers as listSendableNewsletterSubscribersFromDb,
   replaceBroadcastUploadedRecipientsForRun,
@@ -207,6 +208,17 @@ export async function recordBroadcastLinkClick(
   }
 
   return insertBroadcastLinkClick(runtime.connection.db, input);
+}
+
+export async function recordBroadcastOpen(
+  input: Parameters<typeof insertBroadcastOpen>[1],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  }
+
+  return insertBroadcastOpen(runtime.connection.db, input);
 }
 
 export async function aggregateBroadcastLinkClicksForRun(runId: string) {

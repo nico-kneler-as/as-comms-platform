@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
   broadcastLinkClicks,
+  broadcastOpens,
   createStage5RepositoryBundle,
   postmarkWebhookDeadLetter,
 } from "@as-comms/db";
@@ -27,6 +29,26 @@ function loadFixture(name: string): string {
   return readFileSync(path.join(FIXTURE_DIR, name), "utf8").trim();
 }
 
+function loadFixturePayload(name: string): unknown {
+  return JSON.parse(loadFixture(name)) as unknown;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function buildOpenIdempotencyKey(
+  event: { readonly MessageID: string | null; readonly ReceivedAt: string },
+): string {
+  return sha256(
+    JSON.stringify([
+      "postmark-open",
+      event.MessageID,
+      event.ReceivedAt,
+    ]),
+  );
+}
+
 function signRequest(rawBody: string): Request {
   // Postmark can't HMAC-sign payloads; the endpoint authenticates via a
   // static shared-secret custom header equal to POSTMARK_WEBHOOK_SIGNING_SECRET.
@@ -46,6 +68,10 @@ async function listDeadLetters(runtime: Stage1WebTestRuntime) {
 
 async function listLinkClicks(runtime: Stage1WebTestRuntime) {
   return runtime.context.db.select().from(broadcastLinkClicks);
+}
+
+async function listOpenEvents(runtime: Stage1WebTestRuntime) {
+  return runtime.context.db.select().from(broadcastOpens);
 }
 
 async function seedRunAndSnapshot(
@@ -332,29 +358,94 @@ describe("Postmark webhook route handler", () => {
     ).toBe(true);
   });
 
-  it("records the open event with activity='open' on the snapshot", async () => {
+  it("records scanner clicks as bot activity via machine user-agent detection", async () => {
     if (runtime === null) {
       throw new Error("Runtime not initialized.");
     }
     const campaigns = requireCampaigns();
     await seedRunAndSnapshot(runtime, campaigns);
 
+    const clickEvent = loadFixturePayload("click.json") as {
+      RecordType: "Click";
+      UserAgent: string | null;
+    };
+    clickEvent.UserAgent =
+      "Mozilla/5.0 (compatible; GoogleImageProxy/1.0; +https://google.com)";
+
+    const rawBody = JSON.stringify(clickEvent);
+    const response = await POST(signRequest(rawBody));
+    expect(response.status).toBe(200);
+
+    const linkClicks = await listLinkClicks(runtime);
+    expect(linkClicks).toHaveLength(1);
+    expect(linkClicks[0]).toMatchObject({
+      isBot: true,
+      botReason: "machine_user_agent",
+    });
+  });
+
+  it("records the open event row and still updates the snapshot with activity='open'", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns);
+
+    const originalUpdateDeliveryEvent =
+      runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent.bind(
+        runtime.runtime.campaigns.audienceSnapshots,
+      );
+    const updateDeliveryEventSpy = vi.fn(
+      (...args: Parameters<typeof originalUpdateDeliveryEvent>) =>
+        originalUpdateDeliveryEvent(...args),
+    );
+    runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent =
+      updateDeliveryEventSpy;
+
     const rawBody = loadFixture("open.json");
     const response = await POST(signRequest(rawBody));
+
+    runtime.runtime.campaigns.audienceSnapshots.updateDeliveryEvent =
+      originalUpdateDeliveryEvent;
+
     expect(response.status).toBe(200);
 
     const snapshots = await campaigns.audienceSnapshots.listForRun(
       "run-project-postmark",
     );
     expect(snapshots[0]?.openedAt).not.toBeNull();
+
+    const openEvents = await listOpenEvents(runtime);
+    expect(openEvents).toHaveLength(1);
+    expect(openEvents[0]).toMatchObject({
+      campaignRunId: "run-project-postmark",
+      audienceSnapshotId: "snapshot-postmark",
+      contactId: "contact-postmark",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5)",
+      platform: "WebMail",
+      isBot: false,
+      botReason: null,
+    });
+    expect(openEvents[0]?.openedAt.toISOString()).toBe(
+      "2019-11-05T16:33:54.907Z",
+    );
+    expect(updateDeliveryEventSpy).toHaveBeenCalledWith(
+      "snapshot-postmark",
+      expect.objectContaining({
+        activity: "open",
+      }),
+    );
   });
 
-  it("records the click event with URL/context and stays idempotent on replay", async () => {
+  it("records human clicks as non-bot activity when delivery is well before the click and stays idempotent on replay", async () => {
     if (runtime === null) {
       throw new Error("Runtime not initialized.");
     }
     const campaigns = requireCampaigns();
     await seedRunAndSnapshot(runtime, campaigns);
+    await campaigns.audienceSnapshots.update("snapshot-postmark", {
+      deliveredAt: "2017-10-25T15:00:00.000Z",
+    });
 
     const rawBody = loadFixture("click.json");
     const firstResponse = await POST(signRequest(rawBody));
@@ -396,9 +487,59 @@ describe("Postmark webhook route handler", () => {
         Coords: "45.2517,19.8369",
         IP: "8.8.8.8",
       },
+      isBot: false,
+      botReason: null,
     });
     expect(linkClicks[0]?.clickedAt.toISOString()).toBe(
       "2017-10-25T15:21:11.906Z",
+    );
+  });
+
+  it("records clicks within two seconds of delivery as fast_activity bot detections", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns);
+    await campaigns.audienceSnapshots.update("snapshot-postmark", {
+      deliveredAt: "2017-10-25T15:21:10.500Z",
+    });
+
+    const rawBody = loadFixture("click.json");
+    const response = await POST(signRequest(rawBody));
+    expect(response.status).toBe(200);
+
+    const linkClicks = await listLinkClicks(runtime);
+    expect(linkClicks).toHaveLength(1);
+    expect(linkClicks[0]).toMatchObject({
+      isBot: true,
+      botReason: "fast_activity",
+    });
+  });
+
+  it("uses a stable open idempotency key derived from MessageID + ReceivedAt", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns);
+
+    const openEvent = loadFixturePayload("open.json") as {
+      RecordType: "Open";
+      MessageID: string | null;
+      ReceivedAt: string;
+    };
+    const rawBody = JSON.stringify(openEvent);
+
+    const firstResponse = await POST(signRequest(rawBody));
+    const secondResponse = await POST(signRequest(rawBody));
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+
+    const openEvents = await listOpenEvents(runtime);
+    expect(openEvents).toHaveLength(1);
+    expect(openEvents[0]?.idempotencyKey).toBe(
+      buildOpenIdempotencyKey(openEvent),
     );
   });
 
