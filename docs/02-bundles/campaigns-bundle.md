@@ -23,14 +23,21 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 
 ## Locked
 
-- `5A` Email Broadcasts (project-scope) ship before `5B` SMS Broadcasts (`D-014`)
+- `5A` Email Broadcasts (project-scope) shipped before `5B` SMS Broadcasts (`D-014`)
 - broadcast runs remain single-channel
 - audience uses canonical platform identity and exclusions
 - broadcast content, review state, and frozen audience remain product-owned
-- Postmark is the Email delivery provider, not the authoring source of truth (`D-045`)
-- Stage structure locked by `D-046` (2026-05-19): **5A** = project-specific Normal Email sends via the Composer-style Markdown editor (shipped #418-#436; gate to 5C is real operator use of project broadcasts in production); **5B** = SMS Broadcasts, gated on A2P 10DLC approval (external, independent of 5A and 5C); **5C** = Newsletters + full Mailchimp decommission (deferred); HTML composer carved out and shipped 2026-06-09 per PRD #536; **Stage 6** = Workflows replacing Salesforce Auto-Emails, roadmap intent only (no product definition yet). Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md)
-- Mailchimp remains historical and transition-period live ingest scope until Stage 5C decommissions it
-- transition-period live Mailchimp ingest is now operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
+- Postmark is the Email delivery provider, not the authoring source of truth (`D-045`). Currently on the 10K tier (5A + HTML composer); 50K-tier upgrade triggers when Stage 5C newsletter migration begins production sending.
+- Stage structure locked by `D-046` (2026-05-19), current state as of 2026-07-05:
+  - **Stage 5A** — Email Broadcasts (project-scope, Markdown composer): **shipped + validated** (validation cleared 2026-06-08; #418-#436).
+  - **Stage 5B** — SMS: **1:1 platform LIVE 2026-07-01** (A2P 10DLC approved); **SMS Broadcasts in flight** per PRD [#589](https://github.com/nico-kneler-as/as-comms-platform/issues/589).
+  - **Stage 5C** in three carve-outs — **HTML composer** (`kind='project'` only, Unlayer): **shipped 2026-06-09** per PRD [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536), locked as `D-050`. **Newsletter migration**: in flight per PRD [#584](https://github.com/nico-kneler-as/as-comms-platform/issues/584), locked as `D-051` (newsletter audience is a separate store: `newsletter_subscribers` + `newsletter_suppressions`, NOT `contacts`). **Mailchimp decommission**: still deferred, gated on real production use of the new newsletter path.
+  - **Stage 6** — Workflows replacing Salesforce Auto-Emails: roadmap intent only, no product definition yet.
+  Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
+- Org senders are first-class alongside project aliases (`D-052`, PRD #577): `org_senders` table represents cross-project or org-scoped senders like `newsletter@`. Composer's sender picker gates audience modes by sender type.
+- Broadcast media assets live on Cloudflare R2 (bucket `as-comms-images`; PRD #567). Composer's image upload path optimizes via `sharp` before storing.
+- Mailchimp remains historical + transition-period live ingest scope until Stage 5C decommissions it
+- transition-period live Mailchimp ingest is operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 
 ## Required Interfaces / Concepts
 
@@ -56,6 +63,8 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - review and frozen-audience safeguards block unsafe launch behavior
 - timeline integration does not corrupt Inbox state
 - Email Broadcasts are operationally trusted before SMS expansion
+- newsletter subscribers stay separate from `contacts` (`D-051`)
+- org-scoped sends use `org_senders`, not `project_aliases` (`D-052`)
 
 ## Common Failure Modes
 
@@ -67,6 +76,11 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 
 - services summary: [reference-services.md](../03-reference/reference-services.md)
 - Salesforce mapping reference: [reference-salesforce-mapping.md](../03-reference/reference-salesforce-mapping.md)
-- HTML composer carve-out PRD: [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536)
+- HTML composer carve-out PRD: [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536) (`D-050`)
+- Broadcast media library / R2 PRD: [#567](https://github.com/nico-kneler-as/as-comms-platform/issues/567)
+- HTML upload sub-mode PRD: [#568](https://github.com/nico-kneler-as/as-comms-platform/issues/568)
+- Org senders PRD: [#577](https://github.com/nico-kneler-as/as-comms-platform/issues/577) (`D-052`)
+- Newsletter audience migration PRD: [#584](https://github.com/nico-kneler-as/as-comms-platform/issues/584) (`D-051`)
+- SMS Broadcasts PRD: [#589](https://github.com/nico-kneler-as/as-comms-platform/issues/589)
 - HTML composer design spec: [docs/design-briefs/stage-5c-html-composer-spec.md](../design-briefs/stage-5c-html-composer-spec.md)
 - HTML composer Unlayer config: [docs/design-briefs/stage-5c-unlayer-config.md](../design-briefs/stage-5c-unlayer-config.md)
