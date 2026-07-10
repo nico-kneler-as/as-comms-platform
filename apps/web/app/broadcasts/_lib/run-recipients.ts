@@ -45,13 +45,16 @@ export type RecipientFilter =
   | "opened"
   | "clicked"
   | "bounced"
-  | "unsubscribed";
+  | "unsubscribed"
+  | "failed"
+  | "suppressed";
 
 export interface RecipientRowData {
   readonly snapshotId: string;
   readonly contactId: string | null;
   readonly name: string;
   readonly email: string | null;
+  readonly phone: string | null;
   readonly project: string | null;
   readonly latestState: RecipientLatestState;
   readonly latestStateLabel: string;
@@ -67,6 +70,8 @@ export interface RunMetricCounts {
   readonly queued: number;
   readonly sent: number;
   readonly delivered: number;
+  readonly failed: number;
+  readonly suppressed: number;
   readonly opened: number;
   readonly clicked: number;
   readonly bounced: number;
@@ -96,9 +101,28 @@ interface RecipientRowDb {
   readonly contactId: string | null;
   readonly name: string | null;
   readonly email: string | null;
+  readonly phone: string | null;
   readonly project: string | null;
   readonly latestState: RecipientLatestState;
   readonly lastEventAt: Date | string | null;
+}
+
+interface SmsRecipientRowDb {
+  readonly snapshotId: string;
+  readonly contactId: string | null;
+  readonly name: string | null;
+  readonly phone: string | null;
+  readonly latestState: RecipientLatestState;
+  readonly lastEventAt: Date | string | null;
+}
+
+interface SmsMetricCountsRow {
+  readonly queued: number;
+  readonly sent: number;
+  readonly delivered: number;
+  readonly failed: number;
+  readonly suppressed: number;
+  readonly total: number;
 }
 
 interface MailchimpRecipientRowSource {
@@ -224,6 +248,10 @@ function matchesFilter(
       return state === "bounced";
     case "unsubscribed":
       return state === "unsubscribed";
+    case "failed":
+      return state === "failed";
+    case "suppressed":
+      return state === "suppressed";
   }
 }
 
@@ -234,6 +262,7 @@ function mapSnapshot(snapshot: AudienceSnapshotRecord): RecipientRowData {
     contactId: snapshot.contactId,
     name: snapshot.frozenFirstName ?? snapshot.frozenEmail,
     email: snapshot.frozenEmail,
+    phone: null,
     project: snapshot.frozenProjectName,
     latestState,
     latestStateLabel: recipientStateLabel(latestState),
@@ -316,6 +345,12 @@ function buildRecipientWhere(input: {
     case "unsubscribed":
       conditions.push(sql`unsubscribed_at is not null`);
       break;
+    case "failed":
+      conditions.push(sql`delivery_status = 'failed'`);
+      break;
+    case "suppressed":
+      conditions.push(sql`delivery_status = 'suppressed_at_send'`);
+      break;
   }
 
   return sql`where ${sql.join(conditions, sql` and `)}`;
@@ -327,7 +362,22 @@ function mapRecipientRow(row: RecipientRowDb): RecipientRowData {
     contactId: row.contactId,
     name: row.name ?? row.email ?? "Unknown recipient",
     email: row.email,
+    phone: row.phone,
     project: row.project,
+    latestState: row.latestState,
+    latestStateLabel: recipientStateLabel(row.latestState),
+    lastEventAt: coerceIsoTimestamp(row.lastEventAt),
+  };
+}
+
+function mapSmsRecipientRow(row: SmsRecipientRowDb): RecipientRowData {
+  return {
+    snapshotId: row.snapshotId,
+    contactId: row.contactId,
+    name: row.name ?? row.phone ?? "Unknown recipient",
+    email: null,
+    phone: row.phone,
+    project: null,
     latestState: row.latestState,
     latestStateLabel: recipientStateLabel(row.latestState),
     lastEventAt: coerceIsoTimestamp(row.lastEventAt),
@@ -342,6 +392,7 @@ function mapMailchimpRecipientRow(
     contactId: row.contactId,
     name: row.displayName ?? row.email ?? row.memberId,
     email: row.email,
+    phone: null,
     project: null,
     latestState: row.latestState,
     latestStateLabel: recipientStateLabel(row.latestState),
@@ -371,7 +422,7 @@ function getMailchimpCampaignRepository(
 
 export async function listRunRecipients(input: {
   readonly runId: string;
-  readonly provider?: "postmark" | "mailchimp";
+  readonly provider?: "postmark" | "mailchimp" | "sms";
   readonly filter?: RecipientFilter;
   readonly query?: string;
   readonly limit?: number;
@@ -386,12 +437,14 @@ export async function listRunRecipients(input: {
 
   if (provider === "mailchimp") {
     const repository = getMailchimpCampaignRepository(runtime);
+    const mailchimpFilter =
+      filter === "failed" || filter === "suppressed" ? "all" : filter;
 
     if (query.trim().length === 0) {
       const result = await repository.listRecipientsForCampaign(input.runId, {
         limit,
         offset,
-        filter,
+        filter: mailchimpFilter,
       });
       return {
         rows: result.rows.map(mapMailchimpRecipientRow),
@@ -407,7 +460,7 @@ export async function listRunRecipients(input: {
       const page = await repository.listRecipientsForCampaign(input.runId, {
         limit: MAX_RECIPIENT_LIMIT,
         offset: currentOffset,
-        filter,
+        filter: mailchimpFilter,
       });
       allRows.push(...page.rows);
       total = page.total;
@@ -421,6 +474,98 @@ export async function listRunRecipients(input: {
     return {
       rows: filtered.slice(offset, offset + limit).map(mapMailchimpRecipientRow),
       total: filtered.length,
+    };
+  }
+
+  if (provider === "sms") {
+    if (runtime.connection === null) {
+      return { rows: [], total: 0 };
+    }
+
+    const conditions: SQL[] = [
+      sql`sms.broadcast_run_id = ${input.runId}`,
+      sql`sms.direction = 'outbound'`,
+    ];
+    const normalizedQuery = query.trim();
+
+    if (normalizedQuery.length > 0) {
+      const pattern = `%${normalizedQuery}%`;
+      conditions.push(sql`(
+        coalesce(c.display_name, sms.phone_e164) ilike ${pattern}
+        or sms.phone_e164 ilike ${pattern}
+      )`);
+    }
+
+    switch (filter) {
+      case "all":
+        break;
+      case "sent":
+        conditions.push(
+          sql`sms.send_status in ('sent', 'delivered', 'undelivered')`,
+        );
+        break;
+      case "delivered":
+        conditions.push(sql`sms.send_status = 'delivered'`);
+        break;
+      case "failed":
+      case "bounced":
+        conditions.push(sql`sms.send_status in ('failed', 'undelivered')`);
+        break;
+      case "suppressed":
+      case "unsubscribed":
+        conditions.push(sql`sms.send_status = 'suppressed'`);
+        break;
+      case "opened":
+      case "clicked":
+        return { rows: [], total: 0 };
+    }
+
+    const whereClause = sql`where ${sql.join(conditions, sql` and `)}`;
+    const [rowsResult, countResult] = await Promise.all([
+      runtime.connection.db.execute(sql<SmsRecipientRowDb>`
+        select
+          sms.id as "snapshotId",
+          sms.contact_id as "contactId",
+          c.display_name as "name",
+          sms.phone_e164 as "phone",
+          case
+            when sms.send_status = 'delivered' then 'delivered'
+            when sms.send_status = 'sent' then 'sent'
+            when sms.send_status = 'undelivered' then 'failed'
+            when sms.send_status = 'failed' then 'failed'
+            when sms.send_status = 'suppressed' then 'suppressed'
+            else 'queued'
+          end as "latestState",
+          coalesce(sms.sent_at, sms.created_at) as "lastEventAt"
+        from sms_messages sms
+        left join contacts c
+          on c.id = sms.contact_id
+        ${whereClause}
+        order by sms.created_at asc, sms.id asc
+        limit ${limit}
+        offset ${offset}
+      `),
+      runtime.connection.db.execute(sql<{ readonly count: number | string }>`
+        select count(*)::int as "count"
+        from sms_messages sms
+        left join contacts c
+          on c.id = sms.contact_id
+        ${whereClause}
+      `),
+    ]);
+
+    const rows = normalizeSqlResultRows<SmsRecipientRowDb>(
+      rowsResult as { readonly rows?: readonly SmsRecipientRowDb[] },
+    );
+    const [countRow] = normalizeSqlResultRows<{ readonly count: number | string }>(
+      countResult as {
+        readonly rows?: readonly { readonly count: number | string }[];
+      },
+    );
+
+    return {
+      rows: rows.map(mapSmsRecipientRow),
+      total: Number(countRow?.count ?? 0),
     };
   }
 
@@ -447,6 +592,7 @@ export async function listRunRecipients(input: {
         contact_id as "contactId",
         coalesce(nullif(frozen_first_name, ''), frozen_email) as "name",
         frozen_email as "email",
+        null::text as "phone",
         frozen_project_name as "project",
         case
           when clicked_at is not null then 'clicked'
@@ -524,6 +670,8 @@ export async function readRunMetricCounts(input: {
           or opened_at is not null
           or clicked_at is not null
       )::int as "delivered",
+      count(*) filter (where delivery_status = 'failed')::int as "failed",
+      0::int as "suppressed",
       count(*) filter (where opened_at is not null)::int as "opened",
       count(*) filter (where clicked_at is not null)::int as "clicked",
       count(*) filter (where delivery_status = 'bounced')::int as "bounced",
@@ -542,6 +690,8 @@ export async function readRunMetricCounts(input: {
       queued: 0,
       sent: 0,
       delivered: 0,
+      failed: 0,
+      suppressed: 0,
       opened: 0,
       clicked: 0,
       bounced: 0,
@@ -550,6 +700,63 @@ export async function readRunMetricCounts(input: {
       total: 0,
     }
   );
+}
+
+export async function readSmsRunMetricCounts(input: {
+  readonly runId: string;
+}): Promise<RunMetricCounts> {
+  const runtime = await getStage1WebRuntime();
+
+  if (runtime.connection === null) {
+    return {
+      queued: 0,
+      sent: 0,
+      delivered: 0,
+      failed: 0,
+      suppressed: 0,
+      opened: 0,
+      clicked: 0,
+      bounced: 0,
+      unsubscribed: 0,
+      complained: 0,
+      total: 0,
+    };
+  }
+
+  const result = await runtime.connection.db.execute(sql<SmsMetricCountsRow>`
+    select
+      count(*) filter (where send_status = 'queued')::int as "queued",
+      count(*) filter (
+        where send_status in ('sent', 'delivered', 'undelivered')
+      )::int as "sent",
+      count(*) filter (where send_status = 'delivered')::int as "delivered",
+      count(*) filter (
+        where send_status in ('failed', 'undelivered')
+      )::int as "failed",
+      count(*) filter (where send_status = 'suppressed')::int as "suppressed",
+      count(*)::int as "total"
+    from sms_messages
+    where broadcast_run_id = ${input.runId}
+      and direction = 'outbound'
+      and send_status <> 'received'
+  `);
+  const [row] = normalizeSqlResultRows<SmsMetricCountsRow>(
+    result as { readonly rows?: readonly SmsMetricCountsRow[] },
+  );
+
+  return {
+    queued: row?.queued ?? 0,
+    sent: row?.sent ?? 0,
+    delivered: row?.delivered ?? 0,
+    failed: row?.failed ?? 0,
+    suppressed: row?.suppressed ?? 0,
+    opened: 0,
+    clicked: 0,
+    bounced: 0,
+    unsubscribed: 0,
+    complained: 0,
+    total: row?.total ?? 0,
+  };
 }
 
 export async function readRunVariantMetricCounts(input: {
@@ -624,6 +831,8 @@ export function countSnapshots(
   let queued = 0;
   let sent = 0;
   let delivered = 0;
+  let failed = 0;
+  let suppressed = 0;
   let opened = 0;
   let clicked = 0;
   let bounced = 0;
@@ -657,6 +866,9 @@ export function countSnapshots(
     if (snapshot.clickedAt !== null) {
       clicked += 1;
     }
+    if (snapshot.deliveryStatus === "failed") {
+      failed += 1;
+    }
     if (snapshot.deliveryStatus === "bounced") {
       bounced += 1;
     }
@@ -666,12 +878,17 @@ export function countSnapshots(
     if (snapshot.deliveryStatus === "complained") {
       complained += 1;
     }
+    if (snapshot.deliveryStatus === "suppressed_at_send") {
+      suppressed += 1;
+    }
   }
 
   return {
     queued,
     sent,
     delivered,
+    failed,
+    suppressed,
     opened,
     clicked,
     bounced,
