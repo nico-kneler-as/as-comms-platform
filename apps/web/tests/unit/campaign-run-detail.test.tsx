@@ -111,12 +111,14 @@ import { RunDetailShell } from "../../app/broadcasts/[runId]/_components/run-det
 import {
   createStage1WebTestRuntime,
   insertBroadcastLinkClickForTests,
+  insertBroadcastOpenForTests,
   upsertNewsletterSubscriberForTests,
 } from "../../src/server/stage1-runtime.test-support";
 
 function buildPostmarkModel(
   state: RunDetailModel["run"]["state"],
   overrides: {
+    readonly botActivity?: RunDetailModel["botActivity"];
     readonly linkClicks?: RunDetailModel["linkClicks"];
     readonly subjectVariantBreakdown?: RunDetailModel["subjectVariantBreakdown"];
     readonly run?: Partial<RunDetailModel["run"]>;
@@ -274,17 +276,32 @@ function buildPostmarkModel(
         detail: "Draft created.",
       },
     ],
+    botActivity:
+      overrides.botActivity ?? {
+        opens: {
+          human: state === "draft" ? 0 : 1,
+          bot: 0,
+          hasEventData: true,
+        },
+        clicks: {
+          human: 0,
+          bot: 0,
+          hasEventData: false,
+        },
+      },
     linkClicks:
       overrides.linkClicks ??
       [
         {
           url: "https://example.org/a",
           totalClicks: 4,
+          botClicks: 1,
           uniqueClickers: 2,
         },
         {
           url: "https://example.org/b",
           totalClicks: 2,
+          botClicks: 0,
           uniqueClickers: 1,
         },
       ],
@@ -397,6 +414,10 @@ function buildMailchimpModel(): RunDetailModel {
     recentReplies: [],
     inboxRecipientsHref: "/inbox",
     auditEntries: [],
+    botActivity: {
+      opens: { human: 0, bot: 0, hasEventData: false },
+      clicks: { human: 0, bot: 0, hasEventData: false },
+    },
     linkClicks: [],
     subjectVariantBreakdown: null,
     audienceCriteria: {
@@ -519,6 +540,10 @@ function buildSmsModel(
     ],
     inboxRecipientsHref: "/inbox",
     auditEntries: [],
+    botActivity: {
+      opens: { human: 0, bot: 0, hasEventData: false },
+      clicks: { human: 0, bot: 0, hasEventData: false },
+    },
     linkClicks: [],
     subjectVariantBreakdown: null,
     audienceCriteria: {
@@ -670,7 +695,7 @@ async function seedSmsSenderForRunTests(
 }
 
 describe("broadcast run detail", () => {
-  it("loads link click aggregates sorted by total clicks with unique clickers", async () => {
+  it("uses human headline counts and exposes bot activity when event data exists", async () => {
     const runtime = await createStage1WebTestRuntime();
 
     try {
@@ -774,6 +799,8 @@ describe("broadcast run detail", () => {
           unsubscribeToken: "token-contact-1",
           deliveryStatus: "sent",
           providerMessageId: "pm-contact-1",
+          openedAt: "2026-07-02T12:40:00.000Z",
+          clickedAt: "2026-07-02T12:41:00.000Z",
         },
         {
           id: "snapshot-contact-2",
@@ -787,6 +814,8 @@ describe("broadcast run detail", () => {
           unsubscribeToken: "token-contact-2",
           deliveryStatus: "sent",
           providerMessageId: "pm-contact-2",
+          openedAt: "2026-07-02T12:42:00.000Z",
+          clickedAt: "2026-07-02T12:43:00.000Z",
         },
         {
           id: "snapshot-newsletter-1",
@@ -800,8 +829,71 @@ describe("broadcast run detail", () => {
           unsubscribeToken: "token-newsletter-1",
           deliveryStatus: "sent",
           providerMessageId: "pm-newsletter-1",
+          openedAt: "2026-07-02T12:44:00.000Z",
+          clickedAt: "2026-07-02T12:45:00.000Z",
         },
       ]);
+
+      await insertBroadcastOpenForTests(runtime, {
+        id: "open-contact-1-bot",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-1",
+        contactId: "contact-1",
+        openedAt: "2026-07-02T13:00:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        isBot: true,
+        botReason: "fast_activity",
+        idempotencyKey: "open-contact-1-bot",
+        createdAt: "2026-07-02T13:00:00.000Z",
+      });
+      await insertBroadcastOpenForTests(runtime, {
+        id: "open-contact-1-human",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-1",
+        contactId: "contact-1",
+        openedAt: "2026-07-02T13:01:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "open-contact-1-human",
+        createdAt: "2026-07-02T13:01:00.000Z",
+      });
+      await insertBroadcastOpenForTests(runtime, {
+        id: "open-contact-2-bot",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-contact-2",
+        contactId: "contact-2",
+        openedAt: "2026-07-02T13:02:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        isBot: true,
+        botReason: "machine_user_agent",
+        idempotencyKey: "open-contact-2-bot",
+        createdAt: "2026-07-02T13:02:00.000Z",
+      });
+      await insertBroadcastOpenForTests(runtime, {
+        id: "open-newsletter-human",
+        campaignRunId: run.id,
+        audienceSnapshotId: "snapshot-newsletter-1",
+        contactId: null,
+        openedAt: "2026-07-02T13:03:00.000Z",
+        userAgent: null,
+        platform: "Desktop",
+        client: null,
+        os: null,
+        geo: null,
+        idempotencyKey: "open-newsletter-human",
+        createdAt: "2026-07-02T13:03:00.000Z",
+      });
 
       await insertBroadcastLinkClickForTests(runtime, {
         id: "click-a-1",
@@ -830,6 +922,8 @@ describe("broadcast run detail", () => {
         client: null,
         os: null,
         geo: null,
+        isBot: true,
+        botReason: "fast_activity",
         idempotencyKey: "click-a-2",
         createdAt: "2026-07-02T13:01:00.000Z",
       });
@@ -860,6 +954,8 @@ describe("broadcast run detail", () => {
         client: null,
         os: null,
         geo: null,
+        isBot: true,
+        botReason: "machine_user_agent",
         idempotencyKey: "click-b-1",
         createdAt: "2026-07-02T13:03:00.000Z",
       });
@@ -874,14 +970,149 @@ describe("broadcast run detail", () => {
         {
           url: "https://example.org/a",
           totalClicks: 3,
+          botClicks: 1,
           uniqueClickers: 2,
         },
         {
           url: "https://example.org/b",
           totalClicks: 1,
+          botClicks: 1,
           uniqueClickers: 1,
         },
       ]);
+      expect(model?.botActivity).toEqual({
+        opens: {
+          human: 2,
+          bot: 1,
+          hasEventData: true,
+        },
+        clicks: {
+          human: 2,
+          bot: 1,
+          hasEventData: true,
+        },
+      });
+      expect(
+        model?.metrics.find((metric) => metric.key === "opened")?.value,
+      ).toBe(2);
+      expect(
+        model?.metrics.find((metric) => metric.key === "clicked")?.value,
+      ).toBe(2);
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("falls back to snapshot headline counts when no event data exists", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      const { campaigns } = runtime.runtime;
+
+      await runtime.context.repositories.projectDimensions.upsert({
+        projectId: "project-1",
+        projectName: "Project One",
+        projectAlias: "project-one",
+        connectedToProjectId: null,
+        source: "manual",
+        isActive: true,
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+      });
+
+      const run = await campaigns.campaignRuns.create({
+        id: "run-detail-legacy-fallback",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: "project-1",
+        name: null,
+        fromEmail: "project-one@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "project-one@adventurescientists.org",
+        subjectTemplate: "Legacy update",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 2,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      await campaigns.audienceSnapshots.bulkInsert(run.id, [
+        {
+          id: "legacy-snapshot-1",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "legacy-1@example.org",
+          frozenFirstName: "Legacy One",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "legacy-token-1",
+          deliveryStatus: "sent",
+          providerMessageId: "legacy-pm-1",
+          openedAt: "2026-07-02T12:50:00.000Z",
+          clickedAt: "2026-07-02T12:51:00.000Z",
+        },
+        {
+          id: "legacy-snapshot-2",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "legacy-2@example.org",
+          frozenFirstName: "Legacy Two",
+          frozenProjectName: "Project One",
+          frozenProjectId: "project-1",
+          frozenAliasEmail: "project-one@adventurescientists.org",
+          unsubscribeToken: "legacy-token-2",
+          deliveryStatus: "sent",
+          providerMessageId: "legacy-pm-2",
+          openedAt: "2026-07-02T12:52:00.000Z",
+        },
+      ]);
+
+      const model = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+
+      expect(model?.botActivity).toEqual({
+        opens: {
+          human: 0,
+          bot: 0,
+          hasEventData: false,
+        },
+        clicks: {
+          human: 0,
+          bot: 0,
+          hasEventData: false,
+        },
+      });
+      expect(
+        model?.metrics.find((metric) => metric.key === "opened")?.value,
+      ).toBe(2);
+      expect(
+        model?.metrics.find((metric) => metric.key === "clicked")?.value,
+      ).toBe(1);
     } finally {
       await runtime.dispose();
     }

@@ -26,6 +26,7 @@ import {
   createOrgSender,
   createStage5RepositoryBundle,
   insertBroadcastLinkClick,
+  insertBroadcastOpen,
   setOrgSenderEnabled,
   upsertNewsletterSubscriber,
 } from "@as-comms/db";
@@ -101,4 +102,11 @@ export async function insertBroadcastLinkClickForTests(
   input: Parameters<typeof insertBroadcastLinkClick>[1],
 ) {
   return insertBroadcastLinkClick(runtime.context.db, input);
+}
+
+export async function insertBroadcastOpenForTests(
+  runtime: Stage1WebTestRuntime,
+  input: Parameters<typeof insertBroadcastOpen>[1],
+) {
+  return insertBroadcastOpen(runtime.context.db, input);
 }

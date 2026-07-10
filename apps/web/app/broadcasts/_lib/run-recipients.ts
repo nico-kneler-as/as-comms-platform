@@ -26,6 +26,10 @@ function coerceIsoTimestamp(value: Date | string | null): string | null {
   return new Date(value).toISOString();
 }
 
+function coerceCount(value: number | string | bigint | null | undefined): number {
+  return Number(value ?? 0);
+}
+
 export type RecipientLatestState =
   | "queued"
   | "sent"
@@ -88,12 +92,29 @@ export interface RunVariantMetricCounts {
   readonly total: number;
 }
 
+export interface RunActivityBreakdown {
+  readonly human: number;
+  readonly bot: number;
+  readonly hasEventData: boolean;
+}
+
+export interface RunEngagementBreakdown {
+  readonly opens: RunActivityBreakdown;
+  readonly clicks: RunActivityBreakdown;
+}
+
 interface MutableRunVariantMetricCounts {
   subjectVariant: "a" | "b";
   delivered: number;
   opened: number;
   clicked: number;
   total: number;
+}
+
+interface RunActivityBreakdownRow {
+  readonly human: number | string | bigint | null;
+  readonly bot: number | string | bigint | null;
+  readonly totalRows: number | string | bigint | null;
 }
 
 interface RecipientRowDb {
@@ -138,6 +159,18 @@ interface MailchimpRecipientRowSource {
     | "bounced"
     | "unsubscribed";
   readonly latestEventAt: string;
+}
+
+function mapRunActivityBreakdown(
+  row: RunActivityBreakdownRow | undefined,
+): RunActivityBreakdown {
+  const totalRows = coerceCount(row?.totalRows);
+
+  return {
+    human: coerceCount(row?.human),
+    bot: coerceCount(row?.bot),
+    hasEventData: totalRows > 0,
+  };
 }
 
 const DEFAULT_RECIPIENT_LIMIT = 100;
@@ -823,6 +856,56 @@ export async function readRunVariantMetricCounts(input: {
         ]
       : [],
   );
+}
+
+export async function readRunEngagementBreakdown(
+  runId: string,
+): Promise<RunEngagementBreakdown> {
+  const runtime = await getStage1WebRuntime();
+
+  if (runtime.connection === null) {
+    return {
+      opens: { human: 0, bot: 0, hasEventData: false },
+      clicks: { human: 0, bot: 0, hasEventData: false },
+    };
+  }
+
+  const [opensResult, clicksResult] = await Promise.all([
+    runtime.connection.db.execute(sql<RunActivityBreakdownRow>`
+      select
+        count(distinct rk) filter (where not is_bot) as "human",
+        count(distinct rk) - count(distinct rk) filter (where not is_bot) as "bot",
+        count(*) as "totalRows"
+      from (
+        select coalesce(contact_id, audience_snapshot_id, id) as rk, is_bot
+        from broadcast_opens
+        where campaign_run_id = ${runId}
+      ) t
+    `),
+    runtime.connection.db.execute(sql<RunActivityBreakdownRow>`
+      select
+        count(distinct rk) filter (where not is_bot) as "human",
+        count(distinct rk) - count(distinct rk) filter (where not is_bot) as "bot",
+        count(*) as "totalRows"
+      from (
+        select coalesce(contact_id, audience_snapshot_id, id) as rk, is_bot
+        from broadcast_link_clicks
+        where campaign_run_id = ${runId}
+      ) t
+    `),
+  ]);
+
+  const [opensRow] = normalizeSqlResultRows<RunActivityBreakdownRow>(
+    opensResult as { readonly rows?: readonly RunActivityBreakdownRow[] },
+  );
+  const [clicksRow] = normalizeSqlResultRows<RunActivityBreakdownRow>(
+    clicksResult as { readonly rows?: readonly RunActivityBreakdownRow[] },
+  );
+
+  return {
+    opens: mapRunActivityBreakdown(opensRow),
+    clicks: mapRunActivityBreakdown(clicksRow),
+  };
 }
 
 export function countSnapshots(

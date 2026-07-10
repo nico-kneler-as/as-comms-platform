@@ -62,6 +62,7 @@ export type BroadcastLinkClickRecordInput = z.input<
 export const broadcastLinkClickAggregateSchema = z.object({
   originalLink: z.string().url(),
   totalClicks: z.number().int().nonnegative(),
+  botClicks: z.number().int().nonnegative(),
   uniqueClickers: z.number().int().nonnegative(),
 });
 export type BroadcastLinkClickAggregate = z.infer<

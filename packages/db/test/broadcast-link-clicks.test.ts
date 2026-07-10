@@ -267,6 +267,8 @@ describe("broadcast link clicks repository", () => {
         id: "click-2",
         idempotencyKey: "dedupe-2",
         clickedAt: "2026-07-01T13:01:00.000Z",
+        isBot: true,
+        botReason: "fast_activity",
       }),
     );
     await insertBroadcastLinkClick(
@@ -287,6 +289,8 @@ describe("broadcast link clicks repository", () => {
         audienceSnapshotId: "snapshot-newsletter-1",
         contactId: null,
         clickedAt: "2026-07-01T13:03:00.000Z",
+        isBot: true,
+        botReason: "machine_user_agent",
       }),
     );
     await insertBroadcastLinkClick(
@@ -306,6 +310,8 @@ describe("broadcast link clicks repository", () => {
         idempotencyKey: "dedupe-6",
         originalLink: "https://example.org/b",
         clickedAt: "2026-07-01T13:05:00.000Z",
+        isBot: true,
+        botReason: "fast_activity",
       }),
     );
     await insertBroadcastLinkClick(
@@ -326,11 +332,13 @@ describe("broadcast link clicks repository", () => {
       {
         originalLink: "https://example.org/a",
         totalClicks: 5,
+        botClicks: 2,
         uniqueClickers: 3,
       },
       {
         originalLink: "https://example.org/b",
         totalClicks: 1,
+        botClicks: 1,
         uniqueClickers: 1,
       },
     ]);
