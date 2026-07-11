@@ -359,47 +359,85 @@ async function countPostmarkRowsByState(input: {
 
 async function readMetricsByRunId(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
-  readonly runIds: readonly string[];
+  readonly runs: readonly {
+    readonly runId: string;
+    readonly launchType: CampaignRunProjectionRow["launchType"];
+  }[];
 }): Promise<CampaignMetricByRunId> {
-  if (input.runIds.length === 0) {
-    return new Map();
-  }
+  const metrics: CampaignMetricByRunId = new Map();
 
   const connection = input.runtime.connection;
-  if (connection === null) {
-    return new Map();
+  if (connection === null || input.runs.length === 0) {
+    return metrics;
   }
 
-  const result = await connection.db.execute(sql<CampaignMetricSqlRow>`
-    select
-      campaign_run_id as "runId",
-      count(*) filter (
-        where sent_at is not null
-          or delivery_status in ('sent', 'delivered', 'bounced', 'complained', 'unsubscribed')
-      )::int as "sent",
-      count(*) filter (where opened_at is not null)::int as "opened",
-      count(*)::int as "total"
-    from audience_snapshots
-    where campaign_run_id in (${sql.join(
-      input.runIds.map((runId) => sql`${runId}`),
-      sql`, `,
-    )})
-    group by campaign_run_id
-  `);
+  const emailRunIds = input.runs
+    .filter((run) => run.launchType !== "sms")
+    .map((run) => run.runId);
+  const smsRunIds = input.runs
+    .filter((run) => run.launchType === "sms")
+    .map((run) => run.runId);
 
-  const rows = normalizeSqlResultRows<CampaignMetricSqlRow>(
-    result as { readonly rows?: readonly CampaignMetricSqlRow[] },
-  );
-  return new Map(
-    rows.map((row) => [
-      row.runId,
-      {
+  const collect = (result: unknown) => {
+    for (const row of normalizeSqlResultRows<CampaignMetricSqlRow>(
+      result as { readonly rows?: readonly CampaignMetricSqlRow[] },
+    )) {
+      metrics.set(row.runId, {
         sent: Number(row.sent),
         opened: Number(row.opened),
         total: Number(row.total),
-      },
-    ]),
-  );
+      });
+    }
+  };
+
+  // Email broadcasts freeze recipients into audience_snapshots.
+  if (emailRunIds.length > 0) {
+    collect(
+      await connection.db.execute(sql<CampaignMetricSqlRow>`
+        select
+          campaign_run_id as "runId",
+          count(*) filter (
+            where sent_at is not null
+              or delivery_status in ('sent', 'delivered', 'bounced', 'complained', 'unsubscribed')
+          )::int as "sent",
+          count(*) filter (where opened_at is not null)::int as "opened",
+          count(*)::int as "total"
+        from audience_snapshots
+        where campaign_run_id in (${sql.join(
+          emailRunIds.map((runId) => sql`${runId}`),
+          sql`, `,
+        )})
+        group by campaign_run_id
+      `),
+    );
+  }
+
+  // SMS broadcasts write to sms_messages, not audience_snapshots. "sent" mirrors
+  // the run-detail SMS tile (dispatched = sent/delivered/undelivered); SMS has no
+  // opens, so opened is 0 (the row hides the open rate for SMS).
+  if (smsRunIds.length > 0) {
+    collect(
+      await connection.db.execute(sql<CampaignMetricSqlRow>`
+        select
+          broadcast_run_id as "runId",
+          count(*) filter (
+            where send_status in ('sent', 'delivered', 'undelivered')
+          )::int as "sent",
+          0::int as "opened",
+          count(*)::int as "total"
+        from sms_messages
+        where broadcast_run_id in (${sql.join(
+          smsRunIds.map((runId) => sql`${runId}`),
+          sql`, `,
+        )})
+          and direction = 'outbound'
+          and send_status <> 'received'
+        group by broadcast_run_id
+      `),
+    );
+  }
+
+  return metrics;
 }
 
 function countStates(
@@ -454,7 +492,9 @@ async function CampaignRowsSection(input: {
   );
   const metricByRunId = await readMetricsByRunId({
     runtime,
-    runIds: postmarkRunIds,
+    runs: rows
+      .filter((row) => row.provider === "postmark")
+      .map((row) => ({ runId: row.runId, launchType: row.launchType })),
   });
   const projectMetaById = new Map(
     input.activeProjects.map((project) => [
@@ -494,7 +534,10 @@ async function CampaignRowsSection(input: {
     selectedContactCount:
       postmarkRunById.get(row.runId)?.audienceCriteria.contactIds.length ?? 0,
     sentCount: metricByRunId.get(row.runId)?.sent ?? null,
-    openedCount: metricByRunId.get(row.runId)?.opened ?? null,
+    openedCount:
+      row.launchType === "sms"
+        ? null
+        : (metricByRunId.get(row.runId)?.opened ?? null),
   }));
 
   return (
