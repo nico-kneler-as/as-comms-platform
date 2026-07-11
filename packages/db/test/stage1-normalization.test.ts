@@ -862,6 +862,84 @@ describe("Stage 1 normalization service", () => {
     ).resolves.toEqual([]);
   });
 
+  it("defers a self-addressed Gmail message with zero identity signals (audit row, no canonical event)", async () => {
+    const context = await createTestStage1Context();
+
+    const result = await context.normalization.applyNormalizedCanonicalEvent({
+      sourceEvidence: {
+        id: "sev_gmail_self_loop",
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-self-loop-1",
+        receivedAt: "2026-01-01T00:03:00.000Z",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        payloadRef: "payloads/gmail/gmail-self-loop-1.json",
+        idempotencyKey: "gmail:message:gmail-self-loop-1",
+        checksum: "checksum-gmail-self-loop"
+      },
+      canonicalEvent: {
+        id: "evt_gmail_self_loop",
+        eventType: "communication.email.outbound",
+        occurredAt: "2026-01-01T00:02:00.000Z",
+        idempotencyKey: "canonical:gmail:message:gmail-self-loop-1",
+        summary: "Outbound email sent",
+        snippet: "Self-addressed test send."
+      },
+      communicationClassification: buildOneToOneCommunicationClassification({
+        sourceRecordType: "message",
+        sourceRecordId: "gmail-self-loop-1",
+        direction: "outbound"
+      }),
+      identity: {
+        salesforceContactId: null,
+        volunteerIdPlainValues: [],
+        normalizedEmails: [],
+        normalizedPhones: []
+      },
+      supportingSources: [],
+      gmailMessageDetail: {
+        sourceEvidenceId: "sev_gmail_self_loop",
+        providerRecordId: "gmail-self-loop-1",
+        gmailThreadId: "thread-gmail-self-loop-1",
+        rfc822MessageId: "<gmail-self-loop-1@example.org>",
+        direction: "outbound",
+        subject: "Delivery test",
+        fromHeader: "volunteers@adventurescientists.org",
+        toHeader: "volunteers@adventurescientists.org",
+        ccHeader: null,
+        snippetClean: "Self-addressed test send.",
+        bodyTextPreview: "Self-addressed test send.",
+        capturedMailbox: "volunteers@adventurescientists.org",
+        projectInboxAlias: null
+      }
+    });
+
+    expect(result.outcome).toBe("skipped");
+    if (result.outcome === "skipped") {
+      expect(result.reasonCode).toBe("skipped_zero_identity_signals");
+      expect(result.sourceEvidence.id).toBe("sev_gmail_self_loop");
+      expect(result.auditEvidence).toMatchObject({
+        action: "skipped_zero_identity_signals",
+        entityType: "source_evidence",
+        entityId: "sev_gmail_self_loop",
+        policyCode: "stage1.skip.skipped_zero_identity_signals"
+      });
+      expect(result.auditEvidence.metadataJson).toEqual({
+        provider: "gmail",
+        providerRecordType: "message",
+        providerRecordId: "gmail-self-loop-1"
+      });
+    }
+
+    // No canonical event, no downstream detail row — the skip returns before any
+    // canonical-event / presentation-detail persistence.
+    await expect(
+      context.repositories.gmailMessageDetails.listBySourceEvidenceIds([
+        "sev_gmail_self_loop"
+      ])
+    ).resolves.toEqual([]);
+  });
+
   it("applies Gmail-won outbound email events idempotently and drives Opened then New inbox semantics", async () => {
     const context = await seedContactWithEmail("volunteer@example.org", {
       contactId: "contact_1",

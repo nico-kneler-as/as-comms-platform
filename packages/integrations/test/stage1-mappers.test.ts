@@ -164,6 +164,45 @@ describe("Stage 1 provider-close mappers", () => {
     }
   });
 
+  it("maps a self-addressed Gmail message with zero participants without throwing", () => {
+    const result = mapGmailRecord({
+      recordType: "message",
+      recordId: "gmail-self-loop-1",
+      direction: "outbound",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      receivedAt: "2026-01-01T00:01:00.000Z",
+      payloadRef: "payloads/gmail/gmail-self-loop-1.json",
+      checksum: "checksum-self-loop-1",
+      snippet: "Self-addressed test send",
+      subject: "Delivery test",
+      fromHeader: "volunteers@example.org",
+      toHeader: "volunteers@example.org",
+      ccHeader: null,
+      labelIds: ["SENT", "INBOX"],
+      snippetClean: "Self-addressed test send",
+      bodyTextPreview: "Self-addressed test send",
+      capturedMailbox: "volunteers@example.org",
+      projectInboxAlias: null,
+      // Self-loop: From and the sole recipient both resolve to the mailbox, so
+      // there are no external participants. Previously this threw at the schema
+      // and the message was silently dropped (#461).
+      normalizedParticipantEmails: [],
+      salesforceContactId: null,
+      volunteerIdPlainValues: [],
+      normalizedPhones: [],
+      supportingRecords: [],
+      crossProviderCollapseKey: "email-self-loop-1",
+      threadId: "thread-self-loop-1",
+      rfc822MessageId: "<self-loop-1@example.org>"
+    });
+
+    expect(result.outcome).toBe("command");
+    if (result.outcome === "command" && result.command.kind === "canonical_event") {
+      expect(result.command.input.identity.normalizedEmails).toEqual([]);
+      expect(result.command.input.identity.salesforceContactId).toBeNull();
+    }
+  });
+
   it("skips Gmail draft-only messages before canonical ingest", () => {
     expect(
       mapGmailRecord({

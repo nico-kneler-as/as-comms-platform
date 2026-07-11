@@ -53,7 +53,11 @@ export const gmailMessageRecordSchema = z.object({
   rfc822MessageId: nullableStringSchema.default(null),
   capturedMailbox: nullableStringSchema.default(null),
   projectInboxAlias: nullableStringSchema.default(null),
-  normalizedParticipantEmails: stringArraySchema.min(1),
+  // May be empty for self-addressed mailbox messages (From and the sole
+  // recipient both resolve to the monitored mailbox). These carry zero external
+  // identity signals and are deferred (audit row, no canonical event) downstream
+  // in applyNormalizedCanonicalEvent rather than dropped at the validator (#461).
+  normalizedParticipantEmails: stringArraySchema,
   fromEmails: stringArraySchema.default([]),
   toEmails: stringArraySchema.default([]),
   ccEmails: stringArraySchema.default([]),
