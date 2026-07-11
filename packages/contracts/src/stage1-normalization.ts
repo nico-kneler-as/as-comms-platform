@@ -35,27 +35,17 @@ const timestampSchema = z.string().datetime();
 const nullableStringSchema = z.string().min(1).nullable();
 const stringArraySchema = z.array(z.string().min(1));
 
-export const normalizedIdentityEvidenceSchema = z
-  .object({
-    salesforceContactId: nullableStringSchema.default(null),
-    volunteerIdPlainValues: stringArraySchema.default([]),
-    normalizedEmails: stringArraySchema.default([]),
-    normalizedPhones: stringArraySchema.default([])
-  })
-  .superRefine((value, context) => {
-    const totalSignalCount =
-      value.volunteerIdPlainValues.length +
-      value.normalizedEmails.length +
-      value.normalizedPhones.length +
-      (value.salesforceContactId === null ? 0 : 1);
-
-    if (totalSignalCount === 0) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "at least one identity signal is required"
-      });
-    }
-  });
+// Zero identity signals is allowed here (no min-signal invariant). A record with
+// no email/phone/volunteerId/salesforceContactId — e.g. a self-addressed mailbox
+// message — is not dropped at the schema; it is deferred in
+// applyNormalizedCanonicalEvent (source_evidence audit row, no canonical event),
+// so no successfully-captured message is ever silently lost (#461).
+export const normalizedIdentityEvidenceSchema = z.object({
+  salesforceContactId: nullableStringSchema.default(null),
+  volunteerIdPlainValues: stringArraySchema.default([]),
+  normalizedEmails: stringArraySchema.default([]),
+  normalizedPhones: stringArraySchema.default([])
+});
 export type NormalizedIdentityEvidence = z.infer<
   typeof normalizedIdentityEvidenceSchema
 >;

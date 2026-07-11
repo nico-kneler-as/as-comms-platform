@@ -422,6 +422,10 @@ export function buildGmailMessageRecord(
       : senderIsInternal
         ? "outbound"
         : "inbound";
+  // Can be empty when the mailbox sends to itself (self-loop: From and the sole
+  // recipient both resolve to the monitored mailbox) — there is no external
+  // participant to anchor on. That empty array is intentional; the record is
+  // deferred (audit only) at normalization rather than dropped (#461).
   const normalizedParticipantEmails =
     staffOriginatedMailboxMessage && identityParticipantEmails.length === 0
       ? staffSenderEmails

@@ -8,7 +8,10 @@ import {
 } from "../src/index.js";
 
 describe("Stage 1 normalization contracts", () => {
-  it("requires at least one identity signal", () => {
+  it("allows zero identity signals (deferred downstream, not dropped at the schema)", () => {
+    // A record with no identity signals — e.g. a self-addressed mailbox message —
+    // must parse; it is deferred to an audit-only record in
+    // applyNormalizedCanonicalEvent rather than rejected here (#461).
     const result = normalizedIdentityEvidenceSchema.safeParse({
       salesforceContactId: null,
       volunteerIdPlainValues: [],
@@ -16,7 +19,7 @@ describe("Stage 1 normalization contracts", () => {
       normalizedPhones: []
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it("keeps canonical event intake provider-agnostic and source-evidence centered", () => {

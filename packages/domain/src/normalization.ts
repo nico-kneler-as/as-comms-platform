@@ -243,7 +243,9 @@ export type NormalizedCanonicalEventResult =
   | {
       readonly outcome: "skipped";
       readonly sourceEvidence: SourceEvidenceRecord;
-      readonly reasonCode: "skipped_non_volunteer_task";
+      readonly reasonCode:
+        | "skipped_non_volunteer_task"
+        | "skipped_zero_identity_signals";
       readonly explanation: string;
       readonly auditEvidence: AuditEvidenceRecord;
     }
@@ -698,7 +700,7 @@ function buildQuarantineAuditId(
 function buildSkipAuditId(
   entityType: string,
   entityId: string,
-  action: "skipped_non_volunteer_task",
+  action: "skipped_non_volunteer_task" | "skipped_zero_identity_signals",
 ): string {
   return `audit:${entityType}:${entityId}:${action}`;
 }
@@ -1873,6 +1875,10 @@ function buildSkippedNonVolunteerTaskExplanation(): string {
   return "Salesforce task communications for non-volunteer contacts are skipped in Stage 1.";
 }
 
+function buildSkippedZeroIdentitySignalsExplanation(): string {
+  return "Message carries no identity signals (e.g. a self-addressed mailbox message); recorded as source evidence only, with no canonical event.";
+}
+
 function decideDuplicateCollapse(
   input: NormalizedCanonicalEventIntake,
 ): DuplicateCollapseDecision {
@@ -2687,7 +2693,9 @@ async function recordSkipAuditOnce(
     readonly entityType: string;
     readonly entityId: string;
     readonly occurredAt: string;
-    readonly action: "skipped_non_volunteer_task";
+    readonly action:
+      | "skipped_non_volunteer_task"
+      | "skipped_zero_identity_signals";
     readonly metadataJson: Record<string, unknown>;
   },
 ): Promise<AuditEvidenceRecord> {
@@ -3299,6 +3307,49 @@ export function createStage1NormalizationService(
           sourceEvidence: sourceEvidenceResult.record,
           reasonCode: "skipped_non_volunteer_task",
           explanation: buildSkippedNonVolunteerTaskExplanation(),
+          auditEvidence,
+        };
+      }
+
+      // Zero identity signals — e.g. a self-addressed mailbox message where the
+      // From header and the sole recipient both resolve to the monitored mailbox
+      // (#461). Such a record has no external participant to anchor on. Rather
+      // than throw and silently drop it, record source evidence + a skip-audit
+      // row and defer: no canonical event, no identity-review case, no inbox
+      // projection. Applies to every provider.
+      if (
+        parsed.identity.normalizedEmails.length === 0 &&
+        parsed.identity.normalizedPhones.length === 0 &&
+        parsed.identity.volunteerIdPlainValues.length === 0 &&
+        parsed.identity.salesforceContactId === null
+      ) {
+        const auditEvidence = await recordSkipAuditOnce(persistence, {
+          entityType: "source_evidence",
+          entityId: sourceEvidenceResult.record.id,
+          occurredAt: parsed.sourceEvidence.receivedAt,
+          action: "skipped_zero_identity_signals",
+          metadataJson: {
+            provider: parsed.sourceEvidence.provider,
+            providerRecordType: parsed.sourceEvidence.providerRecordType,
+            providerRecordId: parsed.sourceEvidence.providerRecordId,
+          },
+        });
+
+        console.info(
+          JSON.stringify({
+            event: "stage1.normalize.deferred",
+            reason: "zero_identity_signals",
+            provider: parsed.sourceEvidence.provider,
+            providerRecordType: parsed.sourceEvidence.providerRecordType,
+            providerRecordId: parsed.sourceEvidence.providerRecordId,
+          }),
+        );
+
+        return {
+          outcome: "skipped",
+          sourceEvidence: sourceEvidenceResult.record,
+          reasonCode: "skipped_zero_identity_signals",
+          explanation: buildSkippedZeroIdentitySignalsExplanation(),
           auditEvidence,
         };
       }
