@@ -474,6 +474,38 @@ describe("broadcasts list snapshots", () => {
     ).not.toContain("Delete draft");
   });
 
+  it("shows SMS sent counts and hides the open rate for SMS rows", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [
+        {
+          ...makeCampaignRow(0),
+          runId: "sms-1",
+          launchType: "sms",
+          audienceSize: 72,
+          sentCount: 72,
+          openedCount: null,
+        },
+      ],
+      totalCount: 1,
+    });
+
+    expect(container.textContent).toContain("72 / 72 sent");
+    expect(container.textContent).not.toContain("%");
+  });
+
+  it("still shows the open rate for completed email broadcasts", () => {
+    const container = setupDom();
+
+    renderList(container, {
+      items: [{ ...makeCampaignRow(0), state: "complete" }],
+      totalCount: 1,
+    });
+
+    expect(container.textContent).toContain("%");
+  });
+
   it("does not navigate when the active state tab is selected again", () => {
     const container = setupDom();
 

@@ -146,6 +146,9 @@ function renderMetric(item: CampaignRowViewModel) {
   const totalAudience = resolveAudienceTotal(item);
   const sentCount = item.sentCount ?? 0;
   const openedCount = item.openedCount ?? 0;
+  // Open tracking only applies to email. SMS rows carry a null openedCount, so
+  // the open rate is hidden rather than shown as a misleading 0%.
+  const showOpenRate = item.openedCount !== null;
   const openRatePercent =
     totalAudience === null || totalAudience <= 0
       ? 0
@@ -160,11 +163,18 @@ function renderMetric(item: CampaignRowViewModel) {
             {formatCount(sentCount)} / {formatCount(totalAudience ?? sentCount)}{" "}
             sent
           </span>
-          <span className="text-slate-400">·</span>
-          <span className="inline-flex items-center gap-1">
-            <Eye className={COMPLETE_OPEN_RATE_ICON_CLASS} aria-hidden="true" />
-            {formatCount(openRatePercent)}%
-          </span>
+          {showOpenRate ? (
+            <>
+              <span className="text-slate-400">·</span>
+              <span className="inline-flex items-center gap-1">
+                <Eye
+                  className={COMPLETE_OPEN_RATE_ICON_CLASS}
+                  aria-hidden="true"
+                />
+                {formatCount(openRatePercent)}%
+              </span>
+            </>
+          ) : null}
         </>
       );
     case "scheduled":
