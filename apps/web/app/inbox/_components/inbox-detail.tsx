@@ -78,6 +78,37 @@ interface InboxDetailTimelinePanelProps {
   readonly currentOperatorUserId: string;
 }
 
+function unresolvedChipTitle(
+  contact: InboxDetailSummaryViewModel["contact"],
+): string | undefined {
+  const labels = Array.from(
+    new Set(
+      contact.unresolvedCases.map(
+        (unresolvedCase) => unresolvedCase.reasonLabel,
+      ),
+    ),
+  );
+
+  return labels.length === 0 ? undefined : labels.join(" · ");
+}
+
+function formatUnresolvedMatchLabel(
+  unresolvedCase: InboxDetailSummaryViewModel["contact"]["unresolvedCases"][number],
+): string {
+  const labels = unresolvedCase.otherContacts.map((otherContact) =>
+    otherContact.email === null
+      ? otherContact.displayName
+      : `${otherContact.displayName} (${otherContact.email})`,
+  );
+  const joinedLabels = labels.join(" · ");
+
+  if (unresolvedCase.moreCount === 0) {
+    return joinedLabels;
+  }
+
+  return `${joinedLabels} +${unresolvedCase.moreCount.toString()} more`;
+}
+
 const REPLY_SUBJECT_PREFIX_PATTERN = /^\s*(?:(?:re|fwd?)\s*:\s*)+/i;
 
 function extractEmailAddresses(value: string | null | undefined): string[] {
@@ -423,7 +454,10 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
                 </span>
               ) : null}
               {contact.hasUnresolved ? (
-                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                <span
+                  className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                  title={unresolvedChipTitle(contact)}
+                >
                   Unresolved
                 </span>
               ) : null}
@@ -518,7 +552,9 @@ export function InboxDetail({ detail, timelineSlot }: DetailProps) {
           </TooltipProvider>
         </header>
 
-        {contact.hasUnresolved ? <UnresolvedBanner /> : null}
+        {contact.hasUnresolved ? (
+          <UnresolvedBanner unresolvedCases={contact.unresolvedCases} />
+        ) : null}
 
         {timelineSlot ?? <InboxDetailTimelineFallback />}
 
@@ -1021,16 +1057,42 @@ function useOptimisticBooleanToggle({
   } as const;
 }
 
-function UnresolvedBanner() {
+function UnresolvedBanner({
+  unresolvedCases,
+}: {
+  readonly unresolvedCases: InboxDetailSummaryViewModel["contact"]["unresolvedCases"];
+}) {
   return (
     <div
-      className={`flex items-center gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE_CLASSES.amber.subtle}`}
+      className={`flex items-start gap-2 border-b border-amber-200 px-6 py-2.5 ${TONE_CLASSES.amber.subtle}`}
       role="status"
     >
-      <AlertTriangleIcon className="size-4 shrink-0 text-amber-600" />
-      <span className="text-sm font-medium text-amber-900">
-        Unresolved items need attention
-      </span>
+      <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-amber-600" />
+      {unresolvedCases.length === 0 ? (
+        <span className="text-sm font-medium text-amber-900">
+          Unresolved items need attention
+        </span>
+      ) : (
+        <div className="min-w-0 space-y-2">
+          {unresolvedCases.map((unresolvedCase, index) => (
+            <div
+              key={`${unresolvedCase.kind}:${unresolvedCase.reasonLabel}:${index.toString()}`}
+            >
+              <p className="text-sm text-amber-900">
+                <span className="font-semibold">
+                  {unresolvedCase.reasonLabel}
+                </span>{" "}
+                {unresolvedCase.explanation}
+              </p>
+              {unresolvedCase.otherContacts.length > 0 ? (
+                <p className="text-xs text-amber-800">
+                  Matches: {formatUnresolvedMatchLabel(unresolvedCase)}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

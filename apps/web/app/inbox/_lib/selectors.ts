@@ -4,6 +4,7 @@ import type {
   CanonicalEventRecord,
   ContactMembershipRecord,
   ContactRecord,
+  IdentityResolutionCase,
   InboxProjectionRow,
   MessageAttachmentRecord,
   TimelineItem,
@@ -208,6 +209,7 @@ interface InboxDetailCacheData {
     readonly authorId: string | null;
     readonly createdAt: string;
   } | null;
+  readonly unresolvedCases: readonly InboxUnresolvedCaseCacheRow[];
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly timelineItems: readonly TimelineItem[];
   readonly campaignActivitySummaryByCampaignId: Readonly<
@@ -257,6 +259,7 @@ interface InboxDetailSummaryCacheData {
     readonly authorId: string | null;
     readonly createdAt: string;
   } | null;
+  readonly unresolvedCases: readonly InboxUnresolvedCaseCacheRow[];
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly canonicalEventById: ReadonlyMap<string, CanonicalEventRecord>;
   readonly projectMetadataById: ProjectMetadataIndex;
@@ -290,6 +293,18 @@ interface CampaignActivitySummary {
   openedAt: string | null;
   clickedAt: string | null;
   unsubscribedAt: string | null;
+}
+
+interface InboxUnresolvedCaseCacheRow {
+  readonly kind: "identity" | "routing";
+  readonly reasonCode: string;
+  readonly explanation: string;
+  readonly openedAt: string;
+  readonly otherContacts: readonly {
+    readonly displayName: string;
+    readonly email: string | null;
+  }[];
+  readonly moreCount: number;
 }
 
 const AVATAR_TONES: readonly InboxAvatarTone[] = [
@@ -361,6 +376,127 @@ function uniqueStrings(
       values.filter((value): value is string => typeof value === "string"),
     ),
   );
+}
+
+const MAX_UNRESOLVED_OTHER_CONTACTS = 3;
+
+export function mapUnresolvedReasonLabel(reasonCode: string): string {
+  switch (reasonCode) {
+    case "identity_anchor_mismatch":
+      return "Possible duplicate contact";
+    case "identity_multi_candidate":
+      return "Multiple matching contacts";
+    case "identity_missing_anchor":
+      return "No Salesforce match";
+    default:
+      return "Needs review";
+  }
+}
+
+function buildIdentityCaseOtherContactIds(input: {
+  readonly contactId: string;
+  readonly identityCase: IdentityResolutionCase;
+}): string[] {
+  return uniqueStrings([
+    input.identityCase.anchoredContactId,
+    ...input.identityCase.candidateContactIds,
+  ]).filter((candidateContactId) => candidateContactId !== input.contactId);
+}
+
+async function loadUnresolvedCaseCacheRows(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly contactId: string;
+  readonly hasUnresolved: boolean;
+}): Promise<readonly InboxUnresolvedCaseCacheRow[]> {
+  if (!input.hasUnresolved) {
+    return [];
+  }
+
+  const [identityCases, routingCases] = await Promise.all([
+    input.runtime.repositories.identityResolutionQueue.listOpenByContactId(
+      input.contactId,
+    ),
+    input.runtime.repositories.routingReviewQueue.listOpenByContactId(
+      input.contactId,
+    ),
+  ]);
+
+  const allOtherContactIds = uniqueStrings(
+    identityCases.flatMap((identityCase) =>
+      buildIdentityCaseOtherContactIds({
+        contactId: input.contactId,
+        identityCase,
+      }),
+    ),
+  );
+  const otherContacts =
+    allOtherContactIds.length === 0
+      ? []
+      : await input.runtime.repositories.contacts.listByIds(allOtherContactIds);
+  const otherContactById = new Map(otherContacts.map((row) => [row.id, row]));
+  const sortableCases: (
+    InboxUnresolvedCaseCacheRow & {
+      readonly caseId: string;
+    }
+  )[] = [];
+
+  for (const identityCase of identityCases) {
+    const resolvedOtherContacts = buildIdentityCaseOtherContactIds({
+      contactId: input.contactId,
+      identityCase,
+    })
+      .map((candidateContactId) => otherContactById.get(candidateContactId))
+      .filter((contact): contact is ContactRecord => contact !== undefined)
+      .map((contact) => ({
+        displayName: contact.displayName,
+        email: contact.primaryEmail,
+      }));
+
+    sortableCases.push({
+      caseId: identityCase.id,
+      kind: "identity",
+      reasonCode: identityCase.reasonCode,
+      explanation: identityCase.explanation,
+      openedAt: identityCase.openedAt,
+      otherContacts: resolvedOtherContacts.slice(
+        0,
+        MAX_UNRESOLVED_OTHER_CONTACTS,
+      ),
+      moreCount: Math.max(
+        resolvedOtherContacts.length - MAX_UNRESOLVED_OTHER_CONTACTS,
+        0,
+      ),
+    });
+  }
+
+  for (const routingCase of routingCases) {
+    sortableCases.push({
+      caseId: routingCase.id,
+      kind: "routing",
+      reasonCode: routingCase.reasonCode,
+      explanation: routingCase.explanation,
+      openedAt: routingCase.openedAt,
+      otherContacts: [],
+      moreCount: 0,
+    });
+  }
+
+  sortableCases.sort((left, right) => {
+    if (left.openedAt !== right.openedAt) {
+      return left.openedAt < right.openedAt ? 1 : -1;
+    }
+
+    return left.caseId.localeCompare(right.caseId);
+  });
+
+  return sortableCases.map((row) => ({
+    kind: row.kind,
+    reasonCode: row.reasonCode,
+    explanation: row.explanation,
+    openedAt: row.openedAt,
+    otherContacts: row.otherContacts,
+    moreCount: row.moreCount,
+  }));
 }
 
 function uniqueInboxProjectionsByContactId(
@@ -3947,6 +4083,11 @@ async function readInboxDetailCacheData(
     lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
     lastEventType: newestCanonicalEvent?.eventType ?? null,
   };
+  const unresolvedCasesPromise = loadUnresolvedCaseCacheRows({
+    runtime,
+    contactId,
+    hasUnresolved: detailProjection.hasUnresolved,
+  });
 
   const aliasesByProjectId = new Map<string, string[]>();
 
@@ -4094,6 +4235,23 @@ async function readInboxDetailCacheData(
     detailProjection.bucket === "New" ||
     (lastNonAliasOutboundAt !== null &&
       (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
+  const [
+    unresolvedCases,
+    campaignActivitySummaryByCampaignId,
+    projectMetadataById,
+    projectLabelByAlias,
+  ] = await Promise.all([
+    unresolvedCasesPromise,
+    loadCampaignActivitySummaryByCampaignId({
+      runtime,
+      canonicalEvents,
+    }),
+    loadProjectMetadataById(
+      memberships,
+      salesforceEventContexts.map((context) => context.projectId),
+    ),
+    loadProjectLabelByAlias(projectAliasRecords),
+  ]);
 
   return {
     contact,
@@ -4106,20 +4264,14 @@ async function readInboxDetailCacheData(
     }),
     memberships,
     latestNote,
+    unresolvedCases,
     activityTimelineItems,
     timelineItems: timelinePage.items,
-    campaignActivitySummaryByCampaignId:
-      await loadCampaignActivitySummaryByCampaignId({
-        runtime,
-        canonicalEvents,
-      }),
+    campaignActivitySummaryByCampaignId,
     canonicalEventById: new Map(
       canonicalEvents.map((event) => [event.id, event]),
     ),
-    projectMetadataById: await loadProjectMetadataById(
-      memberships,
-      salesforceEventContexts.map((context) => context.projectId),
-    ),
+    projectMetadataById,
     salesforceEventContextBySourceEvidenceId: new Map(
       salesforceEventContexts.map((context) => [
         context.sourceEvidenceId,
@@ -4129,7 +4281,7 @@ async function readInboxDetailCacheData(
       ]),
     ),
     contactDisplayNameByEmail,
-    projectLabelByAlias: await loadProjectLabelByAlias(projectAliasRecords),
+    projectLabelByAlias,
     allProjectAliasesLower,
     attachmentsByCanonicalEventId: new Map(
       timelinePage.items.map((item) => [
@@ -4240,6 +4392,11 @@ async function readInboxDetailSummaryCacheData(
     lastCanonicalEventId: newestCanonicalEvent?.id ?? null,
     lastEventType: newestCanonicalEvent?.eventType ?? null,
   };
+  const unresolvedCasesPromise = loadUnresolvedCaseCacheRows({
+    runtime,
+    contactId,
+    hasUnresolved: detailProjection.hasUnresolved,
+  });
 
   const aliasesByProjectId = new Map<string, string[]>();
 
@@ -4290,10 +4447,13 @@ async function readInboxDetailSummaryCacheData(
     detailProjection.bucket === "New" ||
     (lastNonAliasOutboundAt !== null &&
       (latestReadAt === null || lastNonAliasOutboundAt > latestReadAt));
-  const projectMetadataById = await loadProjectMetadataById(
-    memberships,
-    salesforceEventContexts.map((context) => context.projectId),
-  );
+  const [unresolvedCases, projectMetadataById] = await Promise.all([
+    unresolvedCasesPromise,
+    loadProjectMetadataById(
+      memberships,
+      salesforceEventContexts.map((context) => context.projectId),
+    ),
+  ]);
 
   return {
     contact,
@@ -4306,6 +4466,7 @@ async function readInboxDetailSummaryCacheData(
     }),
     memberships,
     latestNote,
+    unresolvedCases,
     activityTimelineItems,
     canonicalEventById: new Map(
       canonicalEvents.map((event) => [event.id, event]),
@@ -4563,6 +4724,7 @@ function buildContactSummary(input: {
     readonly authorId: string | null;
     readonly createdAt: string;
   } | null;
+  readonly unresolvedCases: readonly InboxUnresolvedCaseCacheRow[];
   readonly activityTimelineItems: readonly TimelineItem[];
   readonly projectMetadataById: ProjectMetadataIndex;
   readonly referenceNowIso: string;
@@ -4604,6 +4766,17 @@ function buildContactSummary(input: {
     primaryPhone: input.contact.primaryPhone,
     joinedAtLabel: formatJoinedAtLabel(input.contact.createdAt),
     hasUnresolved: input.inboxProjection.hasUnresolved,
+    unresolvedCases: input.unresolvedCases.map((unresolvedCase) => ({
+      kind: unresolvedCase.kind,
+      reasonLabel: mapUnresolvedReasonLabel(unresolvedCase.reasonCode),
+      explanation: unresolvedCase.explanation,
+      otherContacts: unresolvedCase.otherContacts,
+      moreCount: unresolvedCase.moreCount,
+      openedAtLabel: formatRelativeTimestamp(
+        unresolvedCase.openedAt,
+        input.referenceNowIso,
+      ),
+    })),
     pinnedNote:
       input.latestNote === null
         ? null
@@ -4728,6 +4901,7 @@ function buildInboxDetailSummaryViewModel(input: {
     inboxProjection: input.cachedData.inboxProjection,
     memberships: input.cachedData.memberships,
     latestNote: input.cachedData.latestNote,
+    unresolvedCases: input.cachedData.unresolvedCases,
     activityTimelineItems: input.cachedData.activityTimelineItems,
     projectMetadataById: input.cachedData.projectMetadataById,
     referenceNowIso: input.referenceNowIso,

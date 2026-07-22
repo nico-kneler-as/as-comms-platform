@@ -165,6 +165,18 @@ export interface InboxRecentActivityViewModel {
   readonly isMostRecent?: boolean;
 }
 
+export interface InboxUnresolvedCaseViewModel {
+  readonly kind: "identity" | "routing";
+  readonly reasonLabel: string;
+  readonly explanation: string;
+  readonly otherContacts: readonly {
+    readonly displayName: string;
+    readonly email: string | null;
+  }[];
+  readonly moreCount: number;
+  readonly openedAtLabel: string;
+}
+
 export interface InboxContactSummaryViewModel {
   readonly contactId: string;
   readonly displayName: string;
@@ -173,6 +185,7 @@ export interface InboxContactSummaryViewModel {
   readonly primaryPhone: string | null;
   readonly joinedAtLabel: string;
   readonly hasUnresolved: boolean;
+  readonly unresolvedCases: readonly InboxUnresolvedCaseViewModel[];
   readonly pinnedNote: {
     readonly body: string;
     readonly authorLabel: string;
