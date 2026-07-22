@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +23,11 @@ import {
 import type { AiDraftState } from "./inbox-client-provider";
 
 type AiDraftAccent = "violet" | "sky";
+
+const INTENT_TEXTAREA_MIN_HEIGHT_PX = 44;
+const INTENT_TEXTAREA_MAX_HEIGHT_PX = 132;
+const INTENT_TEXTAREA_MIN_ROWS = 2;
+const INTENT_TEXTAREA_MAX_ROWS = 6;
 
 const AI_DRAFT_ACCENT_CLASSES = {
   violet: {
@@ -99,10 +104,43 @@ function AiDraftActionButton({
 
 function DraftPreview({ text }: { readonly text: string }) {
   return (
-    <div className="whitespace-pre-wrap rounded-md bg-slate-50/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-slate-800 ring-1 ring-inset ring-slate-200">
+    <div className="custom-scrollbar max-h-[40vh] overflow-y-auto whitespace-pre-wrap rounded-md bg-slate-50/60 px-3 py-2.5 text-[12.5px] leading-relaxed text-slate-800 ring-1 ring-inset ring-slate-200">
       {text}
     </div>
   );
+}
+
+function autosizeIntentTextarea(textarea: HTMLTextAreaElement | null) {
+  if (textarea === null) {
+    return;
+  }
+
+  const parsePx = (value: string) => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const styles = window.getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(styles.lineHeight);
+  const paddingBlock = parsePx(styles.paddingTop) + parsePx(styles.paddingBottom);
+  const borderBlock = parsePx(styles.borderTopWidth) + parsePx(styles.borderBottomWidth);
+  const hasMeasuredLineHeight = Number.isFinite(lineHeight) && lineHeight > 0;
+  const minHeight = hasMeasuredLineHeight
+    ? Math.max(
+        INTENT_TEXTAREA_MIN_HEIGHT_PX,
+        lineHeight * INTENT_TEXTAREA_MIN_ROWS + paddingBlock + borderBlock,
+      )
+    : INTENT_TEXTAREA_MIN_HEIGHT_PX;
+  const maxHeight = hasMeasuredLineHeight
+    ? Math.max(
+        minHeight,
+        lineHeight * INTENT_TEXTAREA_MAX_ROWS + paddingBlock + borderBlock,
+      )
+    : INTENT_TEXTAREA_MAX_HEIGHT_PX;
+
+  textarea.style.height = "0px";
+  const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+  textarea.style.height = `${String(Math.max(nextHeight, minHeight))}px`;
+  textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function DraftActionTrigger({
@@ -210,6 +248,11 @@ export function ComposerAiDraftWindow({
   const canUseDraftActions = !isGeneratingAi;
   const accent: AiDraftAccent = tone === "sms" ? "sky" : "violet";
   const accentClasses = AI_DRAFT_ACCENT_CLASSES[accent];
+  const directiveTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useLayoutEffect(() => {
+    autosizeIntentTextarea(directiveTextareaRef.current);
+  }, [directiveText]);
 
   return (
     <section
@@ -239,6 +282,7 @@ export function ComposerAiDraftWindow({
         {showsEmptyState ? (
           <div className="flex min-w-0 items-start gap-2">
             <textarea
+              ref={directiveTextareaRef}
               autoFocus
               value={directiveText}
               onChange={(event) => {
@@ -255,7 +299,7 @@ export function ComposerAiDraftWindow({
                 }
               }}
               placeholder={directivePlaceholder}
-              rows={2}
+              rows={INTENT_TEXTAREA_MIN_ROWS}
               disabled={isGeneratingAi}
               className={cn(
                 `min-h-[44px] min-w-0 flex-1 resize-none rounded-md bg-slate-50/60 px-2.5 py-2 text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 ring-1 ring-inset ring-slate-200 focus:outline-none disabled:opacity-60 ${TRANSITION.reduceMotion}`,
@@ -283,7 +327,7 @@ export function ComposerAiDraftWindow({
         ) : null}
 
         {showsDraft ? (
-          <div className="space-y-3">
+          <div className="min-h-0 space-y-3">
             <DraftPreview text={aiDraft.generatedText} />
 
             {isReprompting ? (

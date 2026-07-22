@@ -107,10 +107,15 @@ afterEach(async () => {
 });
 
 function setDomGlobals(window: Window & typeof globalThis) {
+  type LegacyEventPrototype = HTMLElement & {
+    attachEvent?: () => void;
+    detachEvent?: () => void;
+  };
   const entries = {
     document: window.document,
     Element: window.Element,
     Event: window.Event,
+    HTMLDivElement: window.HTMLDivElement,
     HTMLElement: window.HTMLElement,
     HTMLButtonElement: window.HTMLButtonElement,
     HTMLTextAreaElement: window.HTMLTextAreaElement,
@@ -125,6 +130,24 @@ function setDomGlobals(window: Window & typeof globalThis) {
     Object.defineProperty(globalThis, key, {
       configurable: true,
       value,
+      writable: true,
+    });
+  }
+
+  const legacyPrototype = window.HTMLElement.prototype as LegacyEventPrototype;
+
+  if (typeof legacyPrototype.attachEvent !== "function") {
+    Object.defineProperty(legacyPrototype, "attachEvent", {
+      configurable: true,
+      value: () => undefined,
+      writable: true,
+    });
+  }
+
+  if (typeof legacyPrototype.detachEvent !== "function") {
+    Object.defineProperty(legacyPrototype, "detachEvent", {
+      configurable: true,
+      value: () => undefined,
       writable: true,
     });
   }
@@ -220,6 +243,20 @@ function getButton(name: string): HTMLButtonElement {
   return button;
 }
 
+function getPreviewContainer(text: string): HTMLDivElement {
+  const preview = Array.from(document.querySelectorAll("div")).find(
+    (candidate) =>
+      candidate.className.includes("whitespace-pre-wrap") &&
+      candidate.textContent.includes(text),
+  );
+
+  if (!(preview instanceof HTMLDivElement)) {
+    throw new Error(`Unable to find preview container for: ${text}`);
+  }
+
+  return preview;
+}
+
 function DraftHarness() {
   const [aiDraft, setAiDraft] = useState(initialAiDraft);
   const [directiveText, setDirectiveText] = useState("Draft a concise follow-up");
@@ -248,6 +285,24 @@ function DraftHarness() {
         }}
       >
         Finish generation
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setDirectiveText("Line 1\nLine 2\nLine 3\nLine 4");
+        }}
+      >
+        Set medium prompt
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setDirectiveText(
+            "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
+          );
+        }}
+      >
+        Set long prompt
       </button>
       <output data-testid="body">{body}</output>
       <ComposerAiDraftWindow
@@ -320,12 +375,18 @@ describe("AI draft preview approval panel", () => {
     expect(document.body.textContent).toContain("Reprompt");
     expect(document.body.textContent).toContain("Discard");
     expect(document.body.textContent).toContain("Approve");
+    const preview = getPreviewContainer("Hi Maya,");
+    expect(preview.className).toContain("max-h-[40vh]");
+    expect(preview.className).toContain("overflow-y-auto");
 
     await click(getButton("Approve"));
     expect(document.querySelector('[data-testid="body"]')?.textContent).toBe(
       "Hi Maya,\n\nThanks for checking in.",
     );
     expect(document.body.textContent).toContain("AI draft");
+    expect(document.body.textContent).toContain("Draft with AI");
+    expect(document.body.textContent).not.toContain("Approve");
+    expect(document.body.textContent).not.toContain("Reprompt");
   });
 
   it("returns to the prompt editor with the original intent when edit prompt is clicked", async () => {
@@ -347,6 +408,48 @@ describe("AI draft preview approval panel", () => {
     expect(textarea.value).toBe("Draft a concise follow-up");
     expect(document.body.textContent).toContain("Draft with AI");
     expect(document.body.textContent).not.toContain("Reprompt");
+  });
+
+  it("returns to the compact prompt editor when discard is clicked", async () => {
+    await mount(createElement(DraftHarness));
+
+    await click(getButton("Finish generation"));
+    expect(document.body.textContent).toContain("Approve");
+
+    await click(getButton("Discard"));
+
+    expect(document.body.textContent).toContain("Draft with AI");
+    expect(document.body.textContent).not.toContain("Approve");
+    expect(document.body.textContent).not.toContain("Reprompt");
+    expect(document.querySelector('[data-testid="body"]')?.textContent).toBe("");
+  });
+
+  it("auto-grows the intent textarea up to the six-line cap", async () => {
+    await mount(createElement(DraftHarness));
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    if (textarea === null) {
+      throw new Error("Expected prompt textarea.");
+    }
+
+    let scrollHeight = 44;
+    Object.defineProperty(textarea, "scrollHeight", {
+      configurable: true,
+      get: () => scrollHeight,
+    });
+
+    expect(textarea.rows).toBe(2);
+
+    scrollHeight = 96;
+    await click(getButton("Set medium prompt"));
+    expect(textarea.style.height).toBe("96px");
+    expect(textarea.style.overflowY).toBe("hidden");
+
+    scrollHeight = 240;
+    await click(getButton("Set long prompt"));
+    expect(textarea.style.height).toBe("132px");
+    expect(textarea.style.overflowY).toBe("auto");
   });
 
   // TODO: re-enable after JSDOM event handler shim is added — Radix DismissableLayer
