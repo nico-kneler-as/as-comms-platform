@@ -981,6 +981,112 @@ describe("real inbox selectors", () => {
     runtime = null;
   });
 
+  type TimelineOrderingIncidentEntryKey =
+    | "receivedTraining"
+    | "inbound1559"
+    | "outbound1632"
+    | "inbound1645"
+    | "signedUp"
+    | "automated1655";
+
+  async function seedTimelineOrderingContact(input: {
+    readonly contactId: string;
+    readonly insertionOrder: readonly TimelineOrderingIncidentEntryKey[];
+  }): Promise<void> {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const testRuntime = runtime;
+
+    await seedInboxContact(testRuntime.context, {
+      contactId: input.contactId,
+      salesforceContactId: null,
+      displayName: `Timeline ${input.contactId}`,
+      primaryEmail: `${input.contactId}@example.org`,
+      primaryPhone: null,
+    });
+    const seedByKey: Record<
+      TimelineOrderingIncidentEntryKey,
+      () => Promise<void>
+    > = {
+      receivedTraining: async () => {
+        await seedInboxLifecycleEvent(testRuntime.context, {
+          id: `${input.contactId}-received-training`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T12:00:00.000Z",
+          eventType: "lifecycle.received_training",
+          summary: "Received training",
+        });
+      },
+      inbound1559: async () => {
+        await seedInboxEmailEvent(testRuntime.context, {
+          id: `${input.contactId}-inbound-1559`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T15:59:00.000Z",
+          direction: "inbound",
+          subject: "Question before training",
+          snippet: "I have a question before training.",
+        });
+      },
+      outbound1632: async () => {
+        await seedInboxEmailEvent(testRuntime.context, {
+          id: `${input.contactId}-outbound-1632`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T16:32:00.000Z",
+          direction: "outbound",
+          subject: "Re: Question before training",
+          snippet: "Here are the details.",
+        });
+      },
+      inbound1645: async () => {
+        await seedInboxEmailEvent(testRuntime.context, {
+          id: `${input.contactId}-inbound-1645`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T16:45:00.000Z",
+          direction: "inbound",
+          subject: "Thanks",
+          snippet: "Thanks for the quick reply.",
+        });
+      },
+      signedUp: async () => {
+        await seedInboxLifecycleEvent(testRuntime.context, {
+          id: `${input.contactId}-signed-up`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T16:46:23.000Z",
+          eventType: "lifecycle.signed_up",
+          summary: "Signed up",
+        });
+      },
+      automated1655: async () => {
+        await seedInboxAutoEmailEvent(testRuntime.context, {
+          id: `${input.contactId}-automated-1655`,
+          contactId: input.contactId,
+          occurredAt: "2026-07-22T16:55:00.000Z",
+          subject: "Automated follow-up",
+          snippet: "Automated follow-up",
+        });
+      },
+    };
+
+    for (const key of input.insertionOrder) {
+      await seedByKey[key]();
+    }
+
+    await seedInboxProjection(testRuntime.context, {
+      contactId: input.contactId,
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-07-22T16:45:00.000Z",
+      lastOutboundAt: "2026-07-22T16:55:00.000Z",
+      lastActivityAt: "2026-07-22T16:55:00.000Z",
+      snippet: "Automated follow-up",
+      lastCanonicalEventId: `event:${input.contactId}-automated-1655`,
+      lastEventType: "communication.email.outbound",
+    });
+  }
+
   it("reads one row per contact from real projections with inbound-first sorting and activity fallback", async () => {
     const list = await getInboxList();
 
@@ -5199,6 +5305,217 @@ describe("real inbox selectors", () => {
     ]);
   });
 
+  it("keeps the incident timeline strictly chronological across fixed seed permutations", async () => {
+    const permutations = [
+      [
+        "receivedTraining",
+        "inbound1559",
+        "outbound1632",
+        "inbound1645",
+        "signedUp",
+        "automated1655",
+      ],
+      [
+        "signedUp",
+        "outbound1632",
+        "receivedTraining",
+        "automated1655",
+        "inbound1559",
+        "inbound1645",
+      ],
+      [
+        "automated1655",
+        "inbound1645",
+        "inbound1559",
+        "signedUp",
+        "outbound1632",
+        "receivedTraining",
+      ],
+      [
+        "inbound1559",
+        "signedUp",
+        "inbound1645",
+        "receivedTraining",
+        "automated1655",
+        "outbound1632",
+      ],
+    ] as const satisfies readonly (readonly TimelineOrderingIncidentEntryKey[])[];
+
+    for (const [index, permutation] of permutations.entries()) {
+      const contactId = `contact:timeline-order-${index.toString()}`;
+      await seedTimelineOrderingContact({
+        contactId,
+        insertionOrder: permutation,
+      });
+
+      const detail = await getInboxDetail(contactId);
+
+      expect(detail?.timeline.map((entry) => entry.id)).toEqual([
+        `timeline:${contactId}-received-training`,
+        `timeline:${contactId}-inbound-1559`,
+        `timeline:${contactId}-outbound-1632`,
+        `timeline:${contactId}-inbound-1645`,
+        `timeline:${contactId}-signed-up`,
+        `timeline:${contactId}-automated-1655`,
+      ]);
+    }
+  });
+
+  it("reorders adjacent same-day lifecycle runs in journey order when their timestamps match", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const contactId = "contact:adjacent-lifecycle-run";
+    await seedInboxContact(runtime.context, {
+      contactId,
+      salesforceContactId: null,
+      displayName: "Adjacent Lifecycle Run",
+      primaryEmail: "adjacent-lifecycle-run@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "adjacent-lifecycle-run-training",
+      contactId,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "adjacent-lifecycle-run-signed-up",
+      contactId,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "adjacent-lifecycle-run-completed",
+      contactId,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      eventType: "lifecycle.completed_training",
+      summary: "Completed training",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId,
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      lastActivityAt: "2026-07-22T12:00:00.000Z",
+      snippet: "Completed training",
+      lastCanonicalEventId: "event:adjacent-lifecycle-run-completed",
+      lastEventType: "lifecycle.completed_training",
+    });
+
+    const detail = await getInboxDetail(contactId);
+
+    expect(detail?.timeline.map((entry) => entry.id)).toEqual([
+      "timeline:adjacent-lifecycle-run-signed-up",
+      "timeline:adjacent-lifecycle-run-training",
+      "timeline:adjacent-lifecycle-run-completed",
+    ]);
+  });
+
+  it("does not reorder lifecycle chips across an email gap or across UTC days", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    const emailGapContactId = "contact:lifecycle-email-gap";
+    await seedInboxContact(runtime.context, {
+      contactId: emailGapContactId,
+      salesforceContactId: null,
+      displayName: "Lifecycle Email Gap",
+      primaryEmail: "lifecycle-email-gap@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-email-gap-training",
+      contactId: emailGapContactId,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+    });
+    await seedInboxEmailEvent(runtime.context, {
+      id: "lifecycle-email-gap-email",
+      contactId: emailGapContactId,
+      occurredAt: "2026-07-22T15:59:00.000Z",
+      direction: "inbound",
+      subject: "Checking timing",
+      snippet: "Checking timing.",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-email-gap-signed-up",
+      contactId: emailGapContactId,
+      occurredAt: "2026-07-22T16:46:23.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: emailGapContactId,
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: "2026-07-22T15:59:00.000Z",
+      lastOutboundAt: null,
+      lastActivityAt: "2026-07-22T16:46:23.000Z",
+      snippet: "Signed up",
+      lastCanonicalEventId: "event:lifecycle-email-gap-signed-up",
+      lastEventType: "lifecycle.signed_up",
+    });
+
+    const emailGapDetail = await getInboxDetail(emailGapContactId);
+
+    expect(emailGapDetail?.timeline.map((entry) => entry.id)).toEqual([
+      "timeline:lifecycle-email-gap-training",
+      "timeline:lifecycle-email-gap-email",
+      "timeline:lifecycle-email-gap-signed-up",
+    ]);
+
+    const differentDayContactId = "contact:lifecycle-different-day";
+    await seedInboxContact(runtime.context, {
+      contactId: differentDayContactId,
+      salesforceContactId: null,
+      displayName: "Lifecycle Different Day",
+      primaryEmail: "lifecycle-different-day@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-different-day-training",
+      contactId: differentDayContactId,
+      occurredAt: "2026-07-21T12:00:00.000Z",
+      eventType: "lifecycle.received_training",
+      summary: "Received training",
+    });
+    await seedInboxLifecycleEvent(runtime.context, {
+      id: "lifecycle-different-day-signed-up",
+      contactId: differentDayContactId,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      eventType: "lifecycle.signed_up",
+      summary: "Signed up",
+    });
+    await seedInboxProjection(runtime.context, {
+      contactId: differentDayContactId,
+      bucket: "Opened",
+      needsFollowUp: false,
+      hasUnresolved: false,
+      lastInboundAt: null,
+      lastOutboundAt: null,
+      lastActivityAt: "2026-07-22T12:00:00.000Z",
+      snippet: "Signed up",
+      lastCanonicalEventId: "event:lifecycle-different-day-signed-up",
+      lastEventType: "lifecycle.signed_up",
+    });
+
+    const differentDayDetail = await getInboxDetail(differentDayContactId);
+
+    expect(differentDayDetail?.timeline.map((entry) => entry.id)).toEqual([
+      "timeline:lifecycle-different-day-training",
+      "timeline:lifecycle-different-day-signed-up",
+    ]);
+  });
+
   it("formats lifecycle rail dates by UTC calendar day to avoid midnight drift", async () => {
     if (runtime === null) {
       throw new Error("Expected inbox test runtime");
@@ -7201,9 +7518,9 @@ describe("real inbox selectors", () => {
         .map((entry) => entry.body) ?? [];
 
     expect(lifecycleTimelineLabels).toEqual([
+      "Completed training for PNW Biodiversity",
       "Signed up for PNW Biodiversity",
       "Received training for PNW Biodiversity",
-      "Completed training for PNW Biodiversity",
     ]);
     expect(detail?.contact.recentActivity.map((entry) => entry.label)).toEqual([
       "Completed training - PNW Biodiversity",

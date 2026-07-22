@@ -6,7 +6,10 @@ Object.assign(globalThis, { React });
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { InboxDetailViewModel } from "../../app/inbox/_lib/view-models";
+import type {
+  InboxDetailViewModel,
+  InboxTimelineEntryViewModel,
+} from "../../app/inbox/_lib/view-models";
 
 const routerPushMock = vi.hoisted(() => vi.fn());
 const routerRefreshMock = vi.hoisted(() => vi.fn());
@@ -116,7 +119,10 @@ vi.mock("../../app/inbox/_components/inbox-timeline", () => ({
   InboxTimeline: () => createElement("div", null, "Timeline"),
 }));
 
-import { InboxDetail } from "../../app/inbox/_components/inbox-detail";
+import {
+  InboxDetail,
+  sortTimelineEntries,
+} from "../../app/inbox/_components/inbox-detail";
 
 const workerRequire = createRequire(
   new URL("../../../worker/package.json", import.meta.url),
@@ -200,6 +206,37 @@ function buildDetail(
       timelineUpdatedAt: "2026-05-01T10:00:00.000Z",
       timelineCount: 0,
     },
+    ...overrides,
+  };
+}
+
+function buildTimelineEntry(
+  overrides: Partial<InboxTimelineEntryViewModel> = {},
+): InboxTimelineEntryViewModel {
+  return {
+    id: "timeline:entry",
+    kind: "inbound-email",
+    occurredAt: "2026-07-22T16:00:00.000Z",
+    occurredAtLabel: "Just now",
+    actorLabel: "Volunteer",
+    subject: "Question",
+    body: "Can you send the field packet?",
+    channel: "email",
+    isUnread: false,
+    isPreview: false,
+    fromHeader: null,
+    toHeader: null,
+    ccHeader: null,
+    mailbox: null,
+    threadId: null,
+    rfc822MessageId: null,
+    inReplyToRfc822: null,
+    sendStatus: null,
+    failedReason: null,
+    failedDetail: null,
+    attachmentCount: 0,
+    attachments: [],
+    campaignActivity: [],
     ...overrides,
   };
 }
@@ -300,6 +337,159 @@ function findButtonByLabel(
 
   return button;
 }
+
+describe("sortTimelineEntries", () => {
+  it("keeps the incident timeline strictly chronological across fixed permutations", () => {
+    const incidentEntries = [
+      buildTimelineEntry({
+        id: "timeline:received-training",
+        kind: "system-event",
+        occurredAt: "2026-07-22T12:00:00.000Z",
+        body: "Received training for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+      buildTimelineEntry({
+        id: "timeline:inbound-1559",
+        kind: "inbound-email",
+        occurredAt: "2026-07-22T15:59:00.000Z",
+        subject: "Question before training",
+        body: "I have a question before training.",
+      }),
+      buildTimelineEntry({
+        id: "timeline:outbound-1632",
+        kind: "outbound-email",
+        occurredAt: "2026-07-22T16:32:00.000Z",
+        actorLabel: "You",
+        subject: "Re: Question before training",
+        body: "Here are the details.",
+      }),
+      buildTimelineEntry({
+        id: "timeline:inbound-1645",
+        kind: "inbound-email",
+        occurredAt: "2026-07-22T16:45:00.000Z",
+        subject: "Thanks",
+        body: "Thanks for the quick reply.",
+      }),
+      buildTimelineEntry({
+        id: "timeline:signed-up",
+        kind: "system-event",
+        occurredAt: "2026-07-22T16:46:23.000Z",
+        body: "Signed up for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+      buildTimelineEntry({
+        id: "timeline:auto-1655",
+        kind: "outbound-auto-email",
+        occurredAt: "2026-07-22T16:55:00.000Z",
+        actorLabel: "Salesforce Flow",
+        subject: "Automated follow-up",
+        body: "Automated follow-up",
+        channel: "email",
+        isPreview: true,
+      }),
+    ] as const;
+    const permutations = [
+      [0, 1, 2, 3, 4, 5],
+      [4, 2, 0, 5, 1, 3],
+      [5, 3, 1, 4, 2, 0],
+      [1, 4, 3, 0, 5, 2],
+    ] as const;
+    const expectedOrder = [
+      "timeline:received-training",
+      "timeline:inbound-1559",
+      "timeline:outbound-1632",
+      "timeline:inbound-1645",
+      "timeline:signed-up",
+      "timeline:auto-1655",
+    ];
+
+    for (const permutation of permutations) {
+      const sorted = sortTimelineEntries(
+        permutation.map((index) => incidentEntries[index]),
+      );
+
+      expect(sorted.map((entry) => entry.id)).toEqual(expectedOrder);
+    }
+  });
+
+  it("reorders adjacent same-day lifecycle runs by journey order", () => {
+    const sorted = sortTimelineEntries([
+      buildTimelineEntry({
+        id: "timeline:training",
+        kind: "system-event",
+        occurredAt: "2026-07-22T12:00:00.000Z",
+        body: "Received training for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+      buildTimelineEntry({
+        id: "timeline:signed-up",
+        kind: "system-event",
+        occurredAt: "2026-07-22T12:00:00.000Z",
+        body: "Signed up for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+      buildTimelineEntry({
+        id: "timeline:completed-training",
+        kind: "system-event",
+        occurredAt: "2026-07-22T12:00:00.000Z",
+        body: "Completed training for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+    ]);
+
+    expect(sorted.map((entry) => entry.id)).toEqual([
+      "timeline:signed-up",
+      "timeline:training",
+      "timeline:completed-training",
+    ]);
+  });
+
+  it("does not reorder lifecycle chips across emails or across UTC days", () => {
+    const sorted = sortTimelineEntries([
+      buildTimelineEntry({
+        id: "timeline:day-one-training",
+        kind: "system-event",
+        occurredAt: "2026-07-21T12:00:00.000Z",
+        body: "Received training for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+      buildTimelineEntry({
+        id: "timeline:email-gap",
+        kind: "inbound-email",
+        occurredAt: "2026-07-22T15:59:00.000Z",
+        subject: "Checking timing",
+        body: "Checking timing.",
+      }),
+      buildTimelineEntry({
+        id: "timeline:day-two-signed-up",
+        kind: "system-event",
+        occurredAt: "2026-07-22T16:46:23.000Z",
+        body: "Signed up for Helio Basin",
+        subject: null,
+        actorLabel: "System",
+        channel: null,
+      }),
+    ]);
+
+    expect(sorted.map((entry) => entry.id)).toEqual([
+      "timeline:day-one-training",
+      "timeline:email-gap",
+      "timeline:day-two-signed-up",
+    ]);
+  });
+});
 
 describe("Inbox detail header", () => {
   afterEach(async () => {
