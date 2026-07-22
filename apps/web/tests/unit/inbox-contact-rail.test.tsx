@@ -139,6 +139,7 @@ function buildContact(activityCount: number): InboxContactSummaryViewModel {
     primaryPhone: "555-0100",
     joinedAtLabel: "Joined Apr 2024",
     hasUnresolved: false,
+    unresolvedCases: [],
     pinnedNote: null,
     activeProjects: [],
     pastProjects: [],

@@ -152,6 +152,7 @@ function buildDetail(
       primaryPhone: null,
       joinedAtLabel: "Joined Apr 2024",
       hasUnresolved: false,
+      unresolvedCases: [],
       pinnedNote: null,
       activeProjects: [
         {
@@ -461,6 +462,83 @@ describe("Inbox detail header", () => {
     );
 
     expect(activeSession.container.textContent).toContain("Spam");
+  });
+
+  it("renders unresolved case details, stacked cases, and a chip tooltip", async () => {
+    const detail = buildDetail();
+
+    activeSession = await renderDetail(
+      buildDetail({
+        contact: {
+          ...detail.contact,
+          hasUnresolved: true,
+          unresolvedCases: [
+            {
+              kind: "identity",
+              reasonLabel: "Possible duplicate contact",
+              explanation: "This email may already belong to another contact.",
+              otherContacts: [
+                {
+                  displayName: "Christine Very",
+                  email: "cml4355@gmail.com",
+                },
+                {
+                  displayName: "Erin Turner",
+                  email: null,
+                },
+              ],
+              moreCount: 2,
+              openedAtLabel: "2 hours ago",
+            },
+            {
+              kind: "routing",
+              reasonLabel: "Needs review",
+              explanation: "Project routing could not be determined.",
+              otherContacts: [],
+              moreCount: 0,
+              openedAtLabel: "1 hour ago",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "Possible duplicate contact",
+    );
+    expect(activeSession.container.textContent).toContain(
+      "This email may already belong to another contact.",
+    );
+    expect(activeSession.container.textContent).toContain(
+      "Matches: Christine Very (cml4355@gmail.com) · Erin Turner +2 more",
+    );
+    expect(activeSession.container.textContent).toContain("Needs review");
+    expect(activeSession.container.textContent).toContain(
+      "Project routing could not be determined.",
+    );
+    expect(
+      activeSession.container.querySelector(
+        'span[title="Possible duplicate contact · Needs review"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it("falls back to the static unresolved banner line when no case details are available", async () => {
+    const detail = buildDetail();
+
+    activeSession = await renderDetail(
+      buildDetail({
+        contact: {
+          ...detail.contact,
+          hasUnresolved: true,
+          unresolvedCases: [],
+        },
+      }),
+    );
+
+    expect(activeSession.container.textContent).toContain(
+      "Unresolved items need attention",
+    );
   });
 
   it("keeps the follow-up toggle clickable while a request is in flight and queues the latest intent", async () => {

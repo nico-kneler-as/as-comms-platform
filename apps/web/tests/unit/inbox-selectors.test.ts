@@ -70,6 +70,7 @@ import {
   getInboxTimelinePage,
   getInboxWelcomeWorkload,
   groupInboxTimelineSystemMessages,
+  mapUnresolvedReasonLabel,
   resolvePrimaryProjectForContact,
   sortMembershipsByCreatedAt,
   stripSignature,
@@ -218,6 +219,25 @@ describe("formatBubbleTimestamp", () => {
         timeZone,
       ),
     ).toBe("Nov 10, 2025");
+  });
+});
+
+describe("mapUnresolvedReasonLabel", () => {
+  it("maps known identity reasons and falls back for unknown values", () => {
+    expect(mapUnresolvedReasonLabel("identity_anchor_mismatch")).toBe(
+      "Possible duplicate contact",
+    );
+    expect(mapUnresolvedReasonLabel("identity_multi_candidate")).toBe(
+      "Multiple matching contacts",
+    );
+    expect(mapUnresolvedReasonLabel("identity_missing_anchor")).toBe(
+      "No Salesforce match",
+    );
+    expect(mapUnresolvedReasonLabel("identity_conflict")).toBe("Needs review");
+    expect(mapUnresolvedReasonLabel("routing_context_conflict")).toBe(
+      "Needs review",
+    );
+    expect(mapUnresolvedReasonLabel("future_reason_code")).toBe("Needs review");
   });
 });
 
@@ -3021,6 +3041,149 @@ describe("real inbox selectors", () => {
     });
   });
 
+  it("enriches unresolved detail cases with labels, capped matches, and newest-first ordering", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-15T12:00:00.000Z"));
+
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:duplicate-a",
+      salesforceContactId: "003-duplicate-a",
+      displayName: "Christine Very",
+      primaryEmail: "cml4355@gmail.com",
+      primaryPhone: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:duplicate-b",
+      salesforceContactId: "003-duplicate-b",
+      displayName: "Erin Turner",
+      primaryEmail: null,
+      primaryPhone: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:duplicate-c",
+      salesforceContactId: "003-duplicate-c",
+      displayName: "Morgan Lee",
+      primaryEmail: "morgan@example.org",
+      primaryPhone: null,
+    });
+    await seedInboxContact(runtime.context, {
+      contactId: "contact:duplicate-d",
+      salesforceContactId: "003-duplicate-d",
+      displayName: "Theo Banks",
+      primaryEmail: "theo@example.org",
+      primaryPhone: null,
+    });
+
+    await runtime.context.repositories.inboxProjection.upsert({
+      contactId: "contact:sarah-martinez",
+      bucket: "New",
+      needsFollowUp: true,
+      hasUnresolved: true,
+      lastInboundAt: "2026-04-14T13:00:00.000Z",
+      lastOutboundAt: "2026-04-13T12:00:00.000Z",
+      lastActivityAt: "2026-04-14T13:00:00.000Z",
+      snippet: "Still waiting on routing and identity review.",
+      lastCanonicalEventId: "event:sarah-inbound-1",
+      lastEventType: "communication.email.inbound",
+      archivedAt: null,
+    });
+
+    await runtime.context.repositories.sourceEvidence.append({
+      id: "source:identity-case-sarah",
+      provider: "gmail",
+      providerRecordType: "message",
+      providerRecordId: "identity-case-sarah",
+      receivedAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      payloadRef: "payloads/gmail/identity-case-sarah.json",
+      idempotencyKey: "gmail:identity-case-sarah",
+      checksum: "checksum:identity-case-sarah",
+    });
+    await runtime.context.repositories.identityResolutionQueue.upsert({
+      id: "identity-case-sarah",
+      sourceEvidenceId: "source:identity-case-sarah",
+      candidateContactIds: [
+        "contact:sarah-martinez",
+        "contact:duplicate-a",
+        "contact:duplicate-b",
+        "contact:duplicate-a",
+        "contact:missing",
+        "contact:duplicate-c",
+        "contact:duplicate-d",
+      ],
+      reasonCode: "identity_anchor_mismatch",
+      status: "open",
+      openedAt: "2026-04-15T10:00:00.000Z",
+      resolvedAt: null,
+      lastAttemptedAt: null,
+      normalizedIdentityValues: ["sarah@example.org"],
+      anchoredContactId: "contact:sarah-martinez",
+      explanation: "This email may already belong to another contact.",
+    });
+
+    await runtime.context.repositories.sourceEvidence.append({
+      id: "source:routing-case-sarah",
+      provider: "salesforce",
+      providerRecordType: "task",
+      providerRecordId: "routing-case-sarah",
+      receivedAt: "2026-04-15T09:00:00.000Z",
+      occurredAt: "2026-04-15T09:00:00.000Z",
+      payloadRef: "payloads/salesforce/routing-case-sarah.json",
+      idempotencyKey: "salesforce:routing-case-sarah",
+      checksum: "checksum:routing-case-sarah",
+    });
+    await runtime.context.repositories.routingReviewQueue.upsert({
+      id: "routing-case-sarah",
+      contactId: "contact:sarah-martinez",
+      sourceEvidenceId: "source:routing-case-sarah",
+      reasonCode: "routing_context_conflict",
+      status: "open",
+      openedAt: "2026-04-15T09:00:00.000Z",
+      resolvedAt: null,
+      candidateMembershipIds: [],
+      explanation: "Project routing could not be determined.",
+    });
+
+    const summary = await getInboxDetailSummary("contact:sarah-martinez");
+
+    expect(summary).not.toBeNull();
+    expect(summary?.contact.unresolvedCases).toHaveLength(2);
+    expect(summary?.contact.unresolvedCases[0]).toMatchObject({
+      kind: "identity",
+      reasonLabel: "Possible duplicate contact",
+      explanation: "This email may already belong to another contact.",
+      otherContacts: [
+        {
+          displayName: "Christine Very",
+          email: "cml4355@gmail.com",
+        },
+        {
+          displayName: "Erin Turner",
+          email: null,
+        },
+        {
+          displayName: "Morgan Lee",
+          email: "morgan@example.org",
+        },
+      ],
+      moreCount: 1,
+    });
+    expect(summary?.contact.unresolvedCases[0]?.openedAtLabel.length).toBeGreaterThan(
+      0,
+    );
+    expect(summary?.contact.unresolvedCases[1]).toMatchObject({
+      kind: "routing",
+      reasonLabel: "Needs review",
+      explanation: "Project routing could not be determined.",
+      otherContacts: [],
+      moreCount: 0,
+    });
+  });
+
   it("splits the summary and streamed timeline selectors into disjoint payloads", async () => {
     const summary = await getInboxDetailSummary("contact:sarah-martinez");
     const timeline = await getInboxDetailTimeline("contact:sarah-martinez", {
@@ -3181,6 +3344,7 @@ describe("real inbox selectors", () => {
       isArchived: false,
     });
     expect(detail?.timeline).toEqual([]);
+    expect(detail?.contact.unresolvedCases).toEqual([]);
     expect(detail?.timelinePage).toEqual({
       hasMore: false,
       hasHiddenEarlierHistory: false,
