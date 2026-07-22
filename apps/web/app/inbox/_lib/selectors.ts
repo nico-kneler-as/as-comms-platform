@@ -1815,6 +1815,94 @@ function utcCalendarDate(occurredAt: string): string {
   return occurredAt.slice(0, 10);
 }
 
+function compareOccurredAtThenIdAscending(
+  left: { readonly occurredAt: string; readonly id: string },
+  right: { readonly occurredAt: string; readonly id: string },
+): number {
+  const occurredAtDifference = left.occurredAt.localeCompare(right.occurredAt);
+
+  if (occurredAtDifference !== 0) {
+    return occurredAtDifference;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function reorderAdjacentLifecycleRuns<T>(input: {
+  readonly items: readonly T[];
+  readonly isLifecycle: (item: T) => boolean;
+  readonly getOccurredAt: (item: T) => string;
+  readonly getOrdinal: (item: T) => number | null;
+  readonly compareChronologically: (left: T, right: T) => number;
+}): readonly T[] {
+  const reorderedItems = [...input.items];
+  let runStart = 0;
+
+  while (runStart < reorderedItems.length) {
+    const firstItem = reorderedItems[runStart];
+
+    if (firstItem === undefined) {
+      break;
+    }
+
+    if (!input.isLifecycle(firstItem)) {
+      runStart += 1;
+      continue;
+    }
+
+    const runDate = utcCalendarDate(input.getOccurredAt(firstItem));
+    let runEnd = runStart + 1;
+
+    while (runEnd < reorderedItems.length) {
+      const nextItem = reorderedItems[runEnd];
+
+      if (nextItem === undefined) {
+        break;
+      }
+
+      if (
+        !input.isLifecycle(nextItem) ||
+        utcCalendarDate(input.getOccurredAt(nextItem)) !== runDate
+      ) {
+        break;
+      }
+
+      runEnd += 1;
+    }
+
+    if (runEnd - runStart > 1) {
+      const runItems = reorderedItems.slice(runStart, runEnd);
+      const knownLifecycleItems = runItems
+        .filter((item) => input.getOrdinal(item) !== null)
+        .sort((left, right) => {
+          const ordinalDifference =
+            (input.getOrdinal(left) ?? Number.MAX_SAFE_INTEGER) -
+            (input.getOrdinal(right) ?? Number.MAX_SAFE_INTEGER);
+
+          if (ordinalDifference !== 0) {
+            return ordinalDifference;
+          }
+
+          return input.compareChronologically(left, right);
+        });
+      const unknownLifecycleItems = runItems.filter(
+        (item) => input.getOrdinal(item) === null,
+      );
+
+      reorderedItems.splice(
+        runStart,
+        runItems.length,
+        ...knownLifecycleItems,
+        ...unknownLifecycleItems,
+      );
+    }
+
+    runStart = runEnd;
+  }
+
+  return reorderedItems;
+}
+
 function compareLifecycleActivityAscending(
   left: Extract<TimelineItem, { family: "salesforce_event" }>,
   right: Extract<TimelineItem, { family: "salesforce_event" }>,
@@ -1839,30 +1927,43 @@ function compareLifecycleActivityAscending(
 function reorderLifecycleTimelineItems(
   timelineItems: readonly TimelineItem[],
 ): readonly TimelineItem[] {
-  const lifecycleItems: Extract<
-    TimelineItem,
-    { family: "salesforce_event" }
-  >[] = [];
+  return reorderAdjacentLifecycleRuns({
+    items: [...timelineItems].sort(compareOccurredAtThenIdAscending),
+    isLifecycle: (
+      item,
+    ): item is Extract<TimelineItem, { family: "salesforce_event" }> =>
+      item.family === "salesforce_event",
+    getOccurredAt: (item) => item.occurredAt,
+    getOrdinal: (item) =>
+      item.family === "salesforce_event"
+        ? lifecycleMilestoneOrdinal(item.milestone)
+        : null,
+    compareChronologically: compareOccurredAtThenIdAscending,
+  });
+}
 
-  for (const item of timelineItems) {
-    if (item.family !== "salesforce_event") {
-      continue;
-    }
+function isLifecycleTimelineEntry(
+  entry: InboxTimelineEntryViewModel,
+): entry is InboxTimelineEntryViewModel & { kind: "system-event" } {
+  return entry.kind === "system-event";
+}
 
-    lifecycleItems.push(item);
-  }
+function compareTimelineEntriesChronologically(
+  left: InboxTimelineEntryViewModel,
+  right: InboxTimelineEntryViewModel,
+): number {
+  return compareOccurredAtThenIdAscending(left, right);
+}
 
-  const orderedLifecycleItems = lifecycleItems.sort(
-    compareLifecycleActivityAscending,
-  );
-
-  return timelineItems.map((item) => {
-    if (item.family !== "salesforce_event") {
-      return item;
-    }
-
-    const next = orderedLifecycleItems.shift();
-    return next ?? item;
+function reorderLifecycleTimelineEntryRuns(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelineEntryViewModel[] {
+  return reorderAdjacentLifecycleRuns({
+    items: entries,
+    isLifecycle: isLifecycleTimelineEntry,
+    getOccurredAt: (entry) => entry.occurredAt,
+    getOrdinal: timelineLifecycleEntryOrdinal,
+    compareChronologically: compareTimelineEntriesChronologically,
   });
 }
 
@@ -5003,41 +5104,15 @@ function compareLifecycleTimelineEntries(
   left: InboxTimelineEntryViewModel,
   right: InboxTimelineEntryViewModel,
 ): number {
-  const leftDate = utcCalendarDate(left.occurredAt);
-  const rightDate = utcCalendarDate(right.occurredAt);
-
-  if (leftDate !== rightDate) {
-    return leftDate.localeCompare(rightDate);
-  }
-
-  const leftOrdinal = timelineLifecycleEntryOrdinal(left) ?? 0;
-  const rightOrdinal = timelineLifecycleEntryOrdinal(right) ?? 0;
-
-  if (leftOrdinal !== rightOrdinal) {
-    return leftOrdinal - rightOrdinal;
-  }
-
-  return left.id.localeCompare(right.id);
+  return compareTimelineEntriesChronologically(left, right);
 }
 
 function reorderLifecycleTimelineEntries(
   entries: readonly InboxTimelineEntryViewModel[],
 ): readonly InboxTimelineEntryViewModel[] {
-  const lifecycleEntries = entries.filter(
-    (entry) => timelineLifecycleEntryOrdinal(entry) !== null,
+  return reorderLifecycleTimelineEntryRuns(
+    [...entries].sort(compareLifecycleTimelineEntries),
   );
-  const orderedLifecycleEntries = lifecycleEntries.sort(
-    compareLifecycleTimelineEntries,
-  );
-
-  return entries.map((entry) => {
-    if (timelineLifecycleEntryOrdinal(entry) === null) {
-      return entry;
-    }
-
-    const next = orderedLifecycleEntries.shift();
-    return next ?? entry;
-  });
 }
 
 function matchesServerFilter(

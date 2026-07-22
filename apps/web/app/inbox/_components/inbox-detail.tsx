@@ -182,10 +182,102 @@ function buildTimelineReplyContext(input: {
   };
 }
 
-function sortTimelineEntries(
+function compareTimelineChronologically(
+  left: Pick<InboxTimelineEntryViewModel, "occurredAt" | "id">,
+  right: Pick<InboxTimelineEntryViewModel, "occurredAt" | "id">,
+): number {
+  const occurredAtDifference = left.occurredAt.localeCompare(right.occurredAt);
+
+  if (occurredAtDifference !== 0) {
+    return occurredAtDifference;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function isTimelineLifecycleEntry(
+  entry: InboxTimelineEntryViewModel,
+): entry is InboxTimelineEntryViewModel & { kind: "system-event" } {
+  return entry.kind === "system-event";
+}
+
+function reorderAdjacentLifecycleTimelineRuns(
   entries: readonly InboxTimelineEntryViewModel[],
 ): readonly InboxTimelineEntryViewModel[] {
-  return [...entries].sort(compareTimelineEntries);
+  const reorderedEntries = [...entries];
+  let runStart = 0;
+
+  while (runStart < reorderedEntries.length) {
+    const firstEntry = reorderedEntries[runStart];
+
+    if (firstEntry === undefined) {
+      break;
+    }
+
+    if (!isTimelineLifecycleEntry(firstEntry)) {
+      runStart += 1;
+      continue;
+    }
+
+    const runDate = firstEntry.occurredAt.slice(0, 10);
+    let runEnd = runStart + 1;
+
+    while (runEnd < reorderedEntries.length) {
+      const nextEntry = reorderedEntries[runEnd];
+
+      if (nextEntry === undefined) {
+        break;
+      }
+
+      if (
+        !isTimelineLifecycleEntry(nextEntry) ||
+        nextEntry.occurredAt.slice(0, 10) !== runDate
+      ) {
+        break;
+      }
+
+      runEnd += 1;
+    }
+
+    if (runEnd - runStart > 1) {
+      const runEntries = reorderedEntries.slice(runStart, runEnd);
+      const knownLifecycleEntries = runEntries
+        .filter((entry) => timelineLifecycleOrdinal(entry) !== null)
+        .sort((left, right) => {
+          const ordinalDifference =
+            (timelineLifecycleOrdinal(left) ?? Number.MAX_SAFE_INTEGER) -
+            (timelineLifecycleOrdinal(right) ?? Number.MAX_SAFE_INTEGER);
+
+          if (ordinalDifference !== 0) {
+            return ordinalDifference;
+          }
+
+          return compareTimelineChronologically(left, right);
+        });
+      const unknownLifecycleEntries = runEntries.filter(
+        (entry) => timelineLifecycleOrdinal(entry) === null,
+      );
+
+      reorderedEntries.splice(
+        runStart,
+        runEntries.length,
+        ...knownLifecycleEntries,
+        ...unknownLifecycleEntries,
+      );
+    }
+
+    runStart = runEnd;
+  }
+
+  return reorderedEntries;
+}
+
+export function sortTimelineEntries(
+  entries: readonly InboxTimelineEntryViewModel[],
+): readonly InboxTimelineEntryViewModel[] {
+  return reorderAdjacentLifecycleTimelineRuns(
+    [...entries].sort(compareTimelineEntries),
+  );
 }
 
 function timelineLifecycleOrdinal(
@@ -220,26 +312,7 @@ function compareTimelineEntries(
   left: InboxTimelineEntryViewModel,
   right: InboxTimelineEntryViewModel,
 ): number {
-  const leftDate = left.occurredAt.slice(0, 10);
-  const rightDate = right.occurredAt.slice(0, 10);
-
-  if (leftDate !== rightDate) {
-    return left.occurredAt.localeCompare(right.occurredAt);
-  }
-
-  const leftLifecycleOrdinal = timelineLifecycleOrdinal(left);
-  const rightLifecycleOrdinal = timelineLifecycleOrdinal(right);
-
-  if (leftLifecycleOrdinal !== null && rightLifecycleOrdinal !== null) {
-    const lifecycleDifference =
-      leftLifecycleOrdinal - rightLifecycleOrdinal;
-
-    if (lifecycleDifference !== 0) {
-      return lifecycleDifference;
-    }
-  }
-
-  return left.occurredAt.localeCompare(right.occurredAt);
+  return compareTimelineChronologically(left, right);
 }
 
 function realEntryMatchesOptimistic(
