@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import type {
+  CanonicalEventRecord,
+  InboxProjectionRow,
+  SourceEvidenceRecord
+} from "@as-comms/contracts";
 
 import {
   createStage1NormalizationService,
-  createStage1PersistenceService
+  createStage1PersistenceService,
+  rebuildInboxProjectionForContact
 } from "@as-comms/domain";
 
 import { createTestStage1Context } from "./helpers.js";
@@ -263,6 +269,122 @@ function buildSalesforceOutboundEmailFixture(input: {
   };
 }
 
+function buildReplaySourceEvidence(input: {
+  readonly key: string;
+  readonly provider: SourceEvidenceRecord["provider"];
+  readonly providerRecordType: string;
+  readonly occurredAt: string;
+}): SourceEvidenceRecord {
+  return {
+    id: `sev_${input.key}`,
+    provider: input.provider,
+    providerRecordType: input.providerRecordType,
+    providerRecordId: `${input.provider}-${input.key}`,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `payloads/${input.provider}/${input.key}.json`,
+    idempotencyKey: `${input.provider}:${input.providerRecordType}:${input.key}`,
+    checksum: `checksum:${input.key}`
+  };
+}
+
+function buildReplayCanonicalEvent(input: {
+  readonly key: string;
+  readonly contactId: string;
+  readonly eventType: CanonicalEventRecord["eventType"];
+  readonly occurredAt: string;
+  readonly provider: CanonicalEventRecord["provenance"]["primaryProvider"];
+  readonly sourceRecordType: string;
+  readonly direction: CanonicalEventRecord["provenance"]["direction"];
+}): CanonicalEventRecord {
+  return {
+    id: `evt_${input.key}`,
+    contactId: input.contactId,
+    eventType: input.eventType,
+    channel:
+      input.eventType === "campaign.email.sent"
+        ? "campaign_email"
+        : input.eventType.startsWith("communication.email.")
+          ? "email"
+          : "sms",
+    occurredAt: input.occurredAt,
+    contentFingerprint: null,
+    sourceEvidenceId: `sev_${input.key}`,
+    idempotencyKey: `canonical:${input.key}`,
+    provenance: {
+      primaryProvider: input.provider,
+      primarySourceEvidenceId: `sev_${input.key}`,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType: input.sourceRecordType,
+      sourceRecordId: `${input.provider}-${input.key}`,
+      messageKind:
+        input.eventType === "campaign.email.sent" ? null : "one_to_one",
+      campaignRef: null,
+      threadRef:
+        input.eventType === "campaign.email.sent"
+          ? null
+          : {
+              crossProviderCollapseKey: null,
+              providerThreadId: null
+            },
+      direction: input.direction,
+      notes: null
+    },
+    reviewState: "clear"
+  };
+}
+
+async function seedReplayCanonicalEvent(
+  context: Awaited<ReturnType<typeof seedContactWithEmail>>,
+  input: {
+    readonly key: string;
+    readonly contactId: string;
+    readonly eventType: CanonicalEventRecord["eventType"];
+    readonly occurredAt: string;
+    readonly provider: CanonicalEventRecord["provenance"]["primaryProvider"];
+    readonly sourceRecordType: string;
+    readonly direction: CanonicalEventRecord["provenance"]["direction"];
+  }
+) {
+  await context.repositories.sourceEvidence.append(
+    buildReplaySourceEvidence({
+      key: input.key,
+      provider: input.provider,
+      providerRecordType: input.sourceRecordType,
+      occurredAt: input.occurredAt
+    })
+  );
+
+  return context.repositories.canonicalEvents.upsert(
+    buildReplayCanonicalEvent(input)
+  );
+}
+
+function buildExistingInboxProjection(input: {
+  readonly contactId: string;
+  readonly bucket: InboxProjectionRow["bucket"];
+  readonly lastInboundAt: string | null;
+  readonly lastOutboundAt: string | null;
+  readonly lastActivityAt: string;
+  readonly lastCanonicalEventId: string;
+  readonly lastEventType: InboxProjectionRow["lastEventType"];
+}): InboxProjectionRow {
+  return {
+    contactId: input.contactId,
+    bucket: input.bucket,
+    needsFollowUp: false,
+    hasUnresolved: false,
+    lastInboundAt: input.lastInboundAt,
+    lastOutboundAt: input.lastOutboundAt,
+    lastActivityAt: input.lastActivityAt,
+    snippet: "Existing snippet",
+    archivedAt: null,
+    lastCanonicalEventId: input.lastCanonicalEventId,
+    lastEventType: input.lastEventType
+  };
+}
+
 async function expectExactlyOneCanonicalEvent(
   context: Awaited<ReturnType<typeof seedContactWithEmail>>,
   contactId: string
@@ -287,6 +409,255 @@ async function expectExactlyOneCanonicalEvent(
     timelineProjection
   };
 }
+
+describe("rebuildInboxProjectionForContact historical inbound horizons", () => {
+  it("keeps Opened when the stored projection predates inbound tracking and only historical inbound exists", async () => {
+    const context = await seedContactWithEmail("legacy-opened@example.org", {
+      contactId: "contact_legacy_opened",
+      displayName: "Legacy Opened"
+    });
+    const oldInbound = await seedReplayCanonicalEvent(context, {
+      key: "legacy-opened-old-inbound",
+      contactId: "contact_legacy_opened",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-01-15T12:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+    const campaignSent = await seedReplayCanonicalEvent(context, {
+      key: "legacy-opened-campaign",
+      contactId: "contact_legacy_opened",
+      eventType: "campaign.email.sent",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      direction: "outbound"
+    });
+
+    await context.persistence.saveInboxProjection(
+      buildExistingInboxProjection({
+        contactId: "contact_legacy_opened",
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: campaignSent.occurredAt,
+        lastActivityAt: campaignSent.occurredAt,
+        lastCanonicalEventId: campaignSent.id,
+        lastEventType: campaignSent.eventType
+      })
+    );
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.persistence,
+      "contact_legacy_opened"
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: oldInbound.occurredAt
+    });
+  });
+
+  it("flips to New when inbound is newer than the legacy projection activity horizon", async () => {
+    const context = await seedContactWithEmail("legacy-newer@example.org", {
+      contactId: "contact_legacy_newer",
+      displayName: "Legacy Newer"
+    });
+    const newerInbound = await seedReplayCanonicalEvent(context, {
+      key: "legacy-newer-inbound",
+      contactId: "contact_legacy_newer",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-07-20T16:05:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+    const campaignSent = await seedReplayCanonicalEvent(context, {
+      key: "legacy-newer-campaign",
+      contactId: "contact_legacy_newer",
+      eventType: "campaign.email.sent",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      direction: "outbound"
+    });
+
+    await context.persistence.saveInboxProjection(
+      buildExistingInboxProjection({
+        contactId: "contact_legacy_newer",
+        bucket: "Opened",
+        lastInboundAt: null,
+        lastOutboundAt: campaignSent.occurredAt,
+        lastActivityAt: campaignSent.occurredAt,
+        lastCanonicalEventId: campaignSent.id,
+        lastEventType: campaignSent.eventType
+      })
+    );
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.persistence,
+      "contact_legacy_newer"
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: newerInbound.occurredAt
+    });
+  });
+
+  it("keeps the existing behavior when stored lastInboundAt is present and a strictly newer inbound exists", async () => {
+    const context = await seedContactWithEmail("existing-inbound@example.org", {
+      contactId: "contact_existing_inbound",
+      displayName: "Existing Inbound"
+    });
+    await seedReplayCanonicalEvent(context, {
+      key: "existing-inbound-first",
+      contactId: "contact_existing_inbound",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-07-20T15:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+    const newerInbound = await seedReplayCanonicalEvent(context, {
+      key: "existing-inbound-latest",
+      contactId: "contact_existing_inbound",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+
+    await context.persistence.saveInboxProjection(
+      buildExistingInboxProjection({
+        contactId: "contact_existing_inbound",
+        bucket: "Opened",
+        lastInboundAt: "2026-07-20T15:00:00.000Z",
+        lastOutboundAt: null,
+        lastActivityAt: "2026-07-20T15:00:00.000Z",
+        lastCanonicalEventId: "evt_existing-inbound-first",
+        lastEventType: "communication.email.inbound"
+      })
+    );
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.persistence,
+      "contact_existing_inbound"
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: newerInbound.occurredAt
+    });
+  });
+
+  it("preserves the bucket when stored lastInboundAt already matches the newest inbound", async () => {
+    const context = await seedContactWithEmail("same-inbound@example.org", {
+      contactId: "contact_same_inbound",
+      displayName: "Same Inbound"
+    });
+    const inbound = await seedReplayCanonicalEvent(context, {
+      key: "same-inbound",
+      contactId: "contact_same_inbound",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+
+    await context.persistence.saveInboxProjection(
+      buildExistingInboxProjection({
+        contactId: "contact_same_inbound",
+        bucket: "Opened",
+        lastInboundAt: inbound.occurredAt,
+        lastOutboundAt: null,
+        lastActivityAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+        lastEventType: inbound.eventType
+      })
+    );
+
+    const projection = await rebuildInboxProjectionForContact(
+      context.persistence,
+      "contact_same_inbound"
+    );
+
+    expect(projection).toMatchObject({
+      bucket: "Opened",
+      lastInboundAt: inbound.occurredAt
+    });
+  });
+
+  it("uses the fallback bucket rules when no projection exists", async () => {
+    const inboundContext = await seedContactWithEmail("fresh-inbound@example.org", {
+      contactId: "contact_fresh_inbound",
+      displayName: "Fresh Inbound"
+    });
+    const inbound = await seedReplayCanonicalEvent(inboundContext, {
+      key: "fresh-inbound",
+      contactId: "contact_fresh_inbound",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+
+    const inboundProjection = await rebuildInboxProjectionForContact(
+      inboundContext.persistence,
+      "contact_fresh_inbound"
+    );
+
+    expect(inboundProjection).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt
+    });
+
+    const campaignContext = await seedContactWithEmail("fresh-campaign@example.org", {
+      contactId: "contact_fresh_campaign",
+      displayName: "Fresh Campaign"
+    });
+    await seedReplayCanonicalEvent(campaignContext, {
+      key: "fresh-campaign-old-inbound",
+      contactId: "contact_fresh_campaign",
+      eventType: "communication.email.inbound",
+      occurredAt: "2026-01-15T12:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "inbound"
+    });
+    await seedReplayCanonicalEvent(campaignContext, {
+      key: "fresh-campaign-outbound",
+      contactId: "contact_fresh_campaign",
+      eventType: "communication.email.outbound",
+      occurredAt: "2026-07-20T15:00:00.000Z",
+      provider: "gmail",
+      sourceRecordType: "message",
+      direction: "outbound"
+    });
+    await seedReplayCanonicalEvent(campaignContext, {
+      key: "fresh-campaign-latest",
+      contactId: "contact_fresh_campaign",
+      eventType: "campaign.email.sent",
+      occurredAt: "2026-07-20T16:00:00.000Z",
+      provider: "mailchimp",
+      sourceRecordType: "campaign_activity",
+      direction: "outbound"
+    });
+
+    const campaignProjection = await rebuildInboxProjectionForContact(
+      campaignContext.persistence,
+      "contact_fresh_campaign"
+    );
+
+    expect(campaignProjection).toMatchObject({
+      bucket: "Opened",
+      lastOutboundAt: "2026-07-20T16:00:00.000Z"
+    });
+  });
+});
 
 describe("Stage 1 normalization service", () => {
   it("upserts canonical contact graph state through the application boundary", async () => {
