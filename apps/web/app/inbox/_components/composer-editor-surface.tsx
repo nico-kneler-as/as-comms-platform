@@ -365,10 +365,10 @@ export function RichTextComposerEditor({
   const showPlaceholder = bodyPlaintext.length === 0;
 
   return (
-    <div className={cn(className)}>
+    <div className={cn("min-h-0", className)}>
       <div
         className={cn(
-          `border border-slate-200 bg-white ${SHADOW.sm}`,
+          `min-h-0 border border-slate-200 bg-white ${SHADOW.sm}`,
           frameClassName,
         )}
       >
@@ -377,7 +377,7 @@ export function RichTextComposerEditor({
         ) : null}
         {topSlot}
         <div
-          className={cn("relative min-h-44", contentClassName)}
+          className={cn("relative min-h-44 flex-1", contentClassName)}
           onKeyDown={handleKeyDown}
         >
           <EditorContent editor={editor} className="h-full" />

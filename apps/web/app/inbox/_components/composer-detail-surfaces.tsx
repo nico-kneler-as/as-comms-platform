@@ -625,14 +625,14 @@ export function ComposerEmailSurface({
             ) : null}
           </ComposerField>
 
-          <div className="relative">
+          <div className="relative flex min-h-0 flex-1 flex-col">
             <RichTextComposerEditor
               bodyPlaintext={body}
-              className="flex flex-col"
+              className="flex min-h-0 flex-1 flex-col"
               contentClassName=""
               errorMessage={bodyError?.message}
               frameClassName={cn(
-                "flex flex-col border-x-0 border-b-0 shadow-none transition-opacity duration-300",
+                "flex min-h-0 flex-1 flex-col border-x-0 border-b-0 shadow-none transition-opacity duration-300",
                 polishPhase === "busy" ? "opacity-40" : "",
               )}
               onChange={(nextBody) => {
