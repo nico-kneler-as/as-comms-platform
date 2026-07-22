@@ -1786,7 +1786,13 @@ export async function rebuildInboxProjectionForContact(
 
   const hasNewerInbound =
     lastInboundAt !== null &&
-    (existing?.lastInboundAt == null || lastInboundAt > existing.lastInboundAt);
+    existing !== null &&
+    // A null stored lastInboundAt means this projection predates inbound
+    // tracking. Backfilled history must not reopen it; only inbound newer
+    // than the projection's known activity horizon may flip it to New.
+    (existing.lastInboundAt !== null
+      ? lastInboundAt > existing.lastInboundAt
+      : lastInboundAt > existing.lastActivityAt);
   const latestOutboundIsInThreadReply =
     latestOutboundMatchesEarlierInboundThread({
       latestEvent,
