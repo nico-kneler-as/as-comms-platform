@@ -5,6 +5,7 @@
 **Parent design brief:** [docs/design-briefs/stage-5a-campaigns.md](stage-5a-campaigns.md)
 **Scope:** Compose-step `html_email` variant only. All other wizard steps reuse Stage 5A surfaces unchanged.
 **Last updated:** 2026-06-08
+**Historical note:** Historical design brief — HTML composer (D-050) and SMS broadcasts have since shipped; see `campaigns-bundle.md`.
 
 ---
 
@@ -48,6 +49,7 @@ Only Step 4 changes. Everything else inherits unchanged.
 **Purpose:** operator builds the HTML email body using Unlayer's drag-and-drop editor. Subject, preheader, and sender fields surround the editor the same way they do in the Markdown variant.
 
 **Required elements:**
+
 - Step header — same component as Normal Email path; copy: "Compose your HTML email"
 - Subject + preheader + sender fields above the editor (reuse Normal Email components verbatim)
 - Unlayer editor host — iframe that takes the full content width of the wizard column, ~700px tall by default, expandable
@@ -55,6 +57,7 @@ Only Step 4 changes. Everything else inherits unchanged.
 - Footer text: "The AS unsubscribe footer is added automatically. You don't need to add one." — small, slate-500, below the editor
 
 **States to design:**
+
 - **Empty / first-load** — operator just picked HTML Email and arrived at Step 4. Editor opens to the brand-default starter (AS logo + placeholder text block + AS footer). NOT a blank canvas.
 - **Resume / saved draft** — operator left the wizard and came back. Editor reopens to the operator's last-saved design. Persistent loading state while the design rehydrates (typical 200-500ms).
 - **Loading** — editor iframe hasn't loaded yet. Show a neutral skeleton that matches the editor's eventual footprint; do NOT show Unlayer's branded loading spinner.
@@ -73,6 +76,7 @@ Only Step 4 changes. Everything else inherits unchanged.
 ### Step 1 — Launch type (small delta)
 
 **What changes:**
+
 - Remove the `disabled` state on the HTML Email card
 - Remove the COMING SOON tag on the HTML Email card
 - Update the disclaimer at the bottom: today says "Phase A ships Normal Email only. HTML Email arrives once the drag-and-drop builder lands; SMS follows." — change to "SMS arrives once carrier approval lands." (only SMS remains gated)

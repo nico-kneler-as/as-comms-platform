@@ -4,6 +4,7 @@
 **Audience:** implementers working on one-to-one operator workflows  
 **When to read:** before Inbox routes, queue logic, timeline logic, or reply flows  
 **Authority:** derivative bundle; core truth lives in `01-core/*`
+**Last reviewed:** 2026-07-23
 
 ## Purpose
 
@@ -25,13 +26,13 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 - one row per person, not one row per thread
 - one mixed contact list sorted by most recent inbound message
-- `New` and `Opened` are projection-driven by default, with operator-explicit overrides: opening a thread marks it `Opened` and the "Mark as unread" action flips it back to `New`. Shared across operators (single stored `bucket` column, no per-user read state). A new inbound with `occurredAt > existingLastInboundAt` resets the contact bucket to `New` regardless of prior state; out-of-order or historical-replay ingests do not disturb operator bucket state.
+- `New` and `Opened` are projection-driven by default, with operator-explicit overrides: opening a thread marks it `Opened` and the "Mark as unread" action flips it back to `New`. Shared across operators (single stored `bucket` column, no per-user read state). Live apply keeps the existing incremental rule: inbound strictly newer than stored `lastInboundAt` flips the row to `New` (or any inbound when `lastInboundAt` is null). Rebuild/replay is narrower: a null stored `lastInboundAt` means the row predates inbound tracking, so backfilled history reopens only when inbound is newer than stored `lastActivityAt`.
 - unread comes from bucket state
 - `needsFollowUp` is an explicit operator-controlled follow-up flag, not a bucket synonym (pure toggle, no auto-clear on inbound/reply/bucket transitions)
 - unresolved review layers on top of the row state model
 - `hasUnresolved` triggers only on genuine ambiguity cases (`identity_multi_candidate`, `identity_conflict`, `identity_anchor_mismatch`, replay/collapse conflicts), and routing review cases only for Salesforce-anchored contacts (per `D-027`, `D-028`)
 - the contact rail shows lifecycle activity only; 1:1 email and SMS render in the main timeline
-- the unresolved state in the detail pane replaces the normal "Volunteer details" rail trigger with an "Unresolved details" rail that explains the specific reason and provides a searchbar over Salesforce-anchored canonical contacts to manually link
+- the unresolved state in the shipped detail pane is display-only: banner + chip surface the specific reason label, the stored case explanation, and up to three conflicting contacts (`+N more` when truncated). Resolve actions remain deferred.
 - send and compose details live in the Composer stage (see `D-026`); inbox stage covers read, overlays, and follow-up toggle
 - internal notes are included and stored separately from the canonical event ledger (per `D-029`); team-visible, plain text, inline in the timeline
 - owners and tags are not in the first Inbox release
@@ -43,7 +44,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 - contact-centric queue read model
 - per-person timeline read model (unions canonical events + operator-authored notes)
-- manual identity resolution path (invoked from the unresolved-details rail variant)
+- unresolved review evidence surface (shipped detail is display-only; resolve actions remain deferred)
 - note-taking support (team-visible, plain text)
 - project context and relevant memberships with links to the Expedition Member Salesforce record per project
 - reply by email and eligible SMS **is Composer stage scope**, not Inbox stage scope (see `D-026`)
@@ -51,23 +52,25 @@ Build the one-to-one operator workspace on top of canonical projections.
 
 ## Allowed / Not Allowed
 
-| Allowed | Not allowed |
-| --- | --- |
-| projection-driven bucket state plus explicit follow-up flags | UI-owned queue state |
-| one mixed contact list with secondary row-state filters | resurrecting queue-tab-first or `Closed` / reopen lifecycle logic in first release |
-| unresolved overlays and review queues | treating unresolved as its own queue bucket |
-| timeline + notes in one workspace | thread-first Inbox behavior |
+| Allowed                                                      | Not allowed                                                                        |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| projection-driven bucket state plus explicit follow-up flags | UI-owned queue state                                                               |
+| one mixed contact list with secondary row-state filters      | resurrecting queue-tab-first or `Closed` / reopen lifecycle logic in first release |
+| unresolved overlays and review queues                        | treating unresolved as its own queue bucket                                        |
+| timeline + notes in one workspace                            | thread-first Inbox behavior                                                        |
 
 ## Acceptance
 
 - queue bucket transitions are driven by a mix of projection rebuilds (on new inbound) and operator-explicit overrides (mark-opened on thread open, mark-unread via the detail-pane button)
+- rebuild/replay and incremental live apply preserve their distinct `New` rules; backfilled history must not reopen pre-tracking rows unless inbound crosses the stored activity horizon
 - default Inbox ordering is `lastInboundAt desc`, with `lastActivityAt desc` fallback when `lastInboundAt` is missing
 - inbox row label matches the sort key: uses `lastInboundAt ?? lastActivityAt` so the list is visually monotonic
 - unread filter keys off bucket state, follow-up filter keys off `needsFollowUp`, and unresolved filter keys off `hasUnresolved`
 - read state is shared across operators (single stored `bucket` column, no per-user read state)
 - timeline remains correct for volunteers and non-volunteer contacts
-- unresolved/manual-link flows refresh context without duplicate history
+- unresolved detail surfaces refresh with current case detail without duplicate history
 - opening, replying, new inbound resets, and follow-up toggles stay consistent without collapsing bucket and follow-up semantics
+- timeline ordering is strictly chronological (`occurredAt`, ID tie-break); volunteer-lifecycle reordering applies only inside adjacent same-day lifecycle runs and never displaces a message
 - broadcast events do not mutate Inbox bucket state
 - inbox server views render dynamically (D-040): `revalidateInboxContact` is preserved as an integration point but currently a no-op; interactive actions call `router.refresh()` to re-read fresh server-rendered state without disturbing client editor / composer state
 - staff/admin Gmail delivered to the monitored inbox counts as inbound attention unless it is sent from the monitored mailbox/project alias itself (D-041); do not broaden the default Inbox beyond inbound 1:1 communication rows
@@ -76,6 +79,7 @@ Build the one-to-one operator workspace on top of canonical projections.
 - inbox search is unified into a single header search bar with two-section results (contact-attribute matches on top; projection snippet+subject matches below). Min query length 3 + 400ms debounce; each section capped at 25 in v1. The dedicated `/inbox/all-contacts` route shipped in PR #374 is removed in PR #379
 - connected sub-projects (per `D-044`) are excluded from the Inbox project filter dropdown — their volunteer activity rolls into the host's filter selection
 - unread blue dot renders on Inbox list rows for `bucket='new'` items (PR #404); paired with the unread count in the list header title (PR #401)
+- unresolved detail surfaces show the mapped reason label (`Possible duplicate contact`, `Multiple matching contacts`, `No Salesforce match`, fallback `Needs review`), the stored explanation text, and up to three conflicting contacts
 
 ## Common Failure Modes
 

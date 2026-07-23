@@ -4,6 +4,7 @@
 **Audience:** implementers working on one-to-many messaging  
 **When to read:** before broadcast audience, compose, review, send, or monitor work  
 **Authority:** derivative bundle; core truth lives in `01-core/*`
+**Last reviewed:** 2026-07-23
 
 ## Purpose
 
@@ -28,12 +29,12 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - audience uses canonical platform identity and exclusions
 - broadcast content, review state, and frozen audience remain product-owned
 - Postmark is the Email delivery provider, not the authoring source of truth (`D-045`). Currently on the 10K tier (5A + HTML composer); 50K-tier upgrade triggers when Stage 5C newsletter migration begins production sending.
-- Stage structure locked by `D-046` (2026-05-19), current state as of 2026-07-05:
+- Stage structure locked by `D-046` (2026-05-19), current state as of 2026-07-23:
   - **Stage 5A** — Email Broadcasts (project-scope, Markdown composer): **shipped + validated** (validation cleared 2026-06-08; #418-#436).
-  - **Stage 5B** — SMS: **1:1 platform LIVE 2026-07-01** (A2P 10DLC approved); **SMS Broadcasts in flight** per PRD [#589](https://github.com/nico-kneler-as/as-comms-platform/issues/589).
+  - **Stage 5B** — SMS: **1:1 platform LIVE 2026-07-01** (A2P 10DLC approved); **SMS Broadcasts shipped**. Worker send path is `sms-broadcast-send`; run detail reads live `sms_messages` state (`queued`, `sent`, `delivered`, `failed`, `undelivered`, `suppressed`).
   - **Stage 5C** in three carve-outs — **HTML composer** (`kind='project'` only, Unlayer): **shipped 2026-06-09** per PRD [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536), locked as `D-050`. **Newsletter migration**: in flight per PRD [#584](https://github.com/nico-kneler-as/as-comms-platform/issues/584), locked as `D-051` (newsletter audience is a separate store: `newsletter_subscribers` + `newsletter_suppressions`, NOT `contacts`). **Mailchimp decommission**: still deferred, gated on real production use of the new newsletter path.
   - **Stage 6** — Workflows replacing Salesforce Auto-Emails: roadmap intent only, no product definition yet.
-  Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
+    Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
 - Org senders are first-class alongside project aliases (`D-052`, PRD #577): `org_senders` table represents cross-project or org-scoped senders like `newsletter@`. Composer's sender picker gates audience modes by sender type.
 - Broadcast media assets live on Cloudflare R2 (bucket `as-comms-images`; PRD #567). Composer's image upload path optimizes via `sharp` before storing.
 - Mailchimp remains historical + transition-period live ingest scope until Stage 5C decommissions it
@@ -46,16 +47,20 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - compose, preview, and optional test send
 - frozen review and final confirmation
 - send now, schedule, monitoring, cancel, retry
+- live metric tiles for email and SMS runs
+- email subject-variant breakdown for A/B tests
+- link-click panel and bot/scanner activity panel for email runs
+- CSV audience import for project email runs
 - timeline visibility for broadcast events
 
 ## Allowed / Not Allowed
 
-| Allowed | Not allowed |
-| --- | --- |
-| Email-first rollout | early bulk SMS expansion before Email trust is proven |
-| product-owned broadcast review state | provider-owned authoring truth |
-| broadcast timeline visibility | broadcast events mutating Inbox bucket state |
-| transition-period Mailchimp ingest | treating Mailchimp as the future authoring UX |
+| Allowed                              | Not allowed                                           |
+| ------------------------------------ | ----------------------------------------------------- |
+| Email-first rollout                  | early bulk SMS expansion before Email trust is proven |
+| product-owned broadcast review state | provider-owned authoring truth                        |
+| broadcast timeline visibility        | broadcast events mutating Inbox bucket state          |
+| transition-period Mailchimp ingest   | treating Mailchimp as the future authoring UX         |
 
 ## Acceptance
 
@@ -63,6 +68,10 @@ Add one-to-many messaging inside the same product foundation, with Email first a
 - review and frozen-audience safeguards block unsafe launch behavior
 - timeline integration does not corrupt Inbox state
 - Email Broadcasts are operationally trusted before SMS expansion
+- SMS Broadcasts are operationally trusted on the shipped Twilio worker path
+- run detail surfaces real persisted metrics rather than placeholders
+- project email runs support A/B subject tests and CSV audience import
+- email run detail surfaces link clicks and bot/scanner breakdown when event data exists
 - newsletter subscribers stay separate from `contacts` (`D-051`)
 - org-scoped sends use `org_senders`, not `project_aliases` (`D-052`)
 

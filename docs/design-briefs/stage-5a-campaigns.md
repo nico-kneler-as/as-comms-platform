@@ -4,6 +4,7 @@
 **Companion document:** [PRD #412](https://github.com/nico-kneler-as/as-comms-platform/issues/412)
 **Phase scope:** Phase A (Normal Email path) only — HTML Email and SMS are placeholders
 **Last updated:** 2026-05-14
+**Historical note:** Historical design brief — HTML composer (D-050) and SMS broadcasts have since shipped; see `campaigns-bundle.md`.
 
 ---
 

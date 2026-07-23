@@ -4,6 +4,7 @@
 **PRD:** [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536) Brick B
 **Last updated:** 2026-06-08
 **Audience:** engineering (the Codex brief that wires Unlayer into the wizard)
+**Historical note:** Historical design brief — HTML composer (D-050) and SMS broadcasts have since shipped; see `campaigns-bundle.md`.
 
 This document specifies the exact configuration values to pass to `react-email-editor`'s `options` prop and `<EmailEditor>` props. Everything below is fixed by the design pass — engineering doesn't need to make any of these choices.
 
@@ -34,10 +35,10 @@ const UnlayerHost = dynamic(
 ```tsx
 <EmailEditor
   ref={emailEditorRef}
-  minHeight={720}              /* §3.5 of the spec */
-  options={UNLAYER_OPTIONS}    /* §3 below */
-  onLoad={handleLoad}          /* loads design / wires events */
-  onReady={handleReady}        /* swaps loading skeleton to canvas */
+  minHeight={720} /* §3.5 of the spec */
+  options={UNLAYER_OPTIONS} /* §3 below */
+  onLoad={handleLoad} /* loads design / wires events */
+  onReady={handleReady} /* swaps loading skeleton to canvas */
 />
 ```
 
@@ -70,7 +71,7 @@ export const UNLAYER_OPTIONS = {
 ### 3.1 `displayMode`
 
 ```ts
-displayMode: "email"
+displayMode: "email";
 ```
 
 Email mode unlocks email-shaped controls (preheader settings, link tracking pixel toggle, etc). We don't expose Unlayer's preheader field to the operator (we have our own at the wizard level) but the mode is still correct.
@@ -80,11 +81,11 @@ Email mode unlocks email-shaped controls (preheader settings, link tracking pixe
 ```ts
 const APPEARANCE = {
   theme: "modern_light",
-  loader: { html: "" },                              // suppress branded spinner
+  loader: { html: "" }, // suppress branded spinner
   panels: {
     tools: {
-      dock: "left",                                  // matches wizard reading direction
-      collapsible: false,                            // operators shouldn't be able to hide it
+      dock: "left", // matches wizard reading direction
+      collapsible: false, // operators shouldn't be able to hide it
       tabs: { content: { position: "top" } },
     },
   },
@@ -104,22 +105,22 @@ Operators get exactly seven block types. Everything else is disabled.
 ```ts
 const TOOLS = {
   // Enabled — operators need these
-  heading:   { enabled: true },
-  text:      { enabled: true },
-  image:     { enabled: true,  properties: { src: { value: { url: "" } } } },
-  button:    { enabled: true },
-  divider:   { enabled: true },
-  spacer:    { enabled: true },
-  columns:   { enabled: true },
+  heading: { enabled: true },
+  text: { enabled: true },
+  image: { enabled: true, properties: { src: { value: { url: "" } } } },
+  button: { enabled: true },
+  divider: { enabled: true },
+  spacer: { enabled: true },
+  columns: { enabled: true },
 
   // Disabled — out of scope for this carve-out
-  menu:      { enabled: false },  // no nav menus in emails
-  social:    { enabled: false },  // no social icons (out of scope)
-  video:     { enabled: false },  // video in email is risky; defer
-  html:      { enabled: false },  // operators must not paste raw HTML
-  timer:     { enabled: false },  // countdown timers; not relevant
-  form:      { enabled: false },  // forms in email are anti-pattern
-  carousel:  { enabled: false },  // image carousels — too clientele-specific
+  menu: { enabled: false }, // no nav menus in emails
+  social: { enabled: false }, // no social icons (out of scope)
+  video: { enabled: false }, // video in email is risky; defer
+  html: { enabled: false }, // operators must not paste raw HTML
+  timer: { enabled: false }, // countdown timers; not relevant
+  form: { enabled: false }, // forms in email are anti-pattern
+  carousel: { enabled: false }, // image carousels — too clientele-specific
 } as const;
 ```
 
@@ -129,7 +130,7 @@ const TOOLS = {
 
 ```ts
 const FONTS = {
-  showDefaultFonts: false,                           // we control the list
+  showDefaultFonts: false, // we control the list
   customFonts: [
     {
       label: "Geist Sans",
@@ -141,10 +142,10 @@ const FONTS = {
       value: "'Source Serif 4', Georgia, serif",
       url: "https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&display=swap",
     },
-    { label: "Arial",            value: "Arial, Helvetica, sans-serif" },
-    { label: "Helvetica",        value: "Helvetica, Arial, sans-serif" },
-    { label: "Georgia",          value: "Georgia, 'Times New Roman', serif" },
-    { label: "Times New Roman",  value: "'Times New Roman', Times, serif" },
+    { label: "Arial", value: "Arial, Helvetica, sans-serif" },
+    { label: "Helvetica", value: "Helvetica, Arial, sans-serif" },
+    { label: "Georgia", value: "Georgia, 'Times New Roman', serif" },
+    { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
   ],
 } as const;
 ```
@@ -186,7 +187,9 @@ These are the same three tokens dropped from the Markdown composer's dropdown me
 ### 3.6 `iframe` attributes
 
 ```ts
-iframe: { title: "Email body editor" }
+iframe: {
+  title: "Email body editor";
+}
 ```
 
 This sets the `<iframe title>` on Unlayer's host iframe. Required for accessibility (per the brief and per WCAG H64).
@@ -197,11 +200,11 @@ This sets the `<iframe title>` on Unlayer's host iframe. Required for accessibil
 
 ```ts
 const FEATURES = {
-  preview: false,             // we own preview at Step 5 — STABLE
-  preheaderText: false,       // we own preheader at the wizard subject row — STABLE
-  textEditor: { spellChecker: true },  // VERIFY
-  smartMergeTags: true,       // typing "{{" surfaces the dropdown — VERIFY
-  audit: false,               // VERIFY (likely Unlayer cloud-only)
+  preview: false, // we own preview at Step 5 — STABLE
+  preheaderText: false, // we own preheader at the wizard subject row — STABLE
+  textEditor: { spellChecker: true }, // VERIFY
+  smartMergeTags: true, // typing "{{" surfaces the dropdown — VERIFY
+  audit: false, // VERIFY (likely Unlayer cloud-only)
 } as const;
 ```
 
@@ -324,7 +327,13 @@ if (!APP_URL) {
 export const BRAND_DEFAULT_STARTER = {
   // Counters set to the next available slot AFTER the placed contents below
   // (img-1, text-1, footer-html-1 consume index 1 of their respective namespaces).
-  counters: { u_column: 4, u_row: 4, u_content_text: 2, u_content_image: 2, u_content_html: 2 },
+  counters: {
+    u_column: 4,
+    u_row: 4,
+    u_content_text: 2,
+    u_content_image: 2,
+    u_content_html: 2,
+  },
   body: {
     id: "body",
     rows: [
@@ -375,9 +384,12 @@ export const BRAND_DEFAULT_STARTER = {
                 id: "text-1",
                 type: "text",
                 values: {
-                  text: '<p style="font-family: \'Geist Sans\', system-ui, sans-serif; font-size: 16px; line-height: 1.6; color: #334155; margin: 0;">Write your message here…</p>',
+                  text: "<p style=\"font-family: 'Geist Sans', system-ui, sans-serif; font-size: 16px; line-height: 1.6; color: #334155; margin: 0;\">Write your message here…</p>",
                   containerPadding: "24px 32px",
-                  fontFamily: { label: "Geist Sans", value: "'Geist Sans', system-ui, sans-serif" },
+                  fontFamily: {
+                    label: "Geist Sans",
+                    value: "'Geist Sans', system-ui, sans-serif",
+                  },
                   fontSize: "16px",
                   color: "#334155",
                   textAlign: "left",
@@ -426,7 +438,10 @@ export const BRAND_DEFAULT_STARTER = {
     values: {
       backgroundColor: "#ffffff",
       contentWidth: "600px",
-      fontFamily: { label: "Geist Sans", value: "'Geist Sans', system-ui, sans-serif" },
+      fontFamily: {
+        label: "Geist Sans",
+        value: "'Geist Sans', system-ui, sans-serif",
+      },
       preheaderText: "",
     },
   },
@@ -464,11 +479,23 @@ This is the WYSIWYG preview of what `buildUnsubscribeFooter` ([campaign-send-orc
 
 ```html
 <!-- as-locked-footer-start -->
-<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
+<hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;" />
 <div style="color:#64748b;font-size:12px;line-height:1.6;">
-  <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from {{projectName}} emails</a>
+  <a
+    href="#"
+    target="_blank"
+    rel="noreferrer noopener"
+    style="color:#64748b;text-decoration:underline;"
+    >Unsubscribe from {{projectName}} emails</a
+  >
   &middot;
-  <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a>
+  <a
+    href="#"
+    target="_blank"
+    rel="noreferrer noopener"
+    style="color:#64748b;text-decoration:underline;"
+    >Unsubscribe from all Adventure Scientists emails</a
+  >
 </div>
 <div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">
   Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715

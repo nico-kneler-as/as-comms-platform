@@ -4,6 +4,7 @@
 **Audience:** implementers building the Stage 1 projection layer or replay logic  
 **When to read:** before defining projection storage, rebuild logic, or projection update jobs  
 **Authority:** implementation-spec guidance under the core canon
+**Last reviewed:** 2026-07-23
 
 ## Summary
 
@@ -23,10 +24,11 @@
 
 ### Ordering and sort guidance
 
-- `occurredAt` is the primary ordering field
-- projection logic must produce a deterministic `sortKey`
-- the `sortKey` must not depend on database insertion order or provider fetch order
-- when multiple canonical events share the same `occurredAt`, use a replay-stable secondary ordering derived from canonical identifiers or source-evidence references
+- timeline sorts strictly by `occurredAt`
+- when multiple entries share the same `occurredAt`, break ties by a replay-stable identifier (`id`)
+- projection and selector ordering must not depend on insertion order or provider fetch order
+- volunteer lifecycle ordering (`signed_up` → `received_training` → `completed_training` → `submitted_first_data`) is a post-sort cleanup only inside adjacent same-day lifecycle runs
+- a lifecycle reorder must never move a lifecycle item ahead of a non-lifecycle message or note
 
 ### Refresh rules
 
@@ -63,6 +65,12 @@ Each timeline row should preserve enough information to explain:
 - `snippet` comes from the newest one-to-one communication event that refreshed the row
 - default Inbox list order is `lastInboundAt desc`, falling back to `lastActivityAt desc` when `lastInboundAt` is missing
 
+### Rebuild vs incremental apply
+
+- `rebuildInboxProjectionForContact` is the replay/backfill truth: it may inspect the whole contact history and the existing row before deciding whether the bucket reopens
+- `applyInboxProjection` is the incremental live-ingest path: it applies the incoming canonical event against the stored row only
+- document and preserve their different `New` semantics; they are intentionally not identical
+
 ### Bucket semantics
 
 #### `New`
@@ -70,7 +78,9 @@ Each timeline row should preserve enough information to explain:
 - means the row has inbound one-to-one activity that has not been cleared by a later explicit open action
 - the UI projects this row state as unread
 - first inbound one-to-one contact activity initializes the row to `New`
-- new inbound on an existing `Opened` row resets the row to `New`
+- incremental live apply resets the row to `New` when the incoming inbound is strictly newer than stored `lastInboundAt`; if stored `lastInboundAt` is null, any inbound live event reopens it
+- rebuild/replay resets the row to `New` only when inbound is strictly newer than stored `lastInboundAt`, or newer than stored `lastActivityAt` when stored `lastInboundAt` is null
+- a null stored `lastInboundAt` on rebuild means "projection predates inbound tracking", not "all historical inbound is unread"
 
 #### `Opened`
 

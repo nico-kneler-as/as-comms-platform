@@ -4,6 +4,7 @@
 **Audience:** implementers touching persistence, projections, sync, Inbox, AI, or Broadcasts  
 **When to read:** before data model, integration, worker, or projection work  
 **Authority:** authoritative for canonical concepts, identity rules, dedupe, projections, review queues  
+**Last reviewed:** 2026-07-23
 **Decides:** what durable concepts must exist and how identity/projection logic behaves  
 **Does not decide:** exact table names, migration filenames, index syntax
 
@@ -15,32 +16,32 @@
 
 ## Required Canonical Concepts
 
-| Concept | Purpose |
-| --- | --- |
-| source evidence log | immutable provider-close evidence |
-| canonical event ledger | normalized timeline events |
-| contacts | canonical person record |
-| contact identities | durable email and phone ownership |
-| contact memberships | project and expedition context |
-| identity resolution queue | ambiguous or unresolved person matching |
-| routing review queue | project or routing ambiguity |
-| contact timeline projection | chronological person history |
-| contact inbox projection | contact-centric Inbox read model |
-| broadcast projections | audience, runs, snapshots |
-| sync + parity state | cursors, backfills, parity, dead letters |
-| audit + policy evidence | audit records, webhook verification, policy decisions |
-| AI durable state | knowledge cache, resolved reply examples, assistant feedback |
+| Concept                     | Purpose                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| source evidence log         | immutable provider-close evidence                                                                             |
+| canonical event ledger      | normalized timeline events                                                                                    |
+| contacts                    | canonical person record                                                                                       |
+| contact identities          | durable email and phone ownership                                                                             |
+| contact memberships         | project and expedition context                                                                                |
+| identity resolution queue   | ambiguous or unresolved person matching                                                                       |
+| routing review queue        | project or routing ambiguity                                                                                  |
+| contact timeline projection | chronologically sorted person history, with same-day lifecycle reordering confined to adjacent lifecycle runs |
+| contact inbox projection    | contact-centric Inbox read model                                                                              |
+| broadcast projections       | audience, runs, snapshots                                                                                     |
+| sync + parity state         | cursors, backfills, parity, dead letters                                                                      |
+| audit + policy evidence     | audit records, webhook verification, policy decisions                                                         |
+| AI durable state            | knowledge cache, resolved reply examples, assistant feedback                                                  |
 
 ## Identity Rules
 
-| Order | Rule |
-| --- | --- |
-| `ID-01` | Salesforce Contact ID is the strongest anchor when available. |
-| `ID-02` | Normalized email is the next strongest anchor. |
-| `ID-03` | Normalized phone is next. |
-| `ID-04` | Synthetic fallback is last resort only. |
-| `ID-05` | Ambiguous matches must not auto-link. |
-| `ID-06` | Non-volunteer contacts remain first-class supported records. |
+| Order   | Rule                                                                                                                                                                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ID-01` | Salesforce Contact ID is the strongest anchor when available.                                                                                                                                                                                                                               |
+| `ID-02` | Normalized email is the next strongest anchor.                                                                                                                                                                                                                                              |
+| `ID-03` | Normalized phone is next.                                                                                                                                                                                                                                                                   |
+| `ID-04` | Synthetic fallback is last resort only.                                                                                                                                                                                                                                                     |
+| `ID-05` | Ambiguous matches must not auto-link.                                                                                                                                                                                                                                                       |
+| `ID-06` | Non-volunteer contacts remain first-class supported records.                                                                                                                                                                                                                                |
 | `ID-07` | Missing Salesforce Contact ID is NOT ambiguity. A plain unmatched inbound or operator-initiated send creates a new canonical contact anchored by normalized email or phone, with `salesforceContactId=null`. Review opens only on genuine ambiguity (see `ID-05`) or replay/conflict cases. |
 
 ## Dedupe And Replay Rules
@@ -55,10 +56,11 @@
 
 - Inbox is one row per person, not one row per thread.
 - Inbox is one mixed contact list sorted by most recent inbound message.
-- Timeline is one chronological history per person.
+- Timeline sorts strictly by `occurredAt`, then canonical/timeline ID. Volunteer-lifecycle ordering (`signed_up` → `received_training` → `completed_training` → `submitted_first_data`) is a post-sort pass only inside adjacent same-day lifecycle runs; it never displaces a message.
 - Timeline read merges the 1-to-1 anchor projection with the audience junction (`canonical_event_audience`) so every participant of a Gmail thread sees every message they were on. The anchor projection row stays 1-to-1 with the canonical event; fan-out is a read-time union.
 - Email timeline bubbles render right-side iff the sender email is one of our project inbox aliases — any value in `project_aliases.alias`. All other senders render left-side. This is presentation-only: canonical event `direction`, bucket state, queue semantics, and SMS alignment stay unchanged.
 - `New` and `Opened` remain projection-driven bucket states, but they are row states and filters rather than the primary Inbox partition.
+- Rebuild/replay and live apply preserve distinct bucket semantics: projection rebuilds reopen only when inbound is newer than stored `lastInboundAt`, or newer than stored `lastActivityAt` when `lastInboundAt` is null; incremental live apply keeps its narrower `lastInboundAt` check and does not reinterpret older history.
 - Unread is derived from bucket state.
 - `needsFollowUp` is a separate explicit follow-up flag, not a replacement for bucket state.
 - Unresolved review is layered on top of the row state model, not its own bucket.
@@ -73,6 +75,7 @@
 - the system must preserve what was inferred, what was explicit, and what was manually chosen
 - non-Salesforce contacts do not require manual resolution; they are valid canonical contacts with `salesforceContactId=null`
 - routing review cases only open for contacts where `salesforceContactId IS NOT NULL`; external-partner and non-volunteer contacts have no project context and are not eligible for routing review
+- shipped Inbox detail shows unresolved case detail inline: humanized reason label, stored case explanation, and up to three conflicting contacts (`+N more` when truncated). Resolve actions remain deferred.
 - internal notes are stored separately from the canonical event ledger and unioned into the timeline projection at read time (see decision `D-029`)
 
 ## Read Next

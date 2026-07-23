@@ -3,8 +3,9 @@
 **PRD:** [#536](https://github.com/nico-kneler-as/as-comms-platform/issues/536) — Stage 5C carve-out: HTML composer for project broadcasts
 **Brief:** [docs/design-briefs/stage-5c-html-composer.md](stage-5c-html-composer.md) (the requirements)
 **Parent design language:** [docs/design-briefs/stage-5a-campaigns.md](stage-5a-campaigns.md)
-**Tokens:** [apps/web/app/_lib/design-tokens-v2.ts](../../apps/web/app/_lib/design-tokens-v2.ts)
+**Tokens:** [apps/web/app/\_lib/design-tokens-v2.ts](../../apps/web/app/_lib/design-tokens-v2.ts)
 **Last updated:** 2026-06-08
+**Historical note:** Historical design brief — HTML composer (D-050) and SMS broadcasts have since shipped; see `campaigns-bundle.md`.
 **Scope:** Step 4 (Compose) `html_email` variant + small Step 1 delta. All other wizard steps inherit Stage 5A unchanged.
 
 ---
@@ -13,14 +14,14 @@
 
 The HTML composer is the Markdown composer with its body block swapped for an Unlayer iframe. Everything else is reused without modification:
 
-| Surface | Inherited from | Notes |
-|---|---|---|
-| Step rail (left side, vertical progression) | `wizard-shell.tsx` | Unchanged |
-| Step header (`<StepHeader>`) | `wizard-shell.tsx` | Title + description only — copy below |
-| Subject input row | `compose-step.tsx:66-93` | Verbatim, including `46px` label gutter and `14.5px/font-semibold` input |
-| Preheader input row | `compose-step.tsx:95-113` | Verbatim, including `12.5px` input and "Preview" label |
-| Footer (Back / Continue) | `<WizardFooter>` | Unchanged Back/Continue behavior |
-| Outer card | `compose-step.tsx:65` | Same `overflow-hidden rounded-xl border border-slate-200 bg-white` outer frame; body slot is the only delta |
+| Surface                                     | Inherited from            | Notes                                                                                                       |
+| ------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Step rail (left side, vertical progression) | `wizard-shell.tsx`        | Unchanged                                                                                                   |
+| Step header (`<StepHeader>`)                | `wizard-shell.tsx`        | Title + description only — copy below                                                                       |
+| Subject input row                           | `compose-step.tsx:66-93`  | Verbatim, including `46px` label gutter and `14.5px/font-semibold` input                                    |
+| Preheader input row                         | `compose-step.tsx:95-113` | Verbatim, including `12.5px` input and "Preview" label                                                      |
+| Footer (Back / Continue)                    | `<WizardFooter>`          | Unchanged Back/Continue behavior                                                                            |
+| Outer card                                  | `compose-step.tsx:65`     | Same `overflow-hidden rounded-xl border border-slate-200 bg-white` outer frame; body slot is the only delta |
 
 The composer card looks like the Markdown composer card. The differences are inside the body slot.
 
@@ -85,6 +86,7 @@ The body slot sits below the Preheader row inside the same compose card. It has 
 A horizontal slot between the Preheader row and the Editor band. **Zero height when empty** (no border, no padding — it does not reserve vertical space). When one or more ribbons fire (size warning §4.5, hard size error §4.6, deleted-variable warning §4.7), they stack vertically inside this band, top-most being the most severe (rose-toned hard errors above amber-toned warnings).
 
 **Container tokens (per ribbon):**
+
 - Spacing: `border-b border-{tone}-200 px-4 py-2.5`
 - Background: `bg-{tone}-50/60` (amber for warning, rose for error)
 - Layout: `flex items-start gap-2.5`
@@ -138,6 +140,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 **Why a locked block, not nothing.** Two competing forces: (a) the brief says operators shouldn't add their own footer because the system appends one, and (b) the brief says the starter should include "AS footer block matching the existing Stage 5A email footer". A locked block satisfies both — operators see the final shape end-to-end from the moment they land on Step 4, and they cannot accidentally delete, edit, or duplicate the compliance language.
 
 **Tokens.**
+
 - Logo image src: `/brand/as-mark.png` (rendered at 64x64 — engineering passes the absolute URL via `APP_URL + '/brand/as-mark.png'`)
 - Body text default font: Geist Sans 16px / line-height 1.6 / color #334155 (slate-700)
 - Footer styling: mirrors `buildUnsubscribeFooter`'s inline-style output from [campaign-send-orchestrator.ts:137-143](../../packages/domain/src/campaign-send-orchestrator.ts), including `target="_blank" rel="noreferrer noopener"` on both anchor tags. The exact constant lives at [stage-5c-unlayer-config.md §5.2](stage-5c-unlayer-config.md) and is the single source of truth for the in-canvas preview; engineering should re-export from the domain package rather than duplicate.
@@ -153,6 +156,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 **Visual.** Same iframe footprint. Inside, Unlayer renders the operator's last-saved design tree. The locked footer block reappears at the bottom (engineering: if the persisted design tree does not contain the footer block, inject it on load — operators should not be able to "save a draft without the footer block" in a way that survives across sessions).
 
 **Loading lifecycle.** Between mount and rehydration (~200-500ms typical):
+
 - Render the **Loading** state (§4.3) over the iframe area.
 - Once Unlayer's `editor:ready` event fires AND `loadDesign()` resolves, swap to the Resume state.
 
@@ -165,6 +169,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 ### 4.3 Loading
 
 **When it shows.**
+
 - Initial mount before Unlayer's iframe has emitted `editor:ready`.
 - Resume path, between mount and `loadDesign` resolving.
 
@@ -181,6 +186,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 ```
 
 **Tokens.**
+
 - Outer container: `h-[720px] w-full rounded-md border border-slate-200 bg-slate-50` (the same border-radius the iframe will inherit)
 - Skeleton bars: `bg-slate-200 animate-pulse rounded` (Tailwind motion-safe pulse). For `motion-reduce`, swap to static `bg-slate-200`.
 - Tool rail skeleton: left column 64px wide, 6 bars (each `h-8 w-10` with `gap-2`)
@@ -195,6 +201,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 ### 4.4 Editor failed to load
 
 **When it shows.** Three triggers:
+
 - Mount timeout (no `editor:ready` event within 10 seconds)
 - JS error inside Unlayer's iframe (caught via `window.addEventListener('error')` filtered to the iframe origin)
 - Network error fetching `react-email-editor`'s Unlayer host (e.g., embed.unlayer.com unreachable)
@@ -216,6 +223,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 ```
 
 **Tokens.**
+
 - Container: `h-[720px] w-full rounded-md border border-amber-200 bg-amber-50/40 flex flex-col items-center justify-center px-6`
 - Icon: `<AlertTriangle>` lucide, `size-6 text-amber-700`
 - Title line: `text-[13.5px] font-semibold text-amber-900 mt-3`
@@ -223,12 +231,14 @@ Six states. Each section gives: visual description → exact tokens → microcop
 - Reload button: `<Button variant="outline" size="sm" className="mt-4 gap-1.5">` with `<RefreshCw className="size-3.5">` icon
 
 **Microcopy.**
+
 - Title (visually emphasized): "The editor couldn't load."
 - Body: "Reload the page and try again — your draft is saved."
 - Button: "Reload"
 - (Aria-live `polite`) announcement: "The email editor failed to load. Reload the page to try again."
 
 **Interaction.**
+
 - **Continue button is disabled** until the editor reloads successfully (this is non-negotiable per the brief — operator cannot submit a broken draft).
 - Reload button calls `window.location.reload()` — simpler than retry-in-place because Unlayer's bootstrap state is hard to reset cleanly.
 
@@ -249,6 +259,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 ```
 
 **Tokens.**
+
 - Container: `flex items-start gap-2.5 border-b border-amber-200 bg-amber-50/60 px-4 py-2.5`
 - Icon: `<AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700">`
 - Text: `text-[12.5px] text-amber-900 leading-relaxed`
@@ -256,9 +267,11 @@ Six states. Each section gives: visual description → exact tokens → microcop
 - **Shape note:** this is a horizontal band ribbon (full-width, `border-b`) — visually distinct from the rounded card-style amber ribbon at [preview-step.tsx:105](../../apps/web/app/broadcasts/new/_components/preview-step.tsx) which uses `rounded-lg border border-amber-300`. The compose-step uses the band shape because it sticks to the top of the body slot inside an already-rounded card; the preview-step uses the card shape because it floats above the preview panel without a parent card. Same palette tone (amber), different geometry by container context.
 
 **Microcopy.**
+
 - "This design is getting large. Consider linking images instead of embedding."
 
 **Interaction.**
+
 - Dismiss persists for the current draft session only (in component state, not persisted). It reappears if the design grows another 100 KB after dismiss — operators should not be able to mute it permanently.
 - Continue is **still enabled** at the soft threshold.
 
@@ -269,15 +282,18 @@ Six states. Each section gives: visual description → exact tokens → microcop
 **Visual.** The ribbon stays where the soft warning was, but flips to error styling, and adds disabling to the Continue button.
 
 **Tokens.**
+
 - Container: `flex items-start gap-2.5 border-b border-rose-200 bg-rose-50/70 px-4 py-2.5`
 - Icon: `<AlertOctagon className="mt-0.5 size-4 shrink-0 text-rose-700">`
 - Text: `text-[12.5px] text-rose-900 leading-relaxed`
 - No dismiss button (this is a blocker, not a warning).
 
 **Microcopy.**
+
 - "This design is too large to save. Reduce image sizes or remove blocks."
 
 **Interaction.**
+
 - Continue button is **disabled** with title attribute "Reduce design size to continue."
 - Continue re-enables automatically when the design drops back below 2 MB.
 
@@ -290,6 +306,7 @@ Six states. Each section gives: visual description → exact tokens → microcop
 **Visual.** A warning chip floating above the affected block within the canvas, AND a summary ribbon at the top of the body slot.
 
 The summary ribbon (above the iframe):
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ ⚠  3 contacts will get a blank firstName.                           │
@@ -300,6 +317,7 @@ The summary ribbon (above the iframe):
 This is the same ribbon already shipped in Stage 5A (preview-step.tsx:104-131). Reuse it verbatim — same tokens, same `<Dialog>` for the affected-contacts list.
 
 **Inline chip (inside the iframe):** This is the hard part. Unlayer doesn't expose a stable API to inject per-block decoration. Two options:
+
 - **Option A — surface the chip outside the iframe only** (recommended). Skip the in-canvas chip; rely on the ribbon. Justification: the operator sees the chip the moment they leave Step 4 for Step 5 (preview), where it's clearer anyway. Adding in-canvas decoration via Unlayer's `customJS` is brittle.
 - **Option B — register a custom Unlayer tool that wraps merge tags**. Engineering complexity is high; reject for Brick B.
 
@@ -308,6 +326,7 @@ This is the same ribbon already shipped in Stage 5A (preview-step.tsx:104-131). 
 **Tokens.** Same as the existing Stage 5A merge-token warning ribbon — `border-amber-300 bg-amber-50/60` etc.
 
 **Microcopy.**
+
 - Singular: "1 contact will get a blank firstName."
 - Plural: "N contacts will get a blank firstName."
 - Action: "Review affected contacts" (opens the existing `<Dialog>` from preview-step.tsx:240-270)
@@ -321,6 +340,7 @@ This is the same ribbon already shipped in Stage 5A (preview-step.tsx:104-131). 
 Today: [launch-type-step.tsx:26-34](../../apps/web/app/broadcasts/new/_components/launch-type-step.tsx) sets `html_email` as `disabled: true` with `tag: "COMING SOON"`. Disclaimer at the bottom reads "Phase A ships Normal Email only. HTML Email arrives once the drag-and-drop builder lands; SMS follows."
 
 After Brick B:
+
 - The `html_email` card has `disabled: false` and `tag: null`. All other props (icon, title, description) unchanged.
 - Disclaimer copy changes to: **"SMS arrives once carrier approval lands."** (verbatim — no leading sentence about HTML)
 
@@ -354,7 +374,7 @@ For Markdown-derived HTML (Stage 5A Normal Email path), this works — the Markd
 
 For Unlayer HTML, the model breaks:
 
-1. **Unlayer ships table-based emails.** Outputs are nested `<table>/<tr>/<td>` with inline styles for Outlook compatibility. The `prose prose-sm` class adds its own margins, line-heights, and `max-width: 65ch` constraints to descendant elements. These collide with Unlayer's inline styles, producing a layout that is *not* what the recipient sees.
+1. **Unlayer ships table-based emails.** Outputs are nested `<table>/<tr>/<td>` with inline styles for Outlook compatibility. The `prose prose-sm` class adds its own margins, line-heights, and `max-width: 65ch` constraints to descendant elements. These collide with Unlayer's inline styles, producing a layout that is _not_ what the recipient sees.
 
 2. **`max-w-none` doesn't escape `prose`'s descendant rules.** `prose` styles target child elements via `:where(.prose > *)` selectors that fire on the body even with `max-w-none`. Result: paragraph margins are doubled, list bullets shift, button blocks (which Unlayer renders as styled `<table>` wrappers) get squeezed.
 
@@ -366,23 +386,25 @@ For `launchType === 'html_email'`, replace the prose `<div>` with a real `<ifram
 
 ```tsx
 // Within the existing <article> wrapper at preview-step.tsx:213
-{launchType === "html_email" ? (
-  <iframe
-    title="Email body preview"
-    srcDoc={sample.html}
-    className="block w-full rounded-md border border-slate-200"
-    style={{ height: 720, background: "white" }}
-    sandbox="allow-same-origin"
-  />
-) : (
-  <div
-    className={cn(
-      "prose prose-sm max-w-none text-slate-800",
-      "[&_a]:text-sky-700 [&_a]:underline [&_hr]:border-slate-200",
-    )}
-    dangerouslySetInnerHTML={{ __html: sample.html }}
-  />
-)}
+{
+  launchType === "html_email" ? (
+    <iframe
+      title="Email body preview"
+      srcDoc={sample.html}
+      className="block w-full rounded-md border border-slate-200"
+      style={{ height: 720, background: "white" }}
+      sandbox="allow-same-origin"
+    />
+  ) : (
+    <div
+      className={cn(
+        "prose prose-sm max-w-none text-slate-800",
+        "[&_a]:text-sky-700 [&_a]:underline [&_hr]:border-slate-200",
+      )}
+      dangerouslySetInnerHTML={{ __html: sample.html }}
+    />
+  );
+}
 ```
 
 **Why iframe and not just a different wrapper class.** Unlayer's HTML contains its own `<style>` tags, link colors, and font-family declarations. Rendering that inside the same DOM as the wizard means the wizard's Tailwind reset applies, the wizard's link styles apply, the wizard's body font applies — all wrong. An iframe is the only way to get the recipient's-eye view honestly.
@@ -431,6 +453,7 @@ For `launchType === 'html_email'`, replace the prose `<div>` with a real `<ifram
 ### Contrast (WCAG AA)
 
 All token combinations specified above hit AA against white:
+
 - `text-slate-500` (#64748b) on `bg-white` — 4.83:1 ✓
 - `text-amber-900` (#78350f) on `bg-amber-50` (#fffbeb) — 8.71:1 ✓ (the spec uses `bg-amber-50/60`, 60% alpha-blended over white; effective bg ≈ `#fffdf1`, contrast is still ≥ 8:1 ✓)
 - `text-rose-900` (#881337) on `bg-rose-50` (#fff1f2) — 9.92:1 ✓ (the spec uses `bg-rose-50/70`, 70% alpha-blended over white; effective bg ≈ `#fff5f6`, contrast is still ≥ 9:1 ✓)
@@ -440,23 +463,23 @@ All token combinations specified above hit AA against white:
 
 ## 8. Microcopy index (for engineering search)
 
-| Where | Copy |
-|---|---|
-| Step 4 header — title | `Compose your HTML email` |
-| Step 4 header — description | `Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step.` |
-| Body block placeholder | `Write your message here…` |
-| Helper band — footer reassurance | `The AS unsubscribe footer is added automatically. You don't need to add one.` |
-| Loading announcement | `Loading the email editor` (visually-hidden, aria-live) |
-| Editor-failed title | `The editor couldn't load.` |
-| Editor-failed body | `Reload the page and try again — your draft is saved.` |
-| Editor-failed button | `Reload` |
-| Editor-failed announcement | `The email editor failed to load. Reload the page to try again.` (aria-live) |
-| Soft size warning | `This design is getting large. Consider linking images instead of embedding.` |
-| Hard size error | `This design is too large to save. Reduce image sizes or remove blocks.` |
-| Continue disabled tooltip (hard) | `Reduce design size to continue.` |
-| Merge-gap ribbon (singular) | `1 contact will get a blank firstName.` |
-| Merge-gap ribbon (plural) | `N contacts will get a blank firstName.` |
-| Step 1 — disclaimer (new) | `SMS arrives once carrier approval lands.` |
+| Where                            | Copy                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Step 4 header — title            | `Compose your HTML email`                                                                                                                               |
+| Step 4 header — description      | `Drag blocks onto the canvas to build the message. Subject and preheader above are what recipients see in their inbox. Preview opens on the next step.` |
+| Body block placeholder           | `Write your message here…`                                                                                                                              |
+| Helper band — footer reassurance | `The AS unsubscribe footer is added automatically. You don't need to add one.`                                                                          |
+| Loading announcement             | `Loading the email editor` (visually-hidden, aria-live)                                                                                                 |
+| Editor-failed title              | `The editor couldn't load.`                                                                                                                             |
+| Editor-failed body               | `Reload the page and try again — your draft is saved.`                                                                                                  |
+| Editor-failed button             | `Reload`                                                                                                                                                |
+| Editor-failed announcement       | `The email editor failed to load. Reload the page to try again.` (aria-live)                                                                            |
+| Soft size warning                | `This design is getting large. Consider linking images instead of embedding.`                                                                           |
+| Hard size error                  | `This design is too large to save. Reduce image sizes or remove blocks.`                                                                                |
+| Continue disabled tooltip (hard) | `Reduce design size to continue.`                                                                                                                       |
+| Merge-gap ribbon (singular)      | `1 contact will get a blank firstName.`                                                                                                                 |
+| Merge-gap ribbon (plural)        | `N contacts will get a blank firstName.`                                                                                                                |
+| Step 1 — disclaimer (new)        | `SMS arrives once carrier approval lands.`                                                                                                              |
 
 ---
 
@@ -495,6 +518,7 @@ The brand-default starter rendered as a self-contained email lives at [stage-5c-
 ### What the specimen embodies
 
 The specimen is the canonical Unlayer export shape:
+
 - Outer 100%-width `<table>` with the page-background grey (`#f8fafc`)
 - Inner 600px fixed-width `<table>` with white background
 - All layout via nested presentation tables (Outlook 2019/365 requirement)
@@ -528,6 +552,7 @@ This spec was authored without access to live Gmail/Outlook test accounts. Engin
 ### Limitations of the specimen as a design artifact
 
 The specimen is the **empty / first-load** state. It does not show:
+
 - Operator-added images (operator-uploaded ≠ AS mark)
 - Operator-added buttons (Unlayer button blocks have their own button styling)
 - Multi-column rows (Unlayer's two-column layouts collapse to single column on mobile)
@@ -541,12 +566,12 @@ Engineering can extend the specimen post-Brick-B with worked examples of each, i
 
 Per [PRD #536](https://github.com/nico-kneler-as/as-comms-platform/issues/536) Brick B section. This spec doesn't change that list — it just makes each file's job concrete:
 
-| File | Change |
-|---|---|
-| `apps/web/app/broadcasts/new/_components/launch-type-step.tsx` | §5 — flip `disabled`, drop `tag`, update disclaimer copy |
-| `apps/web/app/broadcasts/new/_components/compose-step.tsx` | Branch on `launchType` to render `<UnlayerHost>` instead of the Markdown editor |
-| `apps/web/app/broadcasts/new/_components/unlayer-host.tsx` (new) | Renders all states in §4 |
-| `apps/web/app/broadcasts/new/_components/preview-step.tsx` | §6 — branch on `launchType`, render `<iframe srcDoc>` for `html_email` |
-| `apps/web/app/broadcasts/new/_components/use-new-campaign-wizard-state.ts` | Track `bodyDesignJson` plus derived HTML/plaintext |
+| File                                                                       | Change                                                                          |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `apps/web/app/broadcasts/new/_components/launch-type-step.tsx`             | §5 — flip `disabled`, drop `tag`, update disclaimer copy                        |
+| `apps/web/app/broadcasts/new/_components/compose-step.tsx`                 | Branch on `launchType` to render `<UnlayerHost>` instead of the Markdown editor |
+| `apps/web/app/broadcasts/new/_components/unlayer-host.tsx` (new)           | Renders all states in §4                                                        |
+| `apps/web/app/broadcasts/new/_components/preview-step.tsx`                 | §6 — branch on `launchType`, render `<iframe srcDoc>` for `html_email`          |
+| `apps/web/app/broadcasts/new/_components/use-new-campaign-wizard-state.ts` | Track `bodyDesignJson` plus derived HTML/plaintext                              |
 
 The spec for the `<UnlayerHost>` component is this document. The Unlayer `options` prop it passes is [stage-5c-unlayer-config.md](stage-5c-unlayer-config.md).
