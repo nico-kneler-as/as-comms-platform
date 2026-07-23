@@ -140,6 +140,7 @@ interface InboxClientState {
     clientGeneratedId: string,
     reason: string,
   ) => void;
+  readonly markOptimisticOrphaned: (clientGeneratedId: string) => void;
   readonly removeOptimisticOutbound: (clientGeneratedId: string) => void;
   readonly clearOptimisticForContact: (contactId: string) => void;
 
@@ -331,6 +332,19 @@ export function InboxClientProvider({
     },
     [],
   );
+
+  const markOptimisticOrphaned = useCallback((clientGeneratedId: string) => {
+    setOptimisticOutbounds((previous) =>
+      previous.map((entry) =>
+        entry.clientGeneratedId === clientGeneratedId
+          ? {
+              ...entry,
+              sendStatus: "orphaned",
+            }
+          : entry,
+      ),
+    );
+  }, []);
 
   const removeOptimisticOutbound = useCallback((clientGeneratedId: string) => {
     setOptimisticOutbounds((previous) =>
@@ -683,6 +697,7 @@ export function InboxClientProvider({
       addOptimisticOutbound,
       markOptimisticSettled,
       markOptimisticFailed,
+      markOptimisticOrphaned,
       removeOptimisticOutbound,
       clearOptimisticForContact,
       search,
@@ -741,6 +756,7 @@ export function InboxClientProvider({
       addOptimisticOutbound,
       markOptimisticSettled,
       markOptimisticFailed,
+      markOptimisticOrphaned,
       removeOptimisticOutbound,
       clearOptimisticForContact,
       search,

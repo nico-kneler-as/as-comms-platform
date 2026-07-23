@@ -129,6 +129,20 @@ describe("stage3 pending timeline rendering", () => {
     expect(markup).toContain("Retry");
   });
 
+  it("renders the stalled treatment for orphaned outbound rows", () => {
+    const markup = renderToStaticMarkup(
+      createElement(InboxTimeline, {
+        entries: [buildEntry({ sendStatus: "orphaned" })],
+        volunteerFirstName: "Alice",
+        currentOperatorUserId: "user:operator",
+        onRetryPending: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain("Send stalled before confirmation.");
+    expect(markup).not.toContain("Sending...");
+  });
+
   it("renders the bounce-specific failure banner for bounced replies", () => {
     const markup = renderToStaticMarkup(
       createElement(InboxTimeline, {
