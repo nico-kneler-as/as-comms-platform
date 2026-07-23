@@ -309,6 +309,7 @@ export interface InboxTimelineEntryViewModel {
 export type OptimisticOutbound = InboxTimelineEntryViewModel & {
   readonly contactId: string | null;
   readonly clientGeneratedId: string;
+  readonly createdAt: number;
   readonly settledAt: number | null;
 };
 

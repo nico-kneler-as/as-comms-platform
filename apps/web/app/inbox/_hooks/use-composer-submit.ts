@@ -247,11 +247,13 @@ export function useComposerSubmit({
     const clientGeneratedId = crypto.randomUUID();
     const recipientLabel = resolveRecipientLabel(state.recipient);
     const occurredAt = new Date().toISOString();
+    const createdAt = Date.now();
     const optimisticEntry: OptimisticOutbound = {
       id: `optimistic:${clientGeneratedId}`,
       clientGeneratedId,
       contactId:
         state.recipient.kind === "contact" ? state.recipient.contactId : null,
+      createdAt,
       settledAt: null,
       kind: "outbound-email",
       occurredAt,
@@ -390,6 +392,7 @@ export function useComposerSubmit({
           null);
     const smsBody = body;
     const occurredAt = new Date().toISOString();
+    const createdAt = Date.now();
     const recipientLabel =
       smsRecipient.kind === "contact"
         ? `${smsRecipient.displayName} (${smsRecipient.phoneE164})`
@@ -401,6 +404,7 @@ export function useComposerSubmit({
         smsRecipient.kind === "contact"
           ? smsRecipient.contactId
           : null,
+      createdAt,
       settledAt: null,
       kind: "outbound-sms",
       occurredAt,

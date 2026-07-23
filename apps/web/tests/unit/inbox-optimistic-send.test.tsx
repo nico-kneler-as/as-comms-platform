@@ -96,6 +96,7 @@ function buildOptimistic(
     }),
     contactId: "contact-1",
     clientGeneratedId: "client-1",
+    createdAt: Date.now(),
     settledAt: null,
     ...overrides,
   };

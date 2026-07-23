@@ -338,6 +338,22 @@ function realEntryMatchesOptimistic(
   return realEntry.occurredAt >= optimisticEntry.occurredAt;
 }
 
+export const OPTIMISTIC_MATCH_GRACE_MS = 10_000;
+export const OPTIMISTIC_REFRESH_INTERVAL_MS = 15_000;
+export const OPTIMISTIC_REFRESH_MAX_ATTEMPTS = 8;
+export const OPTIMISTIC_ORPHAN_TIMEOUT_MS = 120_000;
+
+function optimisticOutboundAgeMs(
+  entry: OptimisticOutbound,
+  nowMs: number,
+): number {
+  return nowMs - entry.createdAt;
+}
+
+function isOptimisticOutboundPending(entry: OptimisticOutbound): boolean {
+  return entry.sendStatus === "pending" && entry.settledAt === null;
+}
+
 export function InboxDetail({ detail, timelineSlot }: DetailProps) {
   const { contact } = detail;
   const { openReplyDraft, composerAliases } = useInboxClient();
@@ -672,6 +688,7 @@ export function InboxDetailTimelinePanel({
   initialTimeline,
   currentOperatorUserId,
 }: InboxDetailTimelinePanelProps) {
+  const router = useRouter();
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const activeTimelineRequestIdRef = useRef(0);
   const shouldScrollToLatestRef = useRef(true);
@@ -681,6 +698,7 @@ export function InboxDetailTimelinePanel({
     setTimelineLoading,
     optimisticOutbounds,
     clearOptimisticForContact,
+    markOptimisticOrphaned,
     composerAliases,
     removeOptimisticOutbound,
     openForwardDraft,
@@ -695,6 +713,10 @@ export function InboxDetailTimelinePanel({
   );
   const [retryingEntryId, setRetryingEntryId] = useState<string | null>(null);
   const [isRetryPending, startRetryTransition] = useTransition();
+  const [, setTimerTick] = useState(0);
+  const [refreshAttemptCount, setRefreshAttemptCount] = useState(0);
+
+  const nowMs = Date.now();
 
   useEffect(() => {
     activeTimelineRequestIdRef.current += 1;
@@ -706,6 +728,7 @@ export function InboxDetailTimelinePanel({
       clearOptimisticForContact(previousContactIdRef.current);
       shouldScrollToLatestRef.current = true;
       previousContactIdRef.current = contact.contactId;
+      setRefreshAttemptCount(0);
     }
   }, [
     clearOptimisticForContact,
@@ -723,6 +746,36 @@ export function InboxDetailTimelinePanel({
     [contact.contactId, optimisticOutbounds],
   );
 
+  const matchingOptimisticClientIds = useMemo(
+    () =>
+      new Set(
+        activeOptimisticOutbounds
+          .filter((entry) =>
+            timelineEntries.some((realEntry) =>
+              realEntryMatchesOptimistic(realEntry, entry),
+            ),
+          )
+          .map((entry) => entry.clientGeneratedId),
+      ),
+    [activeOptimisticOutbounds, timelineEntries],
+  );
+
+  const matchedOptimisticEntries = useMemo(
+    () =>
+      activeOptimisticOutbounds.filter((entry) =>
+        matchingOptimisticClientIds.has(entry.clientGeneratedId),
+      ),
+    [activeOptimisticOutbounds, matchingOptimisticClientIds],
+  );
+
+  const pendingOptimisticEntries = useMemo(
+    () =>
+      activeOptimisticOutbounds.filter((entry) =>
+        isOptimisticOutboundPending(entry),
+      ),
+    [activeOptimisticOutbounds],
+  );
+
   const mergedTimelineEntries = useMemo(
     () =>
       sortTimelineEntries([...timelineEntries, ...activeOptimisticOutbounds]),
@@ -730,24 +783,139 @@ export function InboxDetailTimelinePanel({
   );
 
   useEffect(() => {
-    const matchedSettledIds = activeOptimisticOutbounds
+    const matchedRecoverableIds = activeOptimisticOutbounds
       .filter(
         (entry) =>
-          entry.settledAt !== null &&
-          timelineEntries.some((realEntry) =>
-            realEntryMatchesOptimistic(realEntry, entry),
-          ),
+          matchingOptimisticClientIds.has(entry.clientGeneratedId) &&
+          (entry.settledAt !== null ||
+            optimisticOutboundAgeMs(entry, nowMs) >= OPTIMISTIC_MATCH_GRACE_MS),
       )
       .map((entry) => entry.clientGeneratedId);
 
-    if (matchedSettledIds.length === 0) {
+    if (matchedRecoverableIds.length === 0) {
       return;
     }
 
-    for (const clientGeneratedId of matchedSettledIds) {
+    for (const clientGeneratedId of matchedRecoverableIds) {
       removeOptimisticOutbound(clientGeneratedId);
     }
-  }, [activeOptimisticOutbounds, removeOptimisticOutbound, timelineEntries]);
+  }, [
+    activeOptimisticOutbounds,
+    matchingOptimisticClientIds,
+    nowMs,
+    removeOptimisticOutbound,
+  ]);
+
+  useEffect(() => {
+    const orphanedClientIds = pendingOptimisticEntries
+      .filter(
+        (entry) =>
+          !matchingOptimisticClientIds.has(entry.clientGeneratedId) &&
+          optimisticOutboundAgeMs(entry, nowMs) >= OPTIMISTIC_ORPHAN_TIMEOUT_MS,
+      )
+      .map((entry) => entry.clientGeneratedId);
+
+    if (orphanedClientIds.length === 0) {
+      return;
+    }
+
+    for (const clientGeneratedId of orphanedClientIds) {
+      markOptimisticOrphaned(clientGeneratedId);
+    }
+  }, [
+    markOptimisticOrphaned,
+    matchingOptimisticClientIds,
+    nowMs,
+    pendingOptimisticEntries,
+  ]);
+
+  const hasStalePendingGhost = pendingOptimisticEntries.some(
+    (entry) =>
+      !matchingOptimisticClientIds.has(entry.clientGeneratedId) &&
+      optimisticOutboundAgeMs(entry, nowMs) >= OPTIMISTIC_REFRESH_INTERVAL_MS,
+  );
+
+  useEffect(() => {
+    if (!hasStalePendingGhost) {
+      if (refreshAttemptCount !== 0) {
+        setRefreshAttemptCount(0);
+      }
+      return;
+    }
+
+    if (refreshAttemptCount >= OPTIMISTIC_REFRESH_MAX_ATTEMPTS) {
+      return;
+    }
+
+    if (refreshAttemptCount === 0) {
+      router.refresh();
+      setRefreshAttemptCount(1);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      router.refresh();
+      setRefreshAttemptCount((previous) => previous + 1);
+    }, OPTIMISTIC_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    hasStalePendingGhost,
+    refreshAttemptCount,
+    router,
+  ]);
+
+  useEffect(() => {
+    const nextTimerAtCandidates = [
+      ...matchedOptimisticEntries
+        .filter(
+          (entry) =>
+            entry.settledAt === null &&
+            optimisticOutboundAgeMs(entry, nowMs) < OPTIMISTIC_MATCH_GRACE_MS,
+        )
+        .map((entry) => entry.createdAt + OPTIMISTIC_MATCH_GRACE_MS),
+      ...pendingOptimisticEntries
+        .filter(
+          (entry) =>
+            !matchingOptimisticClientIds.has(entry.clientGeneratedId) &&
+            optimisticOutboundAgeMs(entry, nowMs) <
+              OPTIMISTIC_REFRESH_INTERVAL_MS,
+        )
+        .map((entry) => entry.createdAt + OPTIMISTIC_REFRESH_INTERVAL_MS),
+      ...pendingOptimisticEntries
+        .filter(
+          (entry) =>
+            !matchingOptimisticClientIds.has(entry.clientGeneratedId) &&
+            optimisticOutboundAgeMs(entry, nowMs) <
+              OPTIMISTIC_ORPHAN_TIMEOUT_MS,
+        )
+        .map((entry) => entry.createdAt + OPTIMISTIC_ORPHAN_TIMEOUT_MS),
+    ];
+    const nextTimerAt =
+      nextTimerAtCandidates.length === 0
+        ? null
+        : Math.min(...nextTimerAtCandidates);
+
+    if (nextTimerAt === null) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setTimerTick((previous) => previous + 1);
+    }, Math.max(0, nextTimerAt - Date.now()));
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    hasStalePendingGhost,
+    matchedOptimisticEntries,
+    matchingOptimisticClientIds,
+    nowMs,
+    pendingOptimisticEntries,
+  ]);
 
   useEffect(() => {
     if (!shouldScrollToLatestRef.current) {
