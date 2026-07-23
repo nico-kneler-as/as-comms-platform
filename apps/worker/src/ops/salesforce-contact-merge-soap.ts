@@ -202,6 +202,11 @@ export async function mergeSalesforceContactPairViaSoap(input: {
       headers: {
         accept: "text/xml",
         "content-type": "text/xml; charset=utf-8",
+        // Salesforce's SOAP endpoint rejects requests without a SOAPAction
+        // header (HTTP 500 soapenv:Client "SOAPAction HTTP header missing").
+        // The value is ignored but the header must be present; the empty
+        // quoted string is the documented convention.
+        soapaction: '""',
       },
       body: requestBody,
       signal: AbortSignal.timeout(input.timeoutMs ?? 15_000),
