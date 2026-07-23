@@ -94,7 +94,30 @@ type ResolvedSalesforceCaptureServiceConfig = z.output<
   typeof salesforceCaptureServiceConfigSchema
 >;
 
+const salesforceJwtBearerTokenExchangeConfigSchema = z.object({
+  loginUrl: z.string().url(),
+  clientId: z.string().min(1),
+  username: z.string().min(1),
+  jwtPrivateKey: z.string().min(1),
+  jwtExpirationSeconds: z.number().int().positive().default(180),
+  timeoutMs: z.number().int().positive().default(15_000),
+});
+export type SalesforceJwtBearerTokenExchangeConfig = z.input<
+  typeof salesforceJwtBearerTokenExchangeConfigSchema
+>;
+type ResolvedSalesforceJwtBearerTokenExchangeConfig = z.output<
+  typeof salesforceJwtBearerTokenExchangeConfigSchema
+>;
+
 type SalesforceRow = Record<string, unknown>;
+
+interface SalesforceTokenExchangeConfig {
+  readonly loginUrl: string;
+  readonly clientId: string;
+  readonly username: string;
+  readonly jwtPrivateKey: string;
+  readonly jwtExpirationSeconds: number;
+}
 
 export interface SalesforceTaskFieldConfig {
   readonly taskContactField: string;
@@ -200,7 +223,7 @@ function resolveRemainingTimeoutMs(input: {
 }
 
 async function exchangeSalesforceAccessToken(input: {
-  readonly config: ResolvedSalesforceCaptureServiceConfig;
+  readonly config: SalesforceTokenExchangeConfig;
   readonly fetchImplementation: typeof fetch;
   readonly now: () => Date;
   readonly accessTokenCache: SalesforceAccessTokenCacheEntry | null;
@@ -312,6 +335,34 @@ async function exchangeSalesforceAccessToken(input: {
     instanceUrl: tokenJson.instance_url,
     expiresAtEpochMs: currentTime + 30 * 60 * 1000,
   } satisfies SalesforceAccessTokenCacheEntry;
+}
+
+export async function exchangeSalesforceJwtBearerAccessToken(
+  config: SalesforceJwtBearerTokenExchangeConfig,
+  input?: {
+    readonly fetchImplementation?: typeof fetch;
+    readonly now?: () => Date;
+  },
+): Promise<{
+  readonly accessToken: string;
+  readonly instanceUrl: string;
+  readonly expiresAtEpochMs: number;
+}> {
+  const parsedConfig: ResolvedSalesforceJwtBearerTokenExchangeConfig =
+    salesforceJwtBearerTokenExchangeConfigSchema.parse(config);
+  const fetchImplementation = input?.fetchImplementation ?? globalThis.fetch;
+
+  if (typeof fetchImplementation !== "function") {
+    throw new Error("Global fetch is unavailable for Salesforce token exchange.");
+  }
+
+  return exchangeSalesforceAccessToken({
+    config: parsedConfig,
+    fetchImplementation,
+    now: input?.now ?? (() => new Date()),
+    accessTokenCache: null,
+    timeoutMs: parsedConfig.timeoutMs,
+  });
 }
 
 export async function checkSalesforceCaptureServiceHealth(
