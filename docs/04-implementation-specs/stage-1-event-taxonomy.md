@@ -4,6 +4,7 @@
 **Audience:** implementers defining contracts, normalization rules, event storage, and projections  
 **When to read:** before creating canonical event schemas or provider-to-event mappings  
 **Authority:** implementation-spec guidance under the core canon
+**Last reviewed:** 2026-07-23
 
 ## Summary
 
@@ -14,12 +15,12 @@
 
 ## Minimum Stage 1 Event Families
 
-| Family | Channel | First-implementation canonical event types | Deferred examples |
-| --- | --- | --- | --- |
-| one-to-one email | `email` | `communication.email.inbound`, `communication.email.outbound` | drafts, read-state, labels, delivery/bounce detail, thread-close semantics |
-| one-to-one SMS | `sms` | `communication.sms.inbound`, `communication.sms.outbound`, `communication.sms.opt_in`, `communication.sms.opt_out` | delivery receipts, media enrichment, bulk-SMS analytics |
-| lifecycle | `lifecycle` | `lifecycle.signed_up`, `lifecycle.received_training`, `lifecycle.completed_training`, `lifecycle.submitted_first_data` | later lifecycle milestones, inferred volunteer journey states |
-| transition-period broadcast email | `campaign_email` | `campaign.email.sent`, `campaign.email.opened`, `campaign.email.clicked`, `campaign.email.unsubscribed` | native broadcast authoring state, automation internals, richer deliverability families |
+| Family                            | Channel          | First-implementation canonical event types                                                                             | Deferred examples                                                                                    |
+| --------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| one-to-one email                  | `email`          | `communication.email.inbound`, `communication.email.outbound`                                                          | drafts, label ingest beyond the live read-state poll, delivery/bounce detail, thread-close semantics |
+| one-to-one SMS                    | `sms`            | `communication.sms.inbound`, `communication.sms.outbound`, `communication.sms.opt_in`, `communication.sms.opt_out`     | delivery receipts, media enrichment, bulk-SMS analytics                                              |
+| lifecycle                         | `lifecycle`      | `lifecycle.signed_up`, `lifecycle.received_training`, `lifecycle.completed_training`, `lifecycle.submitted_first_data` | later lifecycle milestones, inferred volunteer journey states                                        |
+| transition-period broadcast email | `campaign_email` | `campaign.email.sent`, `campaign.email.opened`, `campaign.email.clicked`, `campaign.email.unsubscribed`                | native broadcast authoring state, automation internals, richer deliverability families               |
 
 ## Not Canonical Events In First Pass
 
@@ -28,6 +29,7 @@
 - provider health or sync telemetry
 - internal notes
 - AI state
+- Gmail read-state sync (`poll-inbox-read-state`) — live, but it mutates Inbox projection state rather than creating canonical events
 
 Those are still Stage 1 or later durable concepts where canon requires them, but they should not be invented as additional canonical event families during the first pass.
 

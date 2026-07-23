@@ -4,6 +4,7 @@
 **Audience:** all implementers  
 **When to read:** before any stage bundle that touches product behavior  
 **Authority:** authoritative for scope, users, Inbox model, stage map  
+**Last reviewed:** 2026-07-23
 **Decides:** what the product is, who it serves, what is locked in scope  
 **Does not decide:** repo shape, CI, package boundaries, low-level integration details
 
@@ -15,12 +16,12 @@
 
 ## Locked Product Truth
 
-| ID | Locked truth |
-| --- | --- |
-| `P-01` | One person, one timeline. |
-| `P-02` | Contact-centric Inbox, not thread-centric Inbox. |
-| `P-03` | Explicit manual resolution beats wrong auto-linking. |
-| `P-04` | AI is human-in-the-loop only. |
+| ID     | Locked truth                                                         |
+| ------ | -------------------------------------------------------------------- |
+| `P-01` | One person, one timeline.                                            |
+| `P-02` | Contact-centric Inbox, not thread-centric Inbox.                     |
+| `P-03` | Explicit manual resolution beats wrong auto-linking.                 |
+| `P-04` | AI is human-in-the-loop only.                                        |
 | `P-05` | Broadcasts share the same identity and timeline foundation as Inbox. |
 
 ## Users
@@ -31,32 +32,34 @@
 
 ## Locked Stage Map
 
-| Stage | Outcome |
-| --- | --- |
-| `0` | engineering foundation and repo bootstrap |
-| `1` | trusted identity, canonical events, projections, cutover tooling |
-| `2` | app-owned settings, access, integration health, timezone (knowledge config deferred to Stage 4) |
-| `3` | one-to-one Inbox on canonical projections (read surface, follow-up, overlays) |
+| Stage | Outcome                                                                                              |
+| ----- | ---------------------------------------------------------------------------------------------------- |
+| `0`   | engineering foundation and repo bootstrap                                                            |
+| `1`   | trusted identity, canonical events, projections, cutover tooling                                     |
+| `2`   | app-owned settings, access, integration health, timezone (knowledge config deferred to Stage 4)      |
+| `3`   | one-to-one Inbox on canonical projections (read surface, follow-up, overlays)                        |
 | `3.5` | Composer: real send/reply via Gmail with optimistic UI, net-new to SF contacts and external partners |
-| `4` | grounded AI drafts and reusable memory (depends on Composer) |
-| `V` | validation gate — real operator use of Inbox + Composer + AI in production, harden before Broadcasts |
-| `5A` | Email Broadcasts (gated on `V`) |
-| `5B` | SMS Broadcasts after Email trust gates pass |
-| `6` | later reporting only after the operating system is stable |
+| `4`   | grounded AI drafts and reusable memory (depends on Composer)                                         |
+| `V`   | validation gate — real operator use of Inbox + Composer + AI in production, harden before Broadcasts |
+| `5A`  | Email Broadcasts (gated on `V`)                                                                      |
+| `5B`  | SMS Broadcasts after Email trust gates pass                                                          |
+| `6`   | later reporting only after the operating system is stable                                            |
 
 ## Inbox Model
 
-| ID | Locked truth |
-| --- | --- |
-| `INBX-01` | Inbox shows one row per person, not one row per thread. |
-| `INBX-02` | Inbox is a single mixed contact list sorted by most recent inbound message, not primarily partitioned into queue tabs. |
-| `INBX-03` | `New` and `Opened` remain projection-driven bucket states, but they are row states and filter inputs rather than the primary Inbox partition. |
-| `INBX-04` | Unread is derived from bucket state. |
-| `INBX-05` | `needsFollowUp` is an explicit operator-controlled follow-up flag that stays separate from bucket state. |
-| `INBX-06` | Unresolved review layers on top; it is not its own bucket. |
-| `INBX-07` | New inbound on an `Opened` conversation resets it to `New`. |
-| `INBX-08` | Toggling follow-up does not change list ordering by itself. |
-| `INBX-09` | First restart Inbox does not depend on close / reopen lifecycle actions. |
+| ID        | Locked truth                                                                                                                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INBX-01` | Inbox shows one row per person, not one row per thread.                                                                                                                                  |
+| `INBX-02` | Inbox is a single mixed contact list sorted by most recent inbound message, not primarily partitioned into queue tabs.                                                                   |
+| `INBX-03` | `New` and `Opened` remain projection-driven bucket states, but they are row states and filter inputs rather than the primary Inbox partition.                                            |
+| `INBX-04` | Unread is derived from bucket state.                                                                                                                                                     |
+| `INBX-05` | `needsFollowUp` is an explicit operator-controlled follow-up flag that stays separate from bucket state.                                                                                 |
+| `INBX-06` | Unresolved review layers on top; it is not its own bucket.                                                                                                                               |
+| `INBX-07` | New inbound on an `Opened` conversation resets it to `New`.                                                                                                                              |
+| `INBX-08` | Toggling follow-up does not change list ordering by itself.                                                                                                                              |
+| `INBX-09` | First restart Inbox does not depend on close / reopen lifecycle actions.                                                                                                                 |
+| `INBX-10` | Timeline stays strictly chronological by `occurredAt`, with same-day volunteer-lifecycle reordering limited to adjacent lifecycle runs; a lifecycle chip never jumps ahead of a message. |
+| `INBX-11` | The unresolved detail state is display-only in the shipped UI: banner + chip surface the review reason, stored explanation, and up to three conflicting contacts.                        |
 
 ## Locked Scope Highlights
 

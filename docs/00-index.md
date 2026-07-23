@@ -23,14 +23,14 @@ If the compact canon and deeper donor evidence differ, use the compact canon for
 
 ## Doc Taxonomy
 
-| Layer | Path | Purpose | Read frequency |
-| --- | --- | --- | --- |
-| Index | `00-index.md` | package map and task routing | always |
-| Core canon | `01-core/*` | product, system, data, interfaces, frontend, engineering, delivery, decisions | almost always |
-| Task bundles | `02-bundles/*` | task-scoped working packets | per task |
-| Reference | `03-reference/*` | compact lookup and donor pointers | only when needed |
-| Implementation specs | `04-implementation-specs/*` | stage-scoped execution narrowing after canon is read | only when beginning implementation for that stage |
-| Backlog | `backlog.md` | durable list of noticed-but-not-scoped follow-up items | when planning the next scope of work, or before opening a new issue |
+| Layer                | Path                        | Purpose                                                                       | Read frequency                                                      |
+| -------------------- | --------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Index                | `00-index.md`               | package map and task routing                                                  | always                                                              |
+| Core canon           | `01-core/*`                 | product, system, data, interfaces, frontend, engineering, delivery, decisions | almost always                                                       |
+| Task bundles         | `02-bundles/*`              | task-scoped working packets                                                   | per task                                                            |
+| Reference            | `03-reference/*`            | compact lookup and donor pointers                                             | only when needed                                                    |
+| Implementation specs | `04-implementation-specs/*` | stage-scoped execution narrowing after canon is read                          | only when beginning implementation for that stage                   |
+| Backlog              | `backlog.md`                | durable list of noticed-but-not-scoped follow-up items                        | when planning the next scope of work, or before opening a new issue |
 
 ## Core Canon
 
@@ -49,15 +49,16 @@ Open [decision-log.md](./01-core/decision-log.md) when a task may reopen a locke
 
 ## Task Bundle Table
 
-| Task | Start here | Typical total reading set |
-| --- | --- | --- |
-| New repo bootstrap | [bootstrap-bundle.md](./02-bundles/bootstrap-bundle.md) | `00-index` + `engineering-core` + `interfaces-core` + `delivery-core` + `decision-core` + bundle |
-| Data foundation | [data-foundation-bundle.md](./02-bundles/data-foundation-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `delivery-core` + bundle + relevant docs in [README.md](./04-implementation-specs/README.md) |
-| Settings/admin | [settings-bundle.md](./02-bundles/settings-bundle.md) | `00-index` + `product-core` + `system-core` + `engineering-core` + `frontend-patterns` + bundle |
-| Inbox | [inbox-bundle.md](./02-bundles/inbox-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
-| AI | [ai-bundle.md](./02-bundles/ai-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `frontend-patterns` + bundle |
-| Broadcasts | [campaigns-bundle.md](./02-bundles/campaigns-bundle.md) | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle |
-| Verification/security | [verification-security-bundle.md](./02-bundles/verification-security-bundle.md) | `00-index` + `delivery-core` + `decision-core` + `reference-testing-mocks` + bundle |
+| Task                  | Start here                                                                      | Typical total reading set                                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New repo bootstrap    | [bootstrap-bundle.md](./02-bundles/bootstrap-bundle.md)                         | `00-index` + `engineering-core` + `interfaces-core` + `delivery-core` + `decision-core` + bundle                                                                             |
+| Data foundation       | [data-foundation-bundle.md](./02-bundles/data-foundation-bundle.md)             | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `delivery-core` + bundle + relevant docs in [README.md](./04-implementation-specs/README.md) |
+| Settings/admin        | [settings-bundle.md](./02-bundles/settings-bundle.md)                           | `00-index` + `product-core` + `system-core` + `engineering-core` + `frontend-patterns` + bundle                                                                              |
+| Inbox                 | [inbox-bundle.md](./02-bundles/inbox-bundle.md)                                 | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle                                                                 |
+| Composer              | [composer-bundle.md](./02-bundles/composer-bundle.md)                           | `00-index` + `product-core` + `system-core` + `data-core` + `frontend-patterns` + `decision-core` + bundle                                                                   |
+| AI                    | [ai-bundle.md](./02-bundles/ai-bundle.md)                                       | `00-index` + `product-core` + `system-core` + `data-core` + `frontend-patterns` + bundle                                                                                     |
+| Broadcasts            | [campaigns-bundle.md](./02-bundles/campaigns-bundle.md)                         | `00-index` + `product-core` + `system-core` + `data-core` + `interfaces-core` + `frontend-patterns` + bundle                                                                 |
+| Verification/security | [verification-security-bundle.md](./02-bundles/verification-security-bundle.md) | `00-index` + `delivery-core` + `decision-core` + `reference-testing-mocks` + bundle                                                                                          |
 
 ## Quick Rules
 
@@ -76,6 +77,7 @@ Open [decision-log.md](./01-core/decision-log.md) when a task may reopen a locke
 - If deploying or wiring the Stage 1 Gmail/Salesforce capture services: [stage-1-capture-services.md](./stage-1-capture-services.md)
 - If running sandbox or non-production Stage 1 validation: [stage-1-validation-runbook.md](./stage-1-validation-runbook.md)
 - If planning backend follow-on validation after Stage 1 completion: [stage-1-post-validation-roadmap.md](./stage-1-post-validation-roadmap.md)
+- If checking the current worker schedule or registered job inventory: [worker-job-catalog-current.md](./04-implementation-specs/worker-job-catalog-current.md)
 - If reconciling locked choices or adding new decision records: [decision-log.md](./01-core/decision-log.md)
 - If implementing product behavior: open the matching file under [02-bundles](./02-bundles)
 - If planning new work or checking for known follow-ups before filing a new issue: [backlog.md](./backlog.md)

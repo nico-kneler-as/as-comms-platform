@@ -4,6 +4,7 @@
 **Audience:** implementers designing provider adapters, normalization, identity resolution, and source-evidence storage  
 **When to read:** before defining first-pass provider ingest work  
 **Authority:** implementation-spec guidance under the core canon
+**Last reviewed:** 2026-07-23
 
 ## Summary
 
@@ -29,7 +30,7 @@
 ### Deferred
 
 - drafts
-- read-state and mailbox labels
+- durable label ingest beyond the live read-state poll
 - attachment extraction beyond metadata or payload references
 - bounce, delivery, or mailbox-rule families
 
@@ -59,6 +60,7 @@
 - live Gmail sync is narrowed to `volunteers@...`, which sends and receives on behalf of the project inbox aliases
 - both historical fetches and live deltas use the same normalization and dedupe rules
 - thread IDs are evidence only; they must not turn the model into a thread-first Inbox
+- separate from canonical ingest, `poll-inbox-read-state` runs every 10 minutes against Gmail for `bucket='New'` rows. It flips `New` to `Opened` when the latest inbound is read or no longer in Inbox, and never flips `Opened` back to `New`.
 
 ### Tie-break and identity-anchor notes
 
