@@ -20,6 +20,7 @@
     "ops:worker:import-gmail-mbox": "pnpm --filter @as-comms/worker ops:import-gmail-mbox",
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
     "ops:worker:inspect-sf-statuses": "pnpm --filter @as-comms/worker ops:inspect-sf-statuses",
+    "ops:merge-sf-contact-pair": "pnpm --filter @as-comms/worker ops:merge-sf-contact-pair",
     "ops:worker:reprocess-pending-campaign-sends": "pnpm --filter @as-comms/worker ops:reprocess-pending-campaign-sends",
     "ops:cleanup-non-volunteer-contacts": "tsx scripts/ops/cleanup-non-volunteer-contacts.ts",
     "ops:reclassify-salesforce-tasks": "pnpm --filter @as-comms/worker ops:reclassify-salesforce-tasks",

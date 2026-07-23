@@ -50,6 +50,7 @@
     "ops:enqueue": "tsx src/ops/cli.ts enqueue",
     "ops:import-gmail-mbox": "tsx src/ops/cli.ts import-gmail-mbox",
     "ops:merge-email-only-into-sf-anchored": "tsx src/ops/merge-email-only-into-sf-anchored.ts",
+    "ops:merge-sf-contact-pair": "tsx src/ops/cli.ts merge-sf-contact-pair",
     "ops:reclassify-sf-direction": "tsx src/ops/cli.ts reclassify-sf-direction",
     "ops:reclassify-salesforce-tasks": "tsx src/ops/reclassify-salesforce-tasks.ts",
     "ops:inspect": "tsx src/ops/cli.ts inspect",
