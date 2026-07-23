@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSalesforceContactMergeEnvelope,
+  mergeSalesforceContactPairViaSoap,
   parseSalesforceContactMergeResponse,
 } from "../src/ops/salesforce-contact-merge-soap.js";
 
@@ -62,5 +63,31 @@ describe("salesforce-contact-merge-soap", () => {
       code: "INSUFFICIENT_ACCESS_OR_READONLY",
       message: "insufficient access rights on cross-reference id",
     });
+  });
+
+  it("sends the SOAPAction header Salesforce requires", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    const successBody = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><mergeResponse><result><id>003000000000000AAA</id><success>true</success></result></mergeResponse></soapenv:Body></soapenv:Envelope>`;
+    const fetchImplementation = ((_url: unknown, init?: RequestInit) => {
+      capturedHeaders = init?.headers as Record<string, string>;
+      return Promise.resolve(
+        new Response(successBody, {
+          status: 200,
+          headers: { "content-type": "text/xml" },
+        }),
+      );
+    }) as typeof fetch;
+
+    await mergeSalesforceContactPairViaSoap({
+      instanceUrl: "https://example.my.salesforce.com",
+      apiVersion: "61.0",
+      sessionId: "session-123",
+      masterContactId: "003000000000000AAA",
+      duplicateContactId: "003000000000001AAA",
+      fetchImplementation,
+    });
+
+    expect(capturedHeaders).toBeDefined();
+    expect(capturedHeaders?.soapaction).toBe('""');
   });
 });
