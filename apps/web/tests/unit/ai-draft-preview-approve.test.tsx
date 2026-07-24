@@ -424,6 +424,18 @@ describe("AI draft preview approval panel", () => {
     expect(document.querySelector('[data-testid="body"]')?.textContent).toBe("");
   });
 
+  it("refuses to flex-shrink in the compact state but allows it while reviewing", async () => {
+    await mount(createElement(DraftHarness));
+
+    const compactSection = document.querySelector("section");
+    expect(compactSection?.className).toContain("shrink-0");
+
+    await click(getButton("Finish generation"));
+
+    const reviewSection = document.querySelector("section");
+    expect(reviewSection?.className).not.toContain("shrink-0");
+  });
+
   it("auto-grows the intent textarea up to the six-line cap", async () => {
     await mount(createElement(DraftHarness));
 

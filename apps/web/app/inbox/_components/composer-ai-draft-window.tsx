@@ -258,6 +258,12 @@ export function ComposerAiDraftWindow({
     <section
       className={cn(
         "mx-4 mt-3 min-w-0 overflow-hidden rounded-lg border bg-white ring-1",
+        // overflow-hidden zeroes the flex min-height:auto content floor, so
+        // inside the editor's min-h-0 flex chain this card can be crushed to
+        // a sliver (clipping the header + intent row). Refuse to shrink in
+        // the compact states; while a draft is under review the card stays
+        // shrinkable so the 40vh preview can negotiate space with the editor.
+        !showsDraft && "shrink-0",
         accentClasses.section,
       )}
     >
