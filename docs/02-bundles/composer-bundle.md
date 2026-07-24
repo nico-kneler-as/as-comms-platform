@@ -29,7 +29,7 @@ Add the shared send surface between Inbox read-only work and Stage 4 AI.
 - forward is email-only and opens the same modal with forwarded subject/body context prefilled
 - optimistic outbound UI is real product behavior: the client injects a pending timeline entry immediately, then removes it after a matching server entry appears
 - `pending_composer_outbounds` is the durable send ledger for email only. Rows insert as `pending`; successful Gmail send marks them `confirmed` with `reconciledEventId=null`; later capture reconciliation fills the canonical event link; failures mark `failed`; the sweep job moves older `pending` rows to `orphaned`; `superseded` is internal replacement state
-- do not document an extra client self-heal timer loop as shipped behavior; current `main` uses send-time `router.refresh()` plus optimistic/server-entry matching, not the unmerged 10s/15s/2min loop
+- optimistic entries self-heal when the send response is lost (deploy/network drop, PR #660): a matching captured entry clears an unsettled ghost after a 10s grace; unmatched stale ghosts trigger capped timeline refreshes (15s intervals, max 8); after 2 minutes an unmatched entry flips to the existing `orphaned` stalled/Retry treatment — never auto-resend
 - AI draft-in-composer is review-only: `Draft with AI` or prompt-fill produces a reviewable draft; operators may reprompt, approve, or discard before it touches the editor
 - the AI review preview caps at `40vh`; the intent textarea autosizes between 2 and 6 rows
 - alias signatures render from the selected alias template with operator-name substitution; per-message signature override is allowed and resettable
