@@ -424,16 +424,40 @@ describe("AI draft preview approval panel", () => {
     expect(document.querySelector('[data-testid="body"]')?.textContent).toBe("");
   });
 
-  it("refuses to flex-shrink in the compact state but allows it while reviewing", async () => {
+  // The card sets `overflow-hidden`, which zeroes its flex `min-height: auto`
+  // content floor. Inside the composer's `min-h-0` chain it must therefore
+  // never be shrinkable in ANY state, or it collapses to a sliver and clips
+  // its own header/body instead of scrolling. JSDOM does no flex layout, so
+  // this guards the class that carries the invariant.
+  it("never allows the card to flex-shrink, in every draft state", async () => {
     await mount(createElement(DraftHarness));
 
-    const compactSection = document.querySelector("section");
-    expect(compactSection?.className).toContain("shrink-0");
+    const sectionClass = () =>
+      document.querySelector("section")?.className ?? "";
+
+    expect(sectionClass()).toContain("shrink-0");
+
+    await click(getButton("Finish generation"));
+    expect(sectionClass()).toContain("shrink-0");
+
+    await click(getButton("Reprompt"));
+    expect(sectionClass()).toContain("shrink-0");
+
+    await click(getButton("Cancel reprompt"));
+    expect(sectionClass()).toContain("shrink-0");
+
+    await click(getButton("Discard"));
+    expect(sectionClass()).toContain("shrink-0");
+  });
+
+  it("keeps the draft preview capped and internally scrollable", async () => {
+    await mount(createElement(DraftHarness));
 
     await click(getButton("Finish generation"));
 
-    const reviewSection = document.querySelector("section");
-    expect(reviewSection?.className).not.toContain("shrink-0");
+    const preview = document.querySelector(".whitespace-pre-wrap");
+    expect(preview?.className).toContain("max-h-[40vh]");
+    expect(preview?.className).toContain("overflow-y-auto");
   });
 
   it("auto-grows the intent textarea up to the six-line cap", async () => {

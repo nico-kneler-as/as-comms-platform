@@ -257,13 +257,15 @@ export function ComposerAiDraftWindow({
   return (
     <section
       className={cn(
-        "mx-4 mt-3 min-w-0 overflow-hidden rounded-lg border bg-white ring-1",
-        // overflow-hidden zeroes the flex min-height:auto content floor, so
-        // inside the editor's min-h-0 flex chain this card can be crushed to
-        // a sliver (clipping the header + intent row). Refuse to shrink in
-        // the compact states; while a draft is under review the card stays
-        // shrinkable so the 40vh preview can negotiate space with the editor.
-        !showsDraft && "shrink-0",
+        "mx-4 mt-3 min-w-0 shrink-0 overflow-hidden rounded-lg border bg-white ring-1",
+        // `shrink-0` is load-bearing in every state: `overflow-hidden` zeroes
+        // this card's flex `min-height: auto` content floor, so inside the
+        // editor's `min-h-0` chain it would otherwise be crushed to a sliver
+        // and clip its own content instead of scrolling. The card's height is
+        // bounded from the inside (the draft preview caps at 40vh and scrolls);
+        // when card + editor exceed the composer body, the ancestor
+        // `overflow-y-auto` region scrolls and the send toolbar — which lives
+        // outside that region — stays put.
         accentClasses.section,
       )}
     >
