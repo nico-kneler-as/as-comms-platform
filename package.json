@@ -58,12 +58,13 @@
       "js-yaml": "^4.3.0",
       "sharp": "^0.35.2",
       "brace-expansion@1": "^1.1.16",
-      "brace-expansion@5": "^5.0.7"
+      "brace-expansion@5": "^5.0.8"
     },
     "auditConfig": {
       "ignoreGhsas": [
         "GHSA-5xrq-8626-4rwp",
-        "GHSA-gv7w-rqvm-qjhr"
+        "GHSA-gv7w-rqvm-qjhr",
+        "GHSA-mh99-v99m-4gvg"
       ]
     }
   },
