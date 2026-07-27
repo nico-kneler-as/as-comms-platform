@@ -142,3 +142,16 @@ Fast filters operators can add in a pinch:
 - `and actor_id = 'user:…'` for a specific operator
 - `and entity_id = 'contact:…'` for a single volunteer record
 - `and metadata_json->>'identifier' = '203.0.113.5'` for a single IP
+
+## Dependency-audit exceptions (`pnpm.auditConfig.ignoreGhsas`)
+
+The CI-only gate (`pnpm audit --audit-level high`, `scripts/security-check.mjs`)
+blocks merges on high/critical advisories. Entries in `ignoreGhsas` are
+deliberate exceptions; each one needs a reason here.
+
+| GHSA | Package | Why ignored |
+| --- | --- | --- |
+| GHSA-mh99-v99m-4gvg | brace-expansion 1.1.16 | Dev-only path (`eslint → @eslint/config-array / eslintrc → minimatch@3 → brace-expansion@^1.1.7`), never shipped to production and fed only our own lint globs. The advisory's patched range is `>=5.0.8`, i.e. a major jump: **no patched v1 exists** (1.1.16 is the last v1), and forcing v5 wholesale breaks eslint (`TypeError: expand is not a function` — v5 changed its exports). Real v5 consumers are pinned to `^5.0.8` via overrides. Revisit if eslint ships a minimatch bump. Added 2026-07-27. |
+
+Before adding an entry: confirm the vulnerable copy is dev-only or otherwise
+unreachable at runtime, try an override first, and record the attempt.
