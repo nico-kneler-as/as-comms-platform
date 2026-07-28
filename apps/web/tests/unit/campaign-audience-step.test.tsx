@@ -301,6 +301,57 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("Download dropped rows CSV");
   });
 
+  it("enables Continue for an SMS CSV audience with no project selected", () => {
+    const csvMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        launchType="sms"
+        hasPickedMode={true}
+        singleSelectProjects={true}
+        availableModes={["project_status", "specific", "csv_upload"]}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: null,
+          projectIds: [],
+          initialFilter: "csv_upload",
+        }}
+        countState={{
+          count: 62,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+    const projectModeMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        launchType="sms"
+        hasPickedMode={true}
+        singleSelectProjects={true}
+        availableModes={["project_status", "specific", "csv_upload"]}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: null,
+          projectIds: [],
+          statuses: ["In the Field"],
+          initialFilter: "project_status",
+        }}
+        countState={{
+          count: 62,
+          hasAppliedFilters: true,
+        }}
+      />,
+    );
+
+    // The CSV defines its own recipients, so a missing project must not block.
+    expect(csvMarkup).not.toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+    // Project-status mode still requires a project.
+    expect(projectModeMarkup).toMatch(
+      /<button[^>]*aria-disabled="true"[^>]*>Continue<\/button>/,
+    );
+  });
+
   it("renders only the project and status surface in project mode", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
