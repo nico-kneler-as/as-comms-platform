@@ -307,6 +307,9 @@ export interface ContactRepository {
   findByPrimaryPhone(phoneE164: string): Promise<ContactRecord | null>;
   listAll(): Promise<readonly ContactRecord[]>;
   listByIds(ids: readonly string[]): Promise<readonly ContactRecord[]>;
+  listByNormalizedPrimaryEmails(
+    normalizedEmails: readonly string[],
+  ): Promise<readonly ContactRecord[]>;
   /**
    * Returns the SF Contact IDs (e.g. `003VK00000mE06CYAS`) for every
    * SF-anchored contact in our DB that has NOT been tombstoned. Used by
@@ -367,6 +370,10 @@ export interface ContactIdentityRepository {
   listByNormalizedValue(input: {
     readonly kind: ContactIdentityKind;
     readonly normalizedValue: string;
+  }): Promise<readonly ContactIdentityRecord[]>;
+  listByNormalizedValues(input: {
+    readonly kind: ContactIdentityKind;
+    readonly normalizedValues: readonly string[];
   }): Promise<readonly ContactIdentityRecord[]>;
   upsert(record: ContactIdentityRecord): Promise<ContactIdentityRecord>;
 }

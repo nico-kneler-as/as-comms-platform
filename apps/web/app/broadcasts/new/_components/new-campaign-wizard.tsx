@@ -485,6 +485,9 @@ export function NewCampaignWizard({
     setCsvUploadSummary,
     csvUploadErrorMessage,
     setCsvUploadErrorMessage,
+    smsCsvAudienceSummary,
+    smsCsvAudienceSummaryLoading,
+    smsCsvAudienceSummaryErrorMessage,
     csvUploadPending,
     startCsvUploadTransition,
     setCsvUploadVersion,
@@ -774,11 +777,19 @@ export function NewCampaignWizard({
 
         setCsvUploadSummary(result.data);
         setCsvUploadErrorMessage(null);
-        setCountState({
-          count: result.data.importedCount,
-          hasAppliedFilters: true,
-        });
-        setPreviewRows(result.data.sample);
+        if (launchType === "sms") {
+          setCountState({
+            count: 0,
+            hasAppliedFilters: true,
+          });
+          setPreviewRows([]);
+        } else {
+          setCountState({
+            count: result.data.importedCount,
+            hasAppliedFilters: true,
+          });
+          setPreviewRows(result.data.sample);
+        }
         setCsvUploadVersion((current) => current + 1);
         resolve();
       });
@@ -977,6 +988,7 @@ export function NewCampaignWizard({
 
               {currentStep === 2 ? (
                 <AudienceBuilderStep
+                  launchType={launchType}
                   availableModes={availableAudienceModes}
                   hasPickedMode={hasPickedAudienceMode}
                   criteria={criteria}
@@ -993,6 +1005,11 @@ export function NewCampaignWizard({
                   csvUploadSummary={csvUploadSummary}
                   csvUploadPending={csvUploadPending}
                   csvUploadErrorMessage={csvUploadErrorMessage}
+                  smsCsvAudienceSummary={smsCsvAudienceSummary}
+                  smsCsvAudienceSummaryLoading={smsCsvAudienceSummaryLoading}
+                  smsCsvAudienceSummaryErrorMessage={
+                    smsCsvAudienceSummaryErrorMessage
+                  }
                   projectOptions={effectiveProjectOptions}
                   singleSelectProjects={singleSelectProjects}
                   statusOptions={bootstrap.statuses}

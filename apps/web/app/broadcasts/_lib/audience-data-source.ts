@@ -23,9 +23,14 @@ import {
   formatOrgAddress,
   intersectSmsAudience,
   normalizeAliasEmail,
+  normalizeEmailAddress,
+  readFirstName,
+  resolveContactsByEmail,
   resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   type AudienceMember,
+  type SmsBroadcastAudienceMember,
+  type SmsBroadcastDropReason,
 } from "@as-comms/domain";
 
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
@@ -95,6 +100,32 @@ export interface CsvUploadSummary {
   readonly invalidSkippedCount: number;
   readonly duplicatesRemovedCount: number;
   readonly sample: readonly AudiencePreviewRow[];
+}
+
+type SmsCsvPreFreezeDropReason = "no_contact_match" | "ambiguous_match";
+
+export interface SmsCsvDroppedAudienceRow {
+  readonly email: string;
+  readonly reason: SmsBroadcastDropReason;
+}
+
+export interface SmsCsvAudienceSummary {
+  readonly importedCount: number;
+  readonly matchedCount: number;
+  readonly reachableCount: number;
+  readonly droppedCount: number;
+  readonly deduplicatedByPhone: number;
+  readonly droppedByReason: Readonly<Record<SmsBroadcastDropReason, number>>;
+  readonly droppedRows: readonly SmsCsvDroppedAudienceRow[];
+}
+
+export interface ResolvedSmsCsvAudience {
+  readonly members: readonly SmsBroadcastAudienceMember[];
+  readonly previewRows: readonly AudiencePreviewRow[];
+  readonly summary: SmsCsvAudienceSummary;
+  readonly preFreezeDroppedByReason: Readonly<
+    Record<SmsCsvPreFreezeDropReason, number>
+  >;
 }
 
 export type AudienceStatusCounts = Partial<
@@ -285,16 +316,6 @@ async function appendCampaignAudit(input: {
   });
 }
 
-function readFirstName(displayName: string): string | null {
-  const trimmed = displayName.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  const [firstName] = trimmed.split(/\s+/u);
-  return firstName?.trim().length ? firstName.trim() : null;
-}
-
 async function resolvePrimaryAliasEmail(
   runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
   projectId: string | null,
@@ -368,6 +389,53 @@ function mapUploadedRecipientPreviewRow(input: {
     projectAlias: null,
     projectAliasHint: null,
   };
+}
+
+function buildEmptySmsBroadcastDropCounts(): Record<SmsBroadcastDropReason, number> {
+  return {
+    no_contact_match: 0,
+    ambiguous_match: 0,
+    no_consent: 0,
+    revoked: 0,
+    no_phone: 0,
+  };
+}
+
+function dedupeSmsAudienceMembersByContactId(
+  members: readonly SmsBroadcastAudienceMember[],
+): readonly SmsBroadcastAudienceMember[] {
+  const seenContactIds = new Set<string>();
+  const deduplicatedMembers: SmsBroadcastAudienceMember[] = [];
+
+  for (const member of members) {
+    if (seenContactIds.has(member.contactId)) {
+      continue;
+    }
+
+    seenContactIds.add(member.contactId);
+    deduplicatedMembers.push(member);
+  }
+
+  return deduplicatedMembers;
+}
+
+function countSmsBroadcastDrops(
+  droppedByReason: Readonly<Record<SmsBroadcastDropReason, number>>,
+): number {
+  return Object.values(droppedByReason).reduce((sum, count) => sum + count, 0);
+}
+
+function formatContactPreviewName(input: {
+  readonly displayName: string;
+  readonly email: string | null;
+  readonly fallback: string;
+}): string {
+  const displayName = input.displayName.trim();
+  if (displayName.length > 0) {
+    return displayName;
+  }
+
+  return input.email?.trim().length ? input.email.trim() : input.fallback;
 }
 
 function hasAppliedAudienceFilters(
@@ -575,6 +643,206 @@ async function loadUploadedAudiencePreview(
         lastName: recipient.lastName,
       }),
     );
+}
+
+export async function resolveSmsCsvAudienceForRun(
+  runId: string,
+): Promise<ResolvedSmsCsvAudience> {
+  const runtime = await getStage1WebRuntime();
+  const uploadedRecipients = await listBroadcastUploadedRecipients(runId);
+  if (uploadedRecipients.length === 0) {
+    const droppedByReason = buildEmptySmsBroadcastDropCounts();
+
+    return {
+      members: [],
+      previewRows: [],
+      summary: {
+        importedCount: 0,
+        matchedCount: 0,
+        reachableCount: 0,
+        droppedCount: 0,
+        deduplicatedByPhone: 0,
+        droppedByReason,
+        droppedRows: [],
+      },
+      preFreezeDroppedByReason: {
+        no_contact_match: 0,
+        ambiguous_match: 0,
+      },
+    };
+  }
+
+  const resolutions = await resolveContactsByEmail({
+    normalizedEmails: uploadedRecipients.map((recipient) => recipient.email),
+    repositories: {
+      contacts: runtime.repositories.contacts,
+      contactIdentities: runtime.repositories.contactIdentities,
+    },
+  });
+  const resolutionByEmail = new Map(
+    resolutions.map((resolution) => [resolution.normalizedEmail, resolution] as const),
+  );
+  const matchedContactIds = resolutions.flatMap((resolution) =>
+    resolution.status === "matched" && resolution.contactId !== null
+      ? [resolution.contactId]
+      : [],
+  );
+  const contactsById = new Map(
+    (
+      await runtime.repositories.contacts.listByIds(
+        [...new Set(matchedContactIds)],
+      )
+    ).map((contact) => [contact.id, contact] as const),
+  );
+  const preFreezeDroppedByReason: Record<SmsCsvPreFreezeDropReason, number> = {
+    no_contact_match: 0,
+    ambiguous_match: 0,
+  };
+  const preFreezeDroppedRowsByEmail = new Map<
+    string,
+    SmsCsvPreFreezeDropReason
+  >();
+  const droppedRows: SmsCsvDroppedAudienceRow[] = [];
+  const matchedMembers: SmsBroadcastAudienceMember[] = [];
+  const matchedContactIdByEmail = new Map<string, string>();
+  const matchedPreviewRows: AudiencePreviewRow[] = [];
+
+  for (const recipient of uploadedRecipients) {
+    // Stored uploaded emails are lowercased by the CSV parser, but the storage
+    // contract only trims. Normalize on lookup so a mixed-case stored row can
+    // never be misreported as an unmatched drop.
+    const resolution = resolutionByEmail.get(
+      normalizeEmailAddress(recipient.email) ?? recipient.email,
+    );
+    if (resolution?.status !== "matched" || resolution.contactId === null) {
+      const reason: SmsCsvPreFreezeDropReason =
+        resolution?.status === "ambiguous_match"
+          ? "ambiguous_match"
+          : "no_contact_match";
+      preFreezeDroppedByReason[reason] += 1;
+      preFreezeDroppedRowsByEmail.set(recipient.email, reason);
+      continue;
+    }
+
+    const contact = contactsById.get(resolution.contactId);
+    if (contact === undefined) {
+      preFreezeDroppedByReason.no_contact_match += 1;
+      preFreezeDroppedRowsByEmail.set(recipient.email, "no_contact_match");
+      continue;
+    }
+
+    const email = normalizeEmailAddress(contact.primaryEmail ?? "");
+    matchedMembers.push({
+      contactId: contact.id,
+      firstName: readFirstName(contact.displayName),
+      email,
+      projectName: null,
+    });
+    matchedContactIdByEmail.set(recipient.email, contact.id);
+    matchedPreviewRows.push({
+      contactId: contact.id,
+      name: formatContactPreviewName({
+        displayName: contact.displayName,
+        email,
+        fallback: contact.id,
+      }),
+      email: email ?? "",
+      project: null,
+      projectAlias: null,
+      projectAliasHint: null,
+    });
+  }
+
+  const members = dedupeSmsAudienceMembersByContactId(matchedMembers);
+  const previewRows = matchedPreviewRows.filter(
+    (row, index, rows) =>
+      rows.findIndex((candidate) => candidate.contactId === row.contactId) ===
+      index,
+  );
+  const latestConsentByContactId =
+    await runtime.repositories.consentRecords.findLatestByContactIds(
+      members.map((member) => member.contactId),
+    );
+  const reachabilityByContactId = new Map<string, SmsBroadcastDropReason | null>();
+  const consentStatusByContactId = new Map(
+    members.map((member) => [
+      member.contactId,
+      latestConsentByContactId.get(member.contactId)?.status ?? null,
+    ]),
+  );
+  const intersection = intersectSmsAudience({
+    candidates: members.map((member) => {
+      const latestConsent = latestConsentByContactId.get(member.contactId);
+      const unreachableReason =
+        latestConsent === undefined
+          ? "no_consent"
+          : latestConsent.status !== "opted_in"
+            ? "revoked"
+            : latestConsent.phoneE164.trim().length === 0
+              ? "no_phone"
+              : null;
+
+      reachabilityByContactId.set(member.contactId, unreachableReason);
+
+      return {
+        contactId: member.contactId,
+        phoneE164:
+          latestConsent?.status === "opted_in" ? latestConsent.phoneE164 : null,
+        firstName: member.firstName,
+        email: member.email,
+        projectName: member.projectName,
+      };
+    }),
+    latestConsentByContactId: consentStatusByContactId,
+  });
+  for (const recipient of uploadedRecipients) {
+    const preFreezeReason = preFreezeDroppedRowsByEmail.get(recipient.email);
+    if (preFreezeReason !== undefined) {
+      droppedRows.push({
+        email: recipient.email,
+        reason: preFreezeReason,
+      });
+      continue;
+    }
+
+    const contactId = matchedContactIdByEmail.get(recipient.email);
+    if (contactId === undefined) {
+      continue;
+    }
+
+    const unreachableReason = reachabilityByContactId.get(contactId);
+    if (unreachableReason !== null && unreachableReason !== undefined) {
+      droppedRows.push({
+        email: recipient.email,
+        reason: unreachableReason,
+      });
+    }
+  }
+  const deduplicatedByPhone =
+    intersection.reachable.length -
+    new Set(intersection.reachable.map((recipient) => recipient.phoneE164)).size;
+  const droppedByReason = buildEmptySmsBroadcastDropCounts();
+
+  droppedByReason.no_contact_match = preFreezeDroppedByReason.no_contact_match;
+  droppedByReason.ambiguous_match = preFreezeDroppedByReason.ambiguous_match;
+  droppedByReason.no_consent = intersection.unreachable.no_consent;
+  droppedByReason.revoked = intersection.unreachable.revoked;
+  droppedByReason.no_phone = intersection.unreachable.no_phone;
+
+  return {
+    members,
+    previewRows: previewRows.slice(0, PREVIEW_LIMIT),
+    summary: {
+      importedCount: uploadedRecipients.length,
+      matchedCount: members.length,
+      reachableCount: intersection.reachableCount,
+      droppedCount: countSmsBroadcastDrops(droppedByReason),
+      deduplicatedByPhone,
+      droppedByReason,
+      droppedRows,
+    },
+    preFreezeDroppedByReason,
+  };
 }
 
 function buildAllProjectsCriteria(
@@ -1218,7 +1486,18 @@ export async function resolveAudienceCountAction(input: {
     const mode = readAudienceMode(criteria);
     const count =
       mode === "csv_upload"
-        ? await countBroadcastUploadedRecipients(input.runId)
+        ? await (async () => {
+            const runtime = await getStage1WebRuntime();
+            const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+            if (run === null) {
+              throw new Error("Broadcast draft not found.");
+            }
+
+            return run.launchType === "sms"
+              ? (await resolveSmsCsvAudienceForRun(input.runId)).summary
+                  .matchedCount
+              : await countBroadcastUploadedRecipients(input.runId);
+          })()
         : (
             await resolveWizardAudience({
               runId: input.runId,
@@ -1258,7 +1537,17 @@ export async function previewAudienceAction(input: {
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
     if (readAudienceMode(criteria) === "csv_upload") {
-      return successResult(await loadUploadedAudiencePreview(input.runId));
+      const runtime = await getStage1WebRuntime();
+      const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+      if (run === null) {
+        return errorResult("campaign_not_found", "Broadcast draft not found.");
+      }
+
+      return successResult(
+        run.launchType === "sms"
+          ? (await resolveSmsCsvAudienceForRun(input.runId)).previewRows
+          : await loadUploadedAudiencePreview(input.runId),
+      );
     }
 
     const runtime = await getStage1WebRuntime();
@@ -1783,12 +2072,6 @@ export async function uploadBroadcastAudienceCsvAction(input: {
     if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
-    if (run.launchType === "sms") {
-      return errorResult(
-        "campaign_csv_upload_sms_unsupported",
-        "CSV import is only available for email broadcasts.",
-      );
-    }
     if (run.kind !== "project") {
       return errorResult(
         "campaign_csv_upload_sender_unsupported",
@@ -1818,6 +2101,36 @@ export async function uploadBroadcastAudienceCsvAction(input: {
       error instanceof Error
         ? error.message
         : "Unable to import the CSV audience.",
+      true,
+    );
+  }
+}
+
+export async function loadSmsCsvAudienceSummaryAction(input: {
+  readonly runId: string;
+}): Promise<UiResult<SmsCsvAudienceSummary>> {
+  await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.launchType !== "sms") {
+      return errorResult(
+        "campaign_sms_csv_summary_invalid_launch_type",
+        "This broadcast is not an SMS broadcast.",
+      );
+    }
+
+    return successResult((await resolveSmsCsvAudienceForRun(input.runId)).summary);
+  } catch (error) {
+    return errorResult(
+      "campaign_sms_csv_summary_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to load the SMS CSV audience summary.",
       true,
     );
   }

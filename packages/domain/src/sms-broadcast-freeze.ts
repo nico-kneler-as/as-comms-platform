@@ -30,6 +30,11 @@ export interface SmsBroadcastFrozenMessage {
   readonly encoding: "GSM-7" | "Unicode";
 }
 
+export type SmsBroadcastDropReason =
+  | SmsUnreachableReason
+  | "no_contact_match"
+  | "ambiguous_match";
+
 export interface SmsBroadcastFreezePlan {
   readonly senderId: string;
   readonly messages: readonly SmsBroadcastFrozenMessage[];
@@ -37,7 +42,7 @@ export interface SmsBroadcastFreezePlan {
   readonly reachable: number;
   readonly deduplicatedByPhone: number;
   readonly frozen: number;
-  readonly unreachable: Readonly<Record<SmsUnreachableReason, number>>;
+  readonly unreachable: Readonly<Record<SmsBroadcastDropReason, number>>;
 }
 
 export interface SmsBroadcastFreezeDeps {
@@ -46,7 +51,40 @@ export interface SmsBroadcastFreezeDeps {
     contactIds: readonly string[],
   ) => Promise<ReadonlyMap<string, SmsBroadcastLatestConsent>>;
   readonly resolveActiveSmsSenderId: () => Promise<string>;
+  readonly additionalUnreachable?: Partial<Record<SmsBroadcastDropReason, number>>;
   readonly optOutFooter?: string;
+}
+
+function buildEmptySmsBroadcastDropCounts(): Record<SmsBroadcastDropReason, number> {
+  return {
+    no_contact_match: 0,
+    ambiguous_match: 0,
+    no_consent: 0,
+    revoked: 0,
+    no_phone: 0,
+  };
+}
+
+function mergeSmsBroadcastDropCounts(input: {
+  readonly intersection: Readonly<Record<SmsUnreachableReason, number>>;
+  readonly additional?: Partial<Record<SmsBroadcastDropReason, number>>;
+}): Record<SmsBroadcastDropReason, number> {
+  const counts = buildEmptySmsBroadcastDropCounts();
+
+  for (const [reason, count] of Object.entries(input.intersection)) {
+    counts[reason as SmsUnreachableReason] = count;
+  }
+  for (const [reason, count] of Object.entries(input.additional ?? {})) {
+    counts[reason as SmsBroadcastDropReason] += count;
+  }
+
+  return counts;
+}
+
+function countSmsBroadcastDrops(
+  counts: Partial<Record<SmsBroadcastDropReason, number>> | undefined,
+): number {
+  return Object.values(counts ?? {}).reduce((sum, count) => sum + count, 0);
 }
 
 function dedupeAudienceMembersByContactId(
@@ -120,6 +158,16 @@ export async function planSmsBroadcastFreeze(input: {
     candidates,
     latestConsentByContactId: consentStatusByContactId,
   });
+  const unreachable = mergeSmsBroadcastDropCounts(
+    input.deps.additionalUnreachable === undefined
+      ? {
+          intersection: intersection.unreachable,
+        }
+      : {
+          intersection: intersection.unreachable,
+          additional: input.deps.additionalUnreachable,
+        },
+  );
   const deduplicatedRecipients = dedupeRecipientsByPhone(intersection.reachable);
   const senderId = await input.deps.resolveActiveSmsSenderId();
   const optOutFooter =
@@ -148,10 +196,12 @@ export async function planSmsBroadcastFreeze(input: {
   return {
     senderId,
     messages,
-    selectedContacts: deduplicatedMembers.length,
+    selectedContacts:
+      deduplicatedMembers.length +
+      countSmsBroadcastDrops(input.deps.additionalUnreachable),
     reachable: intersection.reachableCount,
     deduplicatedByPhone,
     frozen: messages.length,
-    unreachable: intersection.unreachable,
+    unreachable,
   };
 }

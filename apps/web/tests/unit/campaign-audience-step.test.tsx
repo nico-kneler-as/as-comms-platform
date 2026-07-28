@@ -108,6 +108,7 @@ afterEach(() => {
 });
 
 const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
+  launchType: "normal_email",
   availableModes: ["project_status", "specific"],
   hasPickedMode: false,
   selectedSenderType: "project",
@@ -136,6 +137,9 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   csvUploadSummary: null,
   csvUploadPending: false,
   csvUploadErrorMessage: null,
+  smsCsvAudienceSummary: null,
+  smsCsvAudienceSummaryLoading: false,
+  smsCsvAudienceSummaryErrorMessage: null,
   projectOptions: [],
   statusOptions: ["Waitlist"],
   statusCounts: {},
@@ -235,11 +239,66 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     expect(markup).toContain("Import CSV");
-    expect(markup).toContain("CSV with `email` and optional `firstName` / `lastName` columns.");
+    expect(markup).toContain(
+      "CSV with `email` and optional `firstName` / `lastName` columns. Up to 5,000 rows.",
+    );
     expect(markup).toContain("Imported");
     expect(markup).toContain("Duplicates removed");
     expect(markup).not.toContain("Find volunteers");
     expect(markup).not.toContain("Audience filters");
+  });
+
+  it("renders the SMS CSV reachability summary and dropped-row download", () => {
+    const markup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        launchType="sms"
+        hasPickedMode={true}
+        availableModes={["project_status", "specific", "csv_upload"]}
+        criteria={{
+          ...baseProps.criteria,
+          initialFilter: "csv_upload",
+        }}
+        countState={{
+          count: 3,
+          hasAppliedFilters: true,
+        }}
+        csvUploadSummary={{
+          importedCount: 4,
+          invalidSkippedCount: 0,
+          duplicatesRemovedCount: 0,
+          sample: [],
+        }}
+        smsCsvAudienceSummary={{
+          importedCount: 4,
+          matchedCount: 3,
+          reachableCount: 2,
+          droppedCount: 2,
+          deduplicatedByPhone: 1,
+          droppedByReason: {
+            no_contact_match: 1,
+            ambiguous_match: 0,
+            no_consent: 0,
+            revoked: 1,
+            no_phone: 0,
+          },
+          droppedRows: [
+            { email: "missing@example.org", reason: "no_contact_match" },
+            { email: "revoked@example.org", reason: "revoked" },
+          ],
+        }}
+      />,
+    );
+
+    expect(markup).toContain(
+      "The CSV alone defines this SMS audience. Any attached project is stored as metadata only and does not filter the recipients.",
+    );
+    expect(markup).toContain("Matched");
+    expect(markup).toContain("Reachable");
+    expect(markup).toContain("Dropped");
+    expect(markup).toContain("No contact match");
+    expect(markup).toContain("Consent revoked");
+    expect(markup).toContain("Download dropped rows CSV");
   });
 
   it("renders only the project and status surface in project mode", () => {
@@ -608,6 +667,26 @@ describe("AudienceBuilderStep initial filter gate", () => {
       loadComposePreviewAction,
       loadSelectedAliasSignatureAction: vi.fn(() =>
         Promise.resolve({ ok: true as const, data: "" }),
+      ),
+      loadSmsCsvAudienceSummaryAction: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          data: {
+            importedCount: 0,
+            matchedCount: 0,
+            reachableCount: 0,
+            droppedCount: 0,
+            deduplicatedByPhone: 0,
+            droppedByReason: {
+              no_contact_match: 0,
+              ambiguous_match: 0,
+              no_consent: 0,
+              revoked: 0,
+              no_phone: 0,
+            },
+            droppedRows: [],
+          },
+        }),
       ),
       previewAudienceAction,
       resolveAudienceCountAction,

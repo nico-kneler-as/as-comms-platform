@@ -33,7 +33,7 @@ export interface AudienceResolver {
   estimateCount(criteria: AudienceCriteria, at: Date): Promise<number>;
 }
 
-function readFirstName(displayName: string): string | null {
+export function readFirstName(displayName: string): string | null {
   const trimmed = displayName.trim();
   if (trimmed.length === 0) {
     return null;

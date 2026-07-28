@@ -14,6 +14,7 @@ vi.mock("@/src/server/auth/session", () => ({
 }));
 
 import { previewSmsBroadcast } from "../../app/broadcasts/actions";
+import { uploadBroadcastAudienceCsvAction } from "../../app/broadcasts/_lib/audience-data-source";
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime,
@@ -152,6 +153,21 @@ async function seedSmsSender(runtime: Stage1WebTestRuntime): Promise<void> {
 async function seedSmsBroadcastRun(
   runtime: Stage1WebTestRuntime,
   runId: string,
+  overrides?: Partial<{
+    readonly bodyTextTemplate: string;
+    readonly audienceCriteria: {
+      readonly projectId: string | null;
+      readonly projectIds: readonly string[];
+      readonly statuses: readonly string[];
+      readonly contactIds: readonly string[];
+      readonly newsletterSubscriberIds: readonly string[];
+      readonly expeditionIds: readonly string[];
+      readonly lastActivityWindow: "all_time";
+      readonly hasReplied: "either";
+      readonly hasClicked: "either";
+      readonly initialFilter: "csv_upload";
+    };
+  }>,
 ): Promise<void> {
   await runtime.runtime.campaigns.campaignRuns.create({
     id: runId,
@@ -165,19 +181,20 @@ async function seedSmsBroadcastRun(
     subjectTemplate: null,
     bodyDesignJson: null,
     bodyHtmlTemplate: null,
-    bodyTextTemplate: "Hi {{firstName}}",
+    bodyTextTemplate: overrides?.bodyTextTemplate ?? "Hi {{firstName}}",
     preheader: null,
-    audienceCriteria: {
-      projectId: "project-1",
-      projectIds: ["project-1"],
-      statuses: [],
-      contactIds: ["contact-1", "contact-2"],
-      newsletterSubscriberIds: [],
-      expeditionIds: [],
-      lastActivityWindow: "all_time",
-      hasReplied: "either",
-      hasClicked: "either",
-    },
+    audienceCriteria:
+      overrides?.audienceCriteria ?? {
+        projectId: "project-1",
+        projectIds: ["project-1"],
+        statuses: [],
+        contactIds: ["contact-1", "contact-2"],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
     audienceSize: null,
     createdByUserId: "user:admin",
     lastEditedByUserId: "user:admin",
@@ -267,6 +284,8 @@ describe("previewSmsBroadcast", () => {
         deduplicatedByPhone: 0,
         frozen: 1,
         unreachable: {
+          no_contact_match: 0,
+          ambiguous_match: 0,
           no_consent: 0,
           revoked: 1,
           no_phone: 0,
@@ -281,5 +300,61 @@ describe("previewSmsBroadcast", () => {
 
     expect(result.data.sampleBody).toContain("Hi Ada");
     expect(result.data.sampleBody).toContain("Reply STOP to opt out");
+  });
+
+  it("includes CSV no-match drops in the SMS preview path", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedSmsBroadcastRun(runtime, "run-sms-csv-preview", {
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    await seedSmsConsent(runtime, {
+      id: "consent-1",
+      contactId: "contact-1",
+      phoneE164: "+14065550123",
+      status: "opted_in",
+      createdAt: "2026-07-02T12:01:00.000Z",
+    });
+    await seedSmsSender(runtime);
+
+    const upload = await uploadBroadcastAudienceCsvAction({
+      runId: "run-sms-csv-preview",
+      csvText: ["email", "ada@example.org", "missing@example.org"].join("\n"),
+    });
+    expect(upload.ok).toBe(true);
+
+    const result = await previewSmsBroadcast({
+      runId: "run-sms-csv-preview",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        selected: 2,
+        reachable: 1,
+        deduplicatedByPhone: 0,
+        frozen: 1,
+        unreachable: {
+          no_contact_match: 1,
+          ambiguous_match: 0,
+          no_consent: 0,
+          revoked: 0,
+          no_phone: 0,
+        },
+      },
+    });
   });
 });

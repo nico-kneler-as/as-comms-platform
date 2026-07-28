@@ -16,6 +16,7 @@ vi.mock("@/src/server/auth/session", () => ({
 }));
 
 import { sendSmsBroadcastNow } from "../../app/broadcasts/actions";
+import { uploadBroadcastAudienceCsvAction } from "../../app/broadcasts/_lib/audience-data-source";
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime,
@@ -59,6 +60,25 @@ async function seedContact(
     primaryPhone: null,
     createdAt: "2026-07-02T12:00:00.000Z",
     updatedAt: "2026-07-02T12:00:00.000Z",
+  });
+}
+
+async function seedContactIdentity(
+  runtime: Stage1WebTestRuntime,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly normalizedValue: string;
+  },
+): Promise<void> {
+  await runtime.context.repositories.contactIdentities.upsert({
+    id: input.id,
+    contactId: input.contactId,
+    kind: "email",
+    normalizedValue: input.normalizedValue,
+    isPrimary: false,
+    source: "manual",
+    verifiedAt: null,
   });
 }
 
@@ -162,6 +182,21 @@ async function seedSmsSender(
 async function seedSmsBroadcastRun(
   runtime: Stage1WebTestRuntime,
   runId: string,
+  overrides?: Partial<{
+    readonly bodyTextTemplate: string;
+    readonly audienceCriteria: {
+      readonly projectId: string | null;
+      readonly projectIds: readonly string[];
+      readonly statuses: readonly string[];
+      readonly contactIds: readonly string[];
+      readonly newsletterSubscriberIds: readonly string[];
+      readonly expeditionIds: readonly string[];
+      readonly lastActivityWindow: "all_time";
+      readonly hasReplied: "either";
+      readonly hasClicked: "either";
+      readonly initialFilter: "csv_upload";
+    };
+  }>,
 ): Promise<void> {
   await runtime.runtime.campaigns.campaignRuns.create({
     id: runId,
@@ -175,19 +210,20 @@ async function seedSmsBroadcastRun(
     subjectTemplate: null,
     bodyDesignJson: null,
     bodyHtmlTemplate: null,
-    bodyTextTemplate: "Hi {{firstName}}",
+    bodyTextTemplate: overrides?.bodyTextTemplate ?? "Hi {{firstName}}",
     preheader: null,
-    audienceCriteria: {
-      projectId: "project-1",
-      projectIds: ["project-1"],
-      statuses: [],
-      contactIds: ["contact-1", "contact-2"],
-      newsletterSubscriberIds: [],
-      expeditionIds: [],
-      lastActivityWindow: "all_time",
-      hasReplied: "either",
-      hasClicked: "either",
-    },
+    audienceCriteria:
+      overrides?.audienceCriteria ?? {
+        projectId: "project-1",
+        projectIds: ["project-1"],
+        statuses: [],
+        contactIds: ["contact-1", "contact-2"],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+      },
     audienceSize: null,
     createdByUserId: "user:admin",
     lastEditedByUserId: "user:admin",
@@ -322,6 +358,8 @@ describe("sendSmsBroadcastNow", () => {
         selected: 2,
         deduplicatedByPhone: 1,
         unreachable: {
+          no_contact_match: 0,
+          ambiguous_match: 0,
           no_consent: 0,
           revoked: 0,
           no_phone: 0,
@@ -413,6 +451,112 @@ describe("sendSmsBroadcastNow", () => {
         jobKeyMode: "replace",
         maxAttempts: 5,
         payload: { runId: "run-sms-shared-phone" },
+      },
+    ]);
+  });
+
+  it("freezes SMS CSV recipients with the consent phone and contact-derived merge fields", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedContact(runtime, {
+      id: "contact-identity",
+      displayName: "Grace Hopper",
+      email: "grace.primary@example.org",
+    });
+    await seedContactIdentity(runtime, {
+      id: "identity-secondary",
+      contactId: "contact-identity",
+      normalizedValue: "secondary@example.org",
+    });
+    await seedSmsBroadcastRun(runtime, "run-sms-csv-send", {
+      bodyTextTemplate: "Hi {{firstName}} - {{email}}",
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    await seedSmsConsent(runtime, {
+      id: "consent-identity",
+      contactId: "contact-identity",
+      phoneE164: "+14065550177",
+      status: "opted_in",
+      createdAt: "2026-07-02T12:05:00.000Z",
+    });
+    await seedSmsSender(runtime, {
+      id: "sender-primary",
+      phoneE164: "+14065550999",
+      displayName: "Primary SMS Sender",
+    });
+
+    const upload = await uploadBroadcastAudienceCsvAction({
+      runId: "run-sms-csv-send",
+      csvText: ["email", "secondary@example.org", "missing@example.org"].join(
+        "\n",
+      ),
+    });
+    expect(upload.ok).toBe(true);
+
+    const result = await sendSmsBroadcastNow({
+      runId: "run-sms-csv-send",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        frozen: 1,
+        reachable: 1,
+        selected: 2,
+        deduplicatedByPhone: 0,
+        unreachable: {
+          no_contact_match: 1,
+          ambiguous_match: 0,
+          no_consent: 0,
+          revoked: 0,
+          no_phone: 0,
+        },
+      },
+    });
+
+    const queuedRows = normalizeRows<{
+      readonly contactId: string;
+      readonly phoneE164: string;
+      readonly body: string;
+      readonly broadcastRunId: string | null;
+    }>(
+      (await runtime.context.db.execute(sql`
+        select
+          contact_id as "contactId",
+          phone_e164 as "phoneE164",
+          body,
+          broadcast_run_id as "broadcastRunId"
+        from sms_messages
+        where broadcast_run_id = 'run-sms-csv-send'
+      `)) as {
+        readonly rows?: readonly {
+          readonly contactId: string;
+          readonly phoneE164: string;
+          readonly body: string;
+          readonly broadcastRunId: string | null;
+        }[];
+      },
+    );
+
+    expect(queuedRows).toEqual([
+      {
+        contactId: "contact-identity",
+        phoneE164: "+14065550177",
+        body: "Hi Grace - grace.primary@example.org\n\nReply STOP to opt out",
+        broadcastRunId: "run-sms-csv-send",
       },
     ]);
   });

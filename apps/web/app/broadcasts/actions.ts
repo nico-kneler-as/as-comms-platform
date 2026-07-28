@@ -26,10 +26,11 @@ import {
   formatOrgAddress,
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
-  resolveUploadedAudienceForRun,
   renderSmsBroadcast,
+  resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   type SmsBroadcastAudienceMember,
+  type SmsBroadcastDropReason,
 } from "@as-comms/domain";
 import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { createPostmarkClient } from "@as-comms/integrations";
@@ -55,7 +56,10 @@ import {
   type RecipientFilter,
   type RecipientQueryResult,
 } from "./_lib/run-recipients";
-import { resolveStoredCampaignAudience } from "./_lib/audience-data-source";
+import {
+  resolveSmsCsvAudienceForRun,
+  resolveStoredCampaignAudience,
+} from "./_lib/audience-data-source";
 
 interface CampaignActionData {
   readonly runId: string;
@@ -75,7 +79,7 @@ interface SmsBroadcastSendNowData {
   readonly reachable: number;
   readonly selected: number;
   readonly deduplicatedByPhone: number;
-  readonly unreachable: Readonly<Record<string, number>>;
+  readonly unreachable: Readonly<Record<SmsBroadcastDropReason, number>>;
 }
 
 interface SmsBroadcastPreviewData {
@@ -83,7 +87,7 @@ interface SmsBroadcastPreviewData {
   readonly reachable: number;
   readonly deduplicatedByPhone: number;
   readonly frozen: number;
-  readonly unreachable: Readonly<Record<string, number>>;
+  readonly unreachable: Readonly<Record<SmsBroadcastDropReason, number>>;
   readonly totalSegments: number;
   readonly estCostUsd: number;
   readonly sampleBody: string | null;
@@ -626,13 +630,14 @@ async function freezeSmsBroadcastAudienceForSend(input: {
     readonly email: string | null;
     readonly projectName: string | null;
   }[];
+  readonly additionalUnreachable?: Partial<Record<SmsBroadcastDropReason, number>>;
 }) {
   const plan = await planSmsBroadcastFreeze({
     bodyTemplate: input.run.bodyTextTemplate,
     deps: createSmsBroadcastFreezeDeps({
       audience: input.audience,
       repositories: input.transaction.repositories,
-      selectedContactIds: input.run.audienceCriteria.contactIds,
+      additionalUnreachable: input.additionalUnreachable,
     }),
   });
 
@@ -692,17 +697,34 @@ function mapSmsAudienceMembers(
 }
 
 async function resolveSmsBroadcastAudienceForRun(input: {
+  readonly runId: string;
   readonly kind: CampaignRunRecord["kind"];
   readonly criteria: CampaignRunRecord["audienceCriteria"];
   readonly at: Date;
-}): Promise<readonly SmsBroadcastAudienceMember[]> {
-  return mapSmsAudienceMembers(
-    await resolveStoredCampaignAudience({
-      kind: input.kind,
-      criteria: input.criteria,
-      at: input.at,
-    }),
-  );
+}): Promise<{
+  readonly audience: readonly SmsBroadcastAudienceMember[];
+  readonly additionalUnreachable: Partial<Record<SmsBroadcastDropReason, number>>;
+}> {
+  if (input.criteria.initialFilter === "csv_upload") {
+    const resolved = await resolveSmsCsvAudienceForRun(input.runId);
+
+    return {
+      audience: resolved.members,
+      additionalUnreachable: resolved.preFreezeDroppedByReason,
+    };
+  }
+
+  return {
+    audience: mapSmsAudienceMembers(
+      await resolveStoredCampaignAudience({
+        kind: input.kind,
+        criteria: input.criteria,
+        at: input.at,
+        runId: input.runId,
+      }),
+    ),
+    additionalUnreachable: {},
+  };
 }
 
 function createSmsBroadcastFreezeDeps(input: {
@@ -711,32 +733,20 @@ function createSmsBroadcastFreezeDeps(input: {
     Stage1WebRuntime["repositories"],
     "consentRecords" | "smsSenders"
   >;
-  readonly selectedContactIds: readonly string[];
+  readonly additionalUnreachable:
+    | Partial<Record<SmsBroadcastDropReason, number>>
+    | undefined;
 }) {
-  return {
+  const baseDeps = {
     resolveAudience: () => Promise.resolve(input.audience),
     loadLatestConsentByContactIds: async (contactIds: readonly string[]) => {
       const latestConsentByContactId =
         await input.repositories.consentRecords.findLatestByContactIds(
-          input.selectedContactIds,
+          contactIds,
         );
-      const missingContactIds = contactIds.filter(
-        (contactId) => !latestConsentByContactId.has(contactId),
-      );
-      const consentByContactId =
-        missingContactIds.length === 0
-          ? latestConsentByContactId
-          : new Map([
-              ...latestConsentByContactId,
-              ...(
-                await input.repositories.consentRecords.findLatestByContactIds(
-                  missingContactIds,
-                )
-              ),
-            ]);
 
       return new Map(
-        [...consentByContactId].map(([contactId, consent]) => [
+        [...latestConsentByContactId].map(([contactId, consent]) => [
           contactId,
           {
             status: consent.status,
@@ -760,6 +770,15 @@ function createSmsBroadcastFreezeDeps(input: {
 
       return activeSender.id;
     },
+  };
+
+  if (input.additionalUnreachable === undefined) {
+    return baseDeps;
+  }
+
+  return {
+    ...baseDeps,
+    additionalUnreachable: input.additionalUnreachable,
   };
 }
 
@@ -1009,6 +1028,7 @@ export async function sendSmsBroadcastNow(rawInput: {
 
     const queuedAt = new Date();
     const audience = await resolveSmsBroadcastAudienceForRun({
+      runId: parsed.runId,
       kind: run.kind,
       criteria: run.audienceCriteria,
       at: queuedAt,
@@ -1020,7 +1040,8 @@ export async function sendSmsBroadcastNow(rawInput: {
         runId: parsed.runId,
         actorUserId: admin.userId,
         at: queuedAt,
-        audience,
+        audience: audience.audience,
+        additionalUnreachable: audience.additionalUnreachable,
       }),
     );
 
@@ -1113,6 +1134,7 @@ export async function previewSmsBroadcast(rawInput: {
 
     const previewAt = new Date();
     const audience = await resolveSmsBroadcastAudienceForRun({
+      runId: parsed.runId,
       kind: run.kind,
       criteria: run.audienceCriteria,
       at: previewAt,
@@ -1120,9 +1142,9 @@ export async function previewSmsBroadcast(rawInput: {
     const plan = await planSmsBroadcastFreeze({
       bodyTemplate: run.bodyTextTemplate,
       deps: createSmsBroadcastFreezeDeps({
-        audience,
+        audience: audience.audience,
         repositories: runtime.repositories,
-        selectedContactIds: run.audienceCriteria.contactIds,
+        additionalUnreachable: audience.additionalUnreachable,
       }),
     });
     const env = readWebEnv();

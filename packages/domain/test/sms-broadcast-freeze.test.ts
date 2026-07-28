@@ -31,6 +31,9 @@ function createDeps(input?: {
   readonly audience?: readonly SmsBroadcastAudienceMember[];
   readonly consentByContactId?: ReadonlyMap<string, SmsBroadcastLatestConsent>;
   readonly senderId?: string;
+  readonly additionalUnreachable?: Partial<
+    NonNullable<SmsBroadcastFreezeDeps["additionalUnreachable"]>
+  >;
   readonly optOutFooter?: string;
 }) {
   const resolveAudience = vi.fn(() => Promise.resolve(input?.audience ?? []));
@@ -55,6 +58,9 @@ function createDeps(input?: {
     resolveAudience,
     loadLatestConsentByContactIds,
     resolveActiveSmsSenderId,
+    ...(input?.additionalUnreachable === undefined
+      ? {}
+      : { additionalUnreachable: input.additionalUnreachable }),
     ...(input?.optOutFooter !== undefined
       ? { optOutFooter: input.optOutFooter }
       : {}),
@@ -146,6 +152,8 @@ describe("planSmsBroadcastFreeze", () => {
       deduplicatedByPhone: 0,
       frozen: 3,
       unreachable: {
+        no_contact_match: 0,
+        ambiguous_match: 0,
         no_consent: 0,
         revoked: 0,
         no_phone: 0,
@@ -247,16 +255,44 @@ describe("planSmsBroadcastFreeze", () => {
     expect(plan.reachable).toBe(0);
     expect(plan.deduplicatedByPhone).toBe(0);
     expect(plan.unreachable).toEqual({
+      no_contact_match: 0,
+      ambiguous_match: 0,
       revoked: 1,
       no_consent: 1,
       no_phone: 1,
     });
-    expect(
-      plan.reachable +
-        plan.unreachable.revoked +
-        plan.unreachable.no_consent +
-        plan.unreachable.no_phone,
-    ).toBe(plan.selectedContacts);
+    expect(plan.selectedContacts).toBe(3);
+  });
+
+  it("merges CSV-only drop buckets into the final freeze plan", async () => {
+    const { deps } = createDeps({
+      audience: [member({ contactId: "contact-1", firstName: "Ada" })],
+      consentByContactId: consentMap([
+        [
+          "contact-1",
+          { status: "opted_in", phoneE164: "+14065550101" },
+        ],
+      ]),
+      additionalUnreachable: {
+        no_contact_match: 2,
+        ambiguous_match: 1,
+      },
+    });
+
+    const plan = await planSmsBroadcastFreeze({
+      bodyTemplate: "Hi {{firstName}}",
+      deps,
+    });
+
+    expect(plan.selectedContacts).toBe(4);
+    expect(plan.reachable).toBe(1);
+    expect(plan.unreachable).toEqual({
+      no_contact_match: 2,
+      ambiguous_match: 1,
+      no_consent: 0,
+      revoked: 0,
+      no_phone: 0,
+    });
   });
 
   it.each([null, "   "])(

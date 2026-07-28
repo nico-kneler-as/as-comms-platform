@@ -12,6 +12,7 @@ const previewAudienceActionMock = vi.hoisted(() => vi.fn());
 const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
 const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
+const loadSmsCsvAudienceSummaryActionMock = vi.hoisted(() => vi.fn());
 const searchNewsletterSubscribersActionMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
 const previewSmsBroadcastMock = vi.hoisted(() => vi.fn());
@@ -25,6 +26,7 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadComposePreviewAction: loadComposePreviewActionMock,
   loadMemberStatusCountsForProjects: loadMemberStatusCountsForProjectsMock,
   loadSelectedAliasSignatureAction: loadSelectedAliasSignatureActionMock,
+  loadSmsCsvAudienceSummaryAction: loadSmsCsvAudienceSummaryActionMock,
   previewAudienceAction: previewAudienceActionMock,
   resolveAudienceCountAction: resolveAudienceCountActionMock,
   saveCampaignWizardDraftAction: saveCampaignWizardDraftActionMock,
@@ -645,6 +647,8 @@ function buildSmsPreviewData() {
     deduplicatedByPhone: 1,
     frozen: 8,
     unreachable: {
+      no_contact_match: 0,
+      ambiguous_match: 0,
       no_consent: 1,
       revoked: 1,
       no_phone: 1,
@@ -874,6 +878,24 @@ beforeEach(() => {
     ok: true,
     data: { Waitlist: 2 },
   });
+  loadSmsCsvAudienceSummaryActionMock.mockResolvedValue({
+    ok: true,
+    data: {
+      importedCount: 0,
+      matchedCount: 0,
+      reachableCount: 0,
+      droppedCount: 0,
+      deduplicatedByPhone: 0,
+      droppedByReason: {
+        no_contact_match: 0,
+        ambiguous_match: 0,
+        no_consent: 0,
+        revoked: 0,
+        no_phone: 0,
+      },
+      droppedRows: [],
+    },
+  });
   searchProjectVolunteersActionMock.mockResolvedValue({
     ok: true,
     data: [
@@ -916,6 +938,8 @@ beforeEach(() => {
       selected: 12,
       deduplicatedByPhone: 1,
       unreachable: {
+        no_contact_match: 0,
+        ambiguous_match: 0,
         no_consent: 1,
         revoked: 1,
         no_phone: 1,

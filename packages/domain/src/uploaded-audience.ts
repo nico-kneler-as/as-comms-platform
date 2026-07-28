@@ -3,6 +3,7 @@ import type { BroadcastUploadedRecipientRecord } from "@as-comms/contracts";
 import type { ContactRepository } from "./repositories.js";
 import type { AudienceMember } from "./campaign-types.js";
 import { normalizeAliasEmail } from "./broadcast-email-render.js";
+import { normalizeEmailAddress } from "./normalization.js";
 import type {
   ProjectAliasesRepository,
   SettingsProjectsRepository,
@@ -17,10 +18,6 @@ interface UploadedAudienceRepositories {
   readonly contacts: Pick<ContactRepository, "listAll">;
   readonly settingsProjects: Pick<SettingsProjectsRepository, "findById">;
   readonly settingsAliases: Pick<ProjectAliasesRepository, "findByAlias">;
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
 }
 
 async function resolveProjectContext(
@@ -78,15 +75,19 @@ export async function resolveUploadedAudienceForRun(
       .filter(
         (contact) => (contact.primaryEmail?.trim().length ?? 0) > 0,
       )
-      .map((contact) => [
-        normalizeEmail(contact.primaryEmail ?? ""),
-        contact,
-      ] as const),
+      .flatMap((contact) => {
+        const normalizedEmail = normalizeEmailAddress(contact.primaryEmail ?? "");
+        return normalizedEmail === null
+          ? []
+          : ([[normalizedEmail, contact]] as const);
+      }),
   );
   const projectContext = await resolveProjectContext(repositories, input);
 
   return uploadedRecipients.map((recipient) => ({
-    contactId: contactsByEmail.get(normalizeEmail(recipient.email))?.id ?? null,
+    contactId:
+      contactsByEmail.get(normalizeEmailAddress(recipient.email) ?? "")?.id ??
+      null,
     newsletterSubscriberId: null,
     frozenEmail: recipient.email,
     frozenFirstName: recipient.firstName,
