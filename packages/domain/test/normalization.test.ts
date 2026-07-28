@@ -624,6 +624,18 @@ function buildContext(input: {
             .map((id) => contactRecords.get(id))
             .filter((entry): entry is ContactRecord => entry !== undefined),
         ),
+      listByNormalizedPrimaryEmails: (normalizedEmails) =>
+        Promise.resolve(
+          listContacts().filter((contact) => {
+            const normalizedPrimaryEmail = contact.primaryEmail
+              ?.trim()
+              .toLowerCase();
+            return (
+              normalizedPrimaryEmail !== undefined &&
+              normalizedEmails.includes(normalizedPrimaryEmail)
+            );
+          }),
+        ),
       listSalesforceAnchoredIds: () => Promise.resolve([]),
       markSalesforceDeleted: () => Promise.resolve(0),
       markSalesforceReconciled: () => Promise.resolve(0),
@@ -779,6 +791,14 @@ function buildContext(input: {
             (identity) =>
               identity.kind === kind &&
               identity.normalizedValue === normalizedValue,
+          ),
+        ),
+      listByNormalizedValues: ({ kind, normalizedValues }) =>
+        Promise.resolve(
+          listContactIdentities().filter(
+            (identity) =>
+              identity.kind === kind &&
+              normalizedValues.includes(identity.normalizedValue),
           ),
         ),
       upsert: (record) => {

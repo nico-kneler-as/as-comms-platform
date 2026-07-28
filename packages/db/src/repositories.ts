@@ -2655,6 +2655,33 @@ function createStage1RepositoriesInternal(
         return rows.map(mapContactRow);
       },
 
+      async listByNormalizedPrimaryEmails(normalizedEmails) {
+        const uniqueEmails = [
+          ...new Set(
+            normalizedEmails
+              .map((email) => email.trim().toLowerCase())
+              .filter((email) => email.length > 0),
+          ),
+        ];
+        if (uniqueEmails.length === 0) {
+          return [];
+        }
+
+        const normalizedPrimaryEmail = sql<string>`lower(btrim(${contacts.primaryEmail}))`;
+        const rows = await db
+          .select()
+          .from(contacts)
+          .where(
+            and(
+              isNotNull(contacts.primaryEmail),
+              inArray(normalizedPrimaryEmail, uniqueEmails),
+            ),
+          )
+          .orderBy(asc(contacts.id));
+
+        return rows.map(mapContactRow);
+      },
+
       async listSalesforceAnchoredIds() {
         const rows = await db
           .select({ id: contacts.salesforceContactId })
@@ -3275,6 +3302,45 @@ function createStage1RepositoriesInternal(
             ),
           )
           .orderBy(
+            desc(contactIdentities.isPrimary),
+            asc(contactIdentities.id),
+          );
+
+        return rows.map(mapContactIdentityRow);
+      },
+
+      async listByNormalizedValues(input) {
+        const normalizedValues = [
+          ...new Set(
+            input.normalizedValues
+              .map((value) =>
+                input.kind === "phone"
+                  ? normalizePhoneLookupValue(value)
+                  : value.trim(),
+              )
+              .filter((value) => value.length > 0),
+          ),
+        ];
+        if (normalizedValues.length === 0) {
+          return [];
+        }
+
+        const rows = await db
+          .select()
+          .from(contactIdentities)
+          .where(
+            and(
+              eq(contactIdentities.kind, input.kind),
+              input.kind === "phone"
+                ? inArray(
+                    normalizedPhoneExpression(contactIdentities.normalizedValue),
+                    normalizedValues,
+                  )
+                : inArray(contactIdentities.normalizedValue, normalizedValues),
+            ),
+          )
+          .orderBy(
+            asc(contactIdentities.normalizedValue),
             desc(contactIdentities.isPrimary),
             asc(contactIdentities.id),
           );

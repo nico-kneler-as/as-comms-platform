@@ -19,7 +19,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-import type { AudienceCriteria, ExpeditionMemberStatus } from "@as-comms/contracts";
+import type {
+  AudienceCriteria,
+  ExpeditionMemberStatus,
+  LaunchType,
+} from "@as-comms/contracts";
 
 import type {
   AudienceCountData,
@@ -30,6 +34,7 @@ import type {
   CampaignSenderType,
   CampaignProjectOption,
   CsvUploadSummary,
+  SmsCsvAudienceSummary,
 } from "../../_lib/audience-data-source";
 import { AudienceFilterPanel } from "./audience-filter-panel";
 import { AudiencePreviewList } from "./audience-preview-list";
@@ -74,12 +79,13 @@ const MODE_META: Record<
   },
   csv_upload: {
     title: "Import CSV",
-    hint: "Upload a one-off email list without creating platform contacts.",
+    hint: "Upload a one-off email CSV to define the audience for this send.",
     Icon: Users,
   },
 };
 
 interface AudienceBuilderStepProps {
+  readonly launchType: LaunchType;
   readonly availableModes: readonly AudienceInitialFilter[];
   readonly hasPickedMode: boolean;
   readonly criteria: CampaignAudienceCriteria;
@@ -99,6 +105,9 @@ interface AudienceBuilderStepProps {
   readonly csvUploadSummary: CsvUploadSummary | null;
   readonly csvUploadPending: boolean;
   readonly csvUploadErrorMessage: string | null;
+  readonly smsCsvAudienceSummary: SmsCsvAudienceSummary | null;
+  readonly smsCsvAudienceSummaryLoading: boolean;
+  readonly smsCsvAudienceSummaryErrorMessage: string | null;
   readonly projectOptions: readonly CampaignProjectOption[];
   readonly singleSelectProjects?: boolean;
   readonly statusOptions: readonly ExpeditionMemberStatus[];
@@ -117,6 +126,7 @@ interface AudienceBuilderStepProps {
 }
 
 export function AudienceBuilderStep({
+  launchType,
   availableModes,
   hasPickedMode,
   criteria,
@@ -133,6 +143,9 @@ export function AudienceBuilderStep({
   csvUploadSummary,
   csvUploadPending,
   csvUploadErrorMessage,
+  smsCsvAudienceSummary,
+  smsCsvAudienceSummaryLoading,
+  smsCsvAudienceSummaryErrorMessage,
   projectOptions,
   singleSelectProjects = false,
   statusOptions,
@@ -286,9 +299,13 @@ export function AudienceBuilderStep({
             {initialFilter === "csv_upload" ? (
               <>
                 <CsvUploadPanel
+                  launchType={launchType}
                   summary={csvUploadSummary}
                   pending={csvUploadPending}
                   errorMessage={csvUploadErrorMessage}
+                  smsSummary={smsCsvAudienceSummary}
+                  smsSummaryLoading={smsCsvAudienceSummaryLoading}
+                  smsSummaryErrorMessage={smsCsvAudienceSummaryErrorMessage}
                   onUpload={onCsvUpload}
                 />
 
@@ -319,17 +336,72 @@ export function AudienceBuilderStep({
   );
 }
 
+function formatSmsDropReason(
+  reason: SmsCsvAudienceSummary["droppedRows"][number]["reason"],
+): string {
+  switch (reason) {
+    case "no_contact_match":
+      return "No contact match";
+    case "ambiguous_match":
+      return "Ambiguous match";
+    case "no_consent":
+      return "No SMS consent";
+    case "revoked":
+      return "Consent revoked";
+    case "no_phone":
+      return "No SMS phone";
+  }
+}
+
+function buildDroppedRowsCsv(summary: SmsCsvAudienceSummary): string {
+  const escapeValue = (value: string) => `"${value.replaceAll("\"", "\"\"")}"`;
+
+  return [
+    "email,reason",
+    ...summary.droppedRows.map((row) =>
+      [escapeValue(row.email), escapeValue(formatSmsDropReason(row.reason))].join(
+        ",",
+      ),
+    ),
+  ].join("\n");
+}
+
+function downloadDroppedRowsCsv(summary: SmsCsvAudienceSummary): void {
+  const blob = new Blob([buildDroppedRowsCsv(summary)], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = "sms-csv-dropped-rows.csv";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function CsvUploadPanel({
+  launchType,
   summary,
   pending,
   errorMessage,
+  smsSummary,
+  smsSummaryLoading,
+  smsSummaryErrorMessage,
   onUpload,
 }: {
+  readonly launchType: LaunchType;
   readonly summary: CsvUploadSummary | null;
   readonly pending: boolean;
   readonly errorMessage: string | null;
+  readonly smsSummary: SmsCsvAudienceSummary | null;
+  readonly smsSummaryLoading: boolean;
+  readonly smsSummaryErrorMessage: string | null;
   readonly onUpload: (csvText: string) => Promise<void>;
 }) {
+  const isSms = launchType === "sms";
+
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-2">
@@ -340,7 +412,9 @@ function CsvUploadPanel({
       <div className="space-y-4 px-4 py-4">
         <label className="block">
           <span className="mb-2 block text-[12px] text-slate-600">
-            CSV with `email` and optional `firstName` / `lastName` columns.
+            {isSms
+              ? "CSV with an `email` column. Optional `firstName` / `lastName` columns are ignored for SMS. Up to 5,000 rows."
+              : "CSV with `email` and optional `firstName` / `lastName` columns. Up to 5,000 rows."}
           </span>
           <input
             type="file"
@@ -386,6 +460,92 @@ function CsvUploadPanel({
               label="Duplicates removed"
               value={summary.duplicatesRemovedCount.toLocaleString()}
             />
+          </div>
+        ) : null}
+
+        {isSms ? (
+          <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[12px] leading-relaxed text-slate-700">
+              The CSV alone defines this SMS audience. Any attached project is
+              stored as metadata only and does not filter the recipients. Names
+              and phone numbers come from existing contact and consent records,
+              never from the CSV.
+            </p>
+
+            {smsSummaryLoading ? (
+              <p className="text-[12px] text-slate-500">
+                Resolving contacts and SMS reachability…
+              </p>
+            ) : null}
+
+            {smsSummaryErrorMessage !== null ? (
+              <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">
+                {smsSummaryErrorMessage}
+              </div>
+            ) : null}
+
+            {smsSummary !== null ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <SummaryCard
+                    label="Matched"
+                    value={smsSummary.matchedCount.toLocaleString()}
+                  />
+                  <SummaryCard
+                    label="Reachable"
+                    value={smsSummary.reachableCount.toLocaleString()}
+                  />
+                  <SummaryCard
+                    label="Dropped"
+                    value={smsSummary.droppedCount.toLocaleString()}
+                  />
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {Object.entries(smsSummary.droppedByReason).map(
+                    ([reason, count]) => (
+                      <div
+                        key={reason}
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700"
+                      >
+                        <span className="font-medium">
+                          {formatSmsDropReason(
+                            reason as SmsCsvAudienceSummary["droppedRows"][number]["reason"],
+                          )}
+                        </span>
+                        <span className="ml-2 tabular-nums text-slate-500">
+                          {count.toLocaleString()}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+
+                {smsSummary.deduplicatedByPhone > 0 ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                    {smsSummary.deduplicatedByPhone.toLocaleString()} matched{" "}
+                    {smsSummary.deduplicatedByPhone === 1 ? "contact shares" : "contacts share"}{" "}
+                    a destination phone and will be deduplicated at send time.
+                  </div>
+                ) : null}
+
+                {smsSummary.droppedRows.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadDroppedRowsCsv(smsSummary);
+                    }}
+                    className={cn(
+                      "inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-slate-700",
+                      TRANSITION,
+                      "hover:border-slate-400 hover:text-slate-900",
+                    )}
+                  >
+                    Download dropped rows CSV
+                  </button>
+                ) : null}
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>

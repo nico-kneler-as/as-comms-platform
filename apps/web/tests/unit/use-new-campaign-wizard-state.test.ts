@@ -4,6 +4,7 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadComposePreviewAction: vi.fn(),
   loadMemberStatusCountsForProjects: vi.fn(),
   loadSelectedAliasSignatureAction: vi.fn(),
+  loadSmsCsvAudienceSummaryAction: vi.fn(),
   previewAudienceAction: vi.fn(),
   resolveAudienceCountAction: vi.fn(),
   searchProjectVolunteersAction: vi.fn(),
@@ -34,6 +35,7 @@ describe("use-new-campaign-wizard-state audience mode gating", () => {
     expect(readAllowedAudienceModesForSenderType("project", "sms")).toEqual([
       "project_status",
       "specific",
+      "csv_upload",
     ]);
   });
 });

@@ -790,7 +790,7 @@ function buildSyntheticContactGraphInput(input: {
   };
 }
 
-function normalizeEmailAddress(value: string): string | null {
+export function normalizeEmailAddress(value: string): string | null {
   const normalized = value.trim().toLowerCase();
   return normalized.length === 0 ? null : normalized;
 }

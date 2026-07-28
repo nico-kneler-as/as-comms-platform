@@ -95,6 +95,7 @@ function buildRepositoryBundle(input: {
       findByPrimaryPhone: () => Promise.resolve(contact),
       listAll: () => Promise.resolve([contact]),
       listByIds: () => Promise.resolve([contact]),
+      listByNormalizedPrimaryEmails: () => Promise.resolve([contact]),
       listSalesforceAnchoredIds: () => Promise.resolve([]),
       markSalesforceDeleted: () => Promise.resolve(0),
       markSalesforceReconciled: () => Promise.resolve(0),
@@ -110,6 +111,7 @@ function buildRepositoryBundle(input: {
     contactIdentities: {
       listByContactId: () => Promise.resolve([]),
       listByNormalizedValue: () => Promise.resolve([]),
+      listByNormalizedValues: () => Promise.resolve([]),
       upsert: (record) => Promise.resolve(record),
     },
     contactMemberships: {

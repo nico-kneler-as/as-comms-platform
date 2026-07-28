@@ -19,11 +19,13 @@ import type {
   CampaignWizardDraftData,
   CsvUploadSummary,
   ComposePreviewData,
+  SmsCsvAudienceSummary,
 } from "../../_lib/audience-data-source";
 import {
   loadComposePreviewAction,
   loadMemberStatusCountsForProjects,
   loadSelectedAliasSignatureAction,
+  loadSmsCsvAudienceSummaryAction,
   previewAudienceAction,
   resolveAudienceCountAction,
   searchNewsletterSubscribersAction,
@@ -74,7 +76,7 @@ export function readAllowedAudienceModesForSenderType(
   launchType: LaunchType,
 ): readonly AudienceInitialFilter[] {
   if (launchType === "sms") {
-    return ["project_status", "specific"];
+    return ["project_status", "specific", "csv_upload"];
   }
 
   return senderType === "org"
@@ -593,6 +595,12 @@ export function useNewCampaignWizardState({
   const [csvUploadErrorMessage, setCsvUploadErrorMessage] = useState<
     string | null
   >(null);
+  const [smsCsvAudienceSummary, setSmsCsvAudienceSummary] =
+    useState<SmsCsvAudienceSummary | null>(null);
+  const [smsCsvAudienceSummaryLoading, setSmsCsvAudienceSummaryLoading] =
+    useState(false);
+  const [smsCsvAudienceSummaryErrorMessage, setSmsCsvAudienceSummaryErrorMessage] =
+    useState<string | null>(null);
   const [csvUploadVersion, setCsvUploadVersion] = useState(0);
   const [statusCounts, setStatusCounts] = useState<AudienceStatusCounts>({});
   const [statusCountsLoading, setStatusCountsLoading] = useState(false);
@@ -654,6 +662,7 @@ export function useNewCampaignWizardState({
   const volunteerSearchRequestRef = useRef(0);
   const composePreviewRequestRef = useRef(0);
   const signatureRequestRef = useRef(0);
+  const smsCsvAudienceSummaryRequestRef = useRef(0);
   const savedFingerprintRef = useRef("");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLaunchTypeRef = useRef(draft.launchType);
@@ -875,7 +884,10 @@ export function useNewCampaignWizardState({
           };
         }
 
-        if (current.initialFilter === "project_status") {
+        if (
+          current.initialFilter === "project_status" ||
+          current.initialFilter === "csv_upload"
+        ) {
           return current;
         }
 
@@ -883,7 +895,8 @@ export function useNewCampaignWizardState({
       });
       if (
         criteria.initialFilter !== "specific" &&
-        criteria.initialFilter !== "project_status"
+        criteria.initialFilter !== "project_status" &&
+        criteria.initialFilter !== "csv_upload"
       ) {
         setHasPickedAudienceMode(false);
       }
@@ -1084,6 +1097,50 @@ export function useNewCampaignWizardState({
       setPreviewErrorMessage(null);
     })();
   }, [criteria, csvUploadVersion, currentStep, draft.runId, hasPickedAudienceMode, kind]);
+
+  useEffect(() => {
+    if (
+      currentStep !== 2 ||
+      !hasPickedAudienceMode ||
+      launchType !== "sms" ||
+      criteria.initialFilter !== "csv_upload"
+    ) {
+      smsCsvAudienceSummaryRequestRef.current += 1;
+      setSmsCsvAudienceSummary(null);
+      setSmsCsvAudienceSummaryLoading(false);
+      setSmsCsvAudienceSummaryErrorMessage(null);
+      return;
+    }
+
+    const requestId = ++smsCsvAudienceSummaryRequestRef.current;
+    setSmsCsvAudienceSummaryLoading(true);
+    setSmsCsvAudienceSummaryErrorMessage(null);
+    void (async () => {
+      const result = await loadSmsCsvAudienceSummaryAction({
+        runId: draft.runId,
+      });
+      if (requestId !== smsCsvAudienceSummaryRequestRef.current) {
+        return;
+      }
+
+      setSmsCsvAudienceSummaryLoading(false);
+      if (!result.ok) {
+        setSmsCsvAudienceSummary(null);
+        setSmsCsvAudienceSummaryErrorMessage(result.message);
+        return;
+      }
+
+      setSmsCsvAudienceSummary(result.data);
+      setSmsCsvAudienceSummaryErrorMessage(null);
+    })();
+  }, [
+    criteria.initialFilter,
+    csvUploadVersion,
+    currentStep,
+    draft.runId,
+    hasPickedAudienceMode,
+    launchType,
+  ]);
 
   useEffect(() => {
     if (
@@ -1340,6 +1397,9 @@ export function useNewCampaignWizardState({
     setCsvUploadSummary,
     csvUploadErrorMessage,
     setCsvUploadErrorMessage,
+    smsCsvAudienceSummary,
+    smsCsvAudienceSummaryLoading,
+    smsCsvAudienceSummaryErrorMessage,
     csvUploadPending,
     startCsvUploadTransition,
     setCsvUploadVersion,

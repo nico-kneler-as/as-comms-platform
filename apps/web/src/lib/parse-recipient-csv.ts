@@ -1,6 +1,9 @@
 import { z } from "zod";
 
+import { normalizeEmailAddress } from "@as-comms/domain";
+
 const emailSchema = z.string().email();
+export const MAX_BROADCAST_CSV_UPLOAD_ROWS = 5_000;
 
 export interface ParsedRecipientCsvRow {
   readonly email: string;
@@ -123,6 +126,15 @@ export function parseRecipientCsv(input: string): ParsedRecipientCsvResult {
   );
   const lastNameIndex = headers.findIndex((header) => header === "lastname");
 
+  const nonEmptyDataRows = rows
+    .slice(headerIndex + 1)
+    .filter((row) => row.some((value) => value.trim().length > 0));
+  if (nonEmptyDataRows.length > MAX_BROADCAST_CSV_UPLOAD_ROWS) {
+    throw new Error(
+      `CSV can include at most ${MAX_BROADCAST_CSV_UPLOAD_ROWS.toLocaleString()} recipient rows.`,
+    );
+  }
+
   const recipients: ParsedRecipientCsvRow[] = [];
   const seenEmails = new Set<string>();
   let invalidSkippedCount = 0;
@@ -134,7 +146,7 @@ export function parseRecipientCsv(input: string): ParsedRecipientCsvResult {
       continue;
     }
 
-    const email = normalizeOptionalValue(row[emailIndex])?.toLowerCase() ?? "";
+    const email = normalizeEmailAddress(row[emailIndex] ?? "") ?? "";
     if (!emailSchema.safeParse(email).success) {
       invalidSkippedCount += 1;
       continue;
