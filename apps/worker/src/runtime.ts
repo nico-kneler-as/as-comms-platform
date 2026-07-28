@@ -54,6 +54,7 @@ import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js
 import { type SmsBroadcastSendTaskDependencies } from "./jobs/sms-broadcast-send/index.js";
 import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
+import { dailyOpsDigestJobName } from "./jobs/daily-ops-digest/index.js";
 import { dedupHistoricalLedgerJobName } from "./jobs/dedup-historical-ledger.js";
 import { pollInboxReadStateJobName } from "./jobs/poll-inbox-read-state.js";
 import { reconcileCaptureGapsJobName } from "./jobs/reconcile-capture-gaps.js";
@@ -195,6 +196,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
     `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
     `0 11 * * 0 ${reconcileSupersededProjectionsJobName} ?id=superseded-projections-reconcile&max=1`,
+    `0 13 * * * ${dailyOpsDigestJobName} ?id=daily-ops-digest&max=1`,
   ].join("\n");
 }
 
@@ -973,6 +975,26 @@ export async function createStage1WorkerRuntimeServices(
           }),
       pendingOutboundSweep: {
         pendingOutbounds: repositories.pendingOutbounds,
+      },
+      dailyOpsDigest: {
+        db: connection.db,
+        opsAlertState: settings.opsAlertState,
+        opsDigestWatermark: settings.opsDigestWatermark,
+        fetchImplementation,
+        syncStates: [
+          {
+            provider: "gmail",
+            label: "gmail live ingest",
+            pollIntervalSeconds:
+              config.launchScope.gmail.livePollIntervalSeconds,
+          },
+          {
+            provider: "salesforce",
+            label: "salesforce live ingest",
+            pollIntervalSeconds:
+              config.launchScope.salesforce.taskPollIntervalSeconds,
+          },
+        ],
       },
       pollInboxReadState: {
         db: connection.db,

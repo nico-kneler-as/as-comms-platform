@@ -6,6 +6,7 @@ import {
 } from "@as-comms/contracts";
 
 import { buildWorkerCrontab, readWorkerConfig } from "../src/runtime.js";
+import { dailyOpsDigestJobName } from "../src/jobs/daily-ops-digest/index.js";
 import { dedupHistoricalLedgerJobName } from "../src/jobs/dedup-historical-ledger.js";
 import { pollInboxReadStateJobName } from "../src/jobs/poll-inbox-read-state.js";
 import { reconcileCaptureGapsJobName } from "../src/jobs/reconcile-capture-gaps.js";
@@ -168,6 +169,7 @@ describe("Stage 1 worker runtime task registration", () => {
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
         `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
         "0 11 * * 0 reconcile-superseded-projections ?id=superseded-projections-reconcile&max=1",
+        `0 13 * * * ${dailyOpsDigestJobName} ?id=daily-ops-digest&max=1`,
       ].join("\n"),
     );
   });

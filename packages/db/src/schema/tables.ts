@@ -209,6 +209,64 @@ export const opsAlertState = pgTable(
   ],
 );
 
+export const opsDigestWatermark = pgTable(
+  "ops_digest_watermark",
+  {
+    id: text("id").primaryKey(),
+    lastRunAt: timestamp("last_run_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    lastDigestSentAt: timestamp("last_digest_sent_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    quietStreakStartedAt: timestamp("quiet_streak_started_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    syncStateDeadLetterCountsJson: jsonb("sync_state_dead_letter_counts_json")
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+    lastSeenPostmarkWebhookDeadLetterReceivedAt: timestamp(
+      "last_seen_postmark_webhook_dead_letter_received_at",
+      {
+        mode: "date",
+        withTimezone: true,
+      },
+    ),
+    lastSeenPostmarkWebhookDeadLetterId: uuid(
+      "last_seen_postmark_webhook_dead_letter_id",
+    ),
+    lastSeenIdentityResolutionOpenedAt: timestamp(
+      "last_seen_identity_resolution_opened_at",
+      {
+        mode: "date",
+        withTimezone: true,
+      },
+    ),
+    lastSeenIdentityResolutionCaseId: text(
+      "last_seen_identity_resolution_case_id",
+    ),
+    lastSeenRoutingReviewOpenedAt: timestamp(
+      "last_seen_routing_review_opened_at",
+      {
+        mode: "date",
+        withTimezone: true,
+      },
+    ),
+    lastSeenRoutingReviewCaseId: text("last_seen_routing_review_case_id"),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("ops_digest_watermark_last_digest_sent_at_idx").on(
+      table.lastDigestSentAt,
+    ),
+  ],
+);
+
 export const contacts = pgTable(
   "contacts",
   {

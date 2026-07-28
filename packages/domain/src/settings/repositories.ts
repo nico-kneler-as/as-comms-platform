@@ -1,4 +1,7 @@
-import type { IntegrationHealthRecord } from "@as-comms/contracts";
+import type {
+  IntegrationHealthRecord,
+  OpsDigestWatermarkRecord,
+} from "@as-comms/contracts";
 import type { PostmarkSenderStatus } from "@as-comms/contracts";
 import type {
   ConsentRecordRepository,
@@ -141,12 +144,20 @@ export interface OpsAlertStateRepository {
   }): Promise<void>;
 }
 
+export interface OpsDigestWatermarkRepository {
+  get(): Promise<OpsDigestWatermarkRecord | null>;
+  upsert(
+    record: OpsDigestWatermarkRecord,
+  ): Promise<OpsDigestWatermarkRecord>;
+}
+
 export interface Stage2RepositoryBundle {
   readonly smsMessages: SmsMessageRepository;
   readonly consentRecords: ConsentRecordRepository;
   readonly smsSenders: SmsSenderRepository;
   readonly integrationHealth: IntegrationHealthRepository;
   readonly opsAlertState: OpsAlertStateRepository;
+  readonly opsDigestWatermark: OpsDigestWatermarkRepository;
   readonly projects: SettingsProjectsRepository;
   readonly users: UsersRepository;
   readonly aliases: ProjectAliasesRepository;

@@ -25,6 +25,7 @@ import {
   messageAttachmentSchema,
   manualNoteDetailSchema,
   mediaAssetRecordSchema,
+  opsDigestWatermarkRecordSchema,
   type BroadcastLinkClickClient,
   type BroadcastLinkClickGeo,
   type BroadcastLinkClickRecord as BroadcastLinkClickContractRecord,
@@ -70,6 +71,7 @@ import {
   type MediaAssetRecord as MediaAssetContractRecord,
   type NewsletterSubscriberRecord,
   type NewsletterSuppressionRecord,
+  type OpsDigestWatermarkRecord,
   type OrgSenderRecord,
   type ProjectKnowledgeEntryRecord,
   type ProjectDimensionRecord,
@@ -122,6 +124,7 @@ import type {
   newsletterSubscribers,
   newsletterSuppressions,
   orgSenders,
+  opsDigestWatermark,
   pendingComposerOutbounds,
   projectAliases,
   projectKnowledgeEntries,
@@ -165,6 +168,7 @@ type MailchimpCampaignActivityDetailRow =
   typeof mailchimpCampaignActivityDetails.$inferSelect;
 type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
 type ManualNoteDetailRow = typeof manualNoteDetails.$inferSelect;
+type OpsDigestWatermarkRow = typeof opsDigestWatermark.$inferSelect;
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
 type RoutingReviewRow = typeof routingReviewQueue.$inferSelect;
@@ -1594,6 +1598,82 @@ export function mapManualNoteDetailToInsert(
     body: parsed.body,
     authorDisplayName: parsed.authorDisplayName,
     authorId: parsed.authorId,
+  };
+}
+
+export function mapOpsDigestWatermarkRow(
+  row: OpsDigestWatermarkRow,
+): OpsDigestWatermarkRecord {
+  return opsDigestWatermarkRecordSchema.parse({
+    id: row.id,
+    lastRunAt: fromDate(row.lastRunAt),
+    lastDigestSentAt: fromDate(row.lastDigestSentAt),
+    quietStreakStartedAt: fromDate(row.quietStreakStartedAt),
+    syncStateDeadLetterCounts: row.syncStateDeadLetterCountsJson,
+    postmarkWebhookDeadLetter:
+      row.lastSeenPostmarkWebhookDeadLetterReceivedAt === null ||
+      row.lastSeenPostmarkWebhookDeadLetterId === null
+        ? null
+        : {
+            id: row.lastSeenPostmarkWebhookDeadLetterId,
+            timestamp:
+              row.lastSeenPostmarkWebhookDeadLetterReceivedAt.toISOString(),
+          },
+    identityResolutionQueue:
+      row.lastSeenIdentityResolutionOpenedAt === null ||
+      row.lastSeenIdentityResolutionCaseId === null
+        ? null
+        : {
+            id: row.lastSeenIdentityResolutionCaseId,
+            timestamp: row.lastSeenIdentityResolutionOpenedAt.toISOString(),
+          },
+    routingReviewQueue:
+      row.lastSeenRoutingReviewOpenedAt === null ||
+      row.lastSeenRoutingReviewCaseId === null
+        ? null
+        : {
+            id: row.lastSeenRoutingReviewCaseId,
+            timestamp: row.lastSeenRoutingReviewOpenedAt.toISOString(),
+          },
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapOpsDigestWatermarkToInsert(
+  record: OpsDigestWatermarkRecord,
+): typeof opsDigestWatermark.$inferInsert {
+  const parsed = opsDigestWatermarkRecordSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    lastRunAt: parsed.lastRunAt === null ? null : toDate(parsed.lastRunAt),
+    lastDigestSentAt:
+      parsed.lastDigestSentAt === null ? null : toDate(parsed.lastDigestSentAt),
+    quietStreakStartedAt:
+      parsed.quietStreakStartedAt === null
+        ? null
+        : toDate(parsed.quietStreakStartedAt),
+    syncStateDeadLetterCountsJson: parsed.syncStateDeadLetterCounts,
+    lastSeenPostmarkWebhookDeadLetterReceivedAt:
+      parsed.postmarkWebhookDeadLetter === null
+        ? null
+        : toDate(parsed.postmarkWebhookDeadLetter.timestamp),
+    lastSeenPostmarkWebhookDeadLetterId:
+      parsed.postmarkWebhookDeadLetter?.id ?? null,
+    lastSeenIdentityResolutionOpenedAt:
+      parsed.identityResolutionQueue === null
+        ? null
+        : toDate(parsed.identityResolutionQueue.timestamp),
+    lastSeenIdentityResolutionCaseId:
+      parsed.identityResolutionQueue?.id ?? null,
+    lastSeenRoutingReviewOpenedAt:
+      parsed.routingReviewQueue === null
+        ? null
+        : toDate(parsed.routingReviewQueue.timestamp),
+    lastSeenRoutingReviewCaseId: parsed.routingReviewQueue?.id ?? null,
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
   };
 }
 
