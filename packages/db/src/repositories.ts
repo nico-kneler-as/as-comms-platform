@@ -46,6 +46,7 @@ import {
   deliveryStatusSchema,
   newAudienceSnapshotSchema,
   orgSettingsRecordSchema,
+  opsDigestWatermarkId,
   postmarkWebhookDeadLetterRecordSchema,
   runStateSchema,
   suppressionListRecordSchema,
@@ -61,6 +62,7 @@ import {
   type NewsletterSubscriberRecord,
   type NewAudienceSnapshot,
   type NewsletterSuppressionRecord,
+  type OpsDigestWatermarkRecord,
   type OrgSettingsRecord,
   type PostmarkWebhookDeadLetterRecord,
   type RunState,
@@ -109,6 +111,8 @@ import {
   mapIdentityResolutionToInsert,
   mapInboxProjectionRow,
   mapInboxProjectionToInsert,
+  mapOpsDigestWatermarkRow,
+  mapOpsDigestWatermarkToInsert,
   mapMessageAttachmentRow,
   mapMessageAttachmentToInsert,
   mapPendingComposerOutboundRow,
@@ -163,6 +167,7 @@ import {
   mailchimpCampaignTailState,
   messageAttachments,
   opsAlertState,
+  opsDigestWatermark,
   manualNoteDetails,
   orgSettings,
   postmarkWebhookDeadLetter,
@@ -5976,6 +5981,56 @@ function createStage2RepositoriesInternal(
               updatedAt: new Date(),
             },
           });
+      },
+    },
+
+    opsDigestWatermark: {
+      async get() {
+        const [row] = await db
+          .select()
+          .from(opsDigestWatermark)
+          .where(eq(opsDigestWatermark.id, opsDigestWatermarkId))
+          .limit(1);
+
+        return row === undefined ? null : mapOpsDigestWatermarkRow(row);
+      },
+
+      async upsert(record: OpsDigestWatermarkRecord) {
+        const values = mapOpsDigestWatermarkToInsert(record);
+        const [row] = await db
+          .insert(opsDigestWatermark)
+          .values(values)
+          .onConflictDoUpdate({
+            target: opsDigestWatermark.id,
+            set: {
+              lastRunAt: values.lastRunAt,
+              lastDigestSentAt: values.lastDigestSentAt,
+              quietStreakStartedAt: values.quietStreakStartedAt,
+              syncStateDeadLetterCountsJson:
+                values.syncStateDeadLetterCountsJson,
+              lastSeenPostmarkWebhookDeadLetterReceivedAt:
+                values.lastSeenPostmarkWebhookDeadLetterReceivedAt,
+              lastSeenPostmarkWebhookDeadLetterId:
+                values.lastSeenPostmarkWebhookDeadLetterId,
+              lastSeenIdentityResolutionOpenedAt:
+                values.lastSeenIdentityResolutionOpenedAt,
+              lastSeenIdentityResolutionCaseId:
+                values.lastSeenIdentityResolutionCaseId,
+              lastSeenRoutingReviewOpenedAt:
+                values.lastSeenRoutingReviewOpenedAt,
+              lastSeenRoutingReviewCaseId:
+                values.lastSeenRoutingReviewCaseId,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapOpsDigestWatermarkRow(
+          requireRow(
+            row,
+            "Expected ops digest watermark row to be returned from upsert.",
+          ),
+        );
       },
     },
 

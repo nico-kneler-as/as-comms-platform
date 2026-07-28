@@ -28,6 +28,7 @@ import {
   newsletterSubscribers,
   newsletterSuppressions,
   opsAlertState,
+  opsDigestWatermark,
   orgSenders,
   orgSettings,
   projectKnowledgeEntries,
@@ -75,6 +76,7 @@ describe("Stage 1 DB schema", () => {
       "newsletterSubscribers",
       "newsletterSuppressions",
       "opsAlertState",
+      "opsDigestWatermark",
       "orgSenders",
       "orgSettings",
       "pendingComposerOutbounds",
@@ -109,6 +111,7 @@ describe("Stage 1 DB schema", () => {
       "newsletter_suppressions"
     );
     expect(getTableName(opsAlertState)).toBe("ops_alert_state");
+    expect(getTableName(opsDigestWatermark)).toBe("ops_digest_watermark");
     expect(getTableName(orgSenders)).toBe("org_senders");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(sourceEvidenceQuarantine)).toBe(

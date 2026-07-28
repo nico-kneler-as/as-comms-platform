@@ -23,6 +23,11 @@ import {
   type DedupHistoricalLedgerTaskDependencies,
 } from "./jobs/dedup-historical-ledger.js";
 import {
+  createDailyOpsDigestTask,
+  dailyOpsDigestJobName,
+  type DailyOpsDigestTaskDependencies,
+} from "./jobs/daily-ops-digest/index.js";
+import {
   createSweepPendingOutboundsTask,
   sweepPendingOutboundsJobName,
   type PendingOutboundSweepTaskDependencies,
@@ -97,6 +102,7 @@ export function createTaskList(
     readonly campaignSend?: CampaignSendTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
+    readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
     readonly integrationHealth?: IntegrationHealthTaskDependencies;
     readonly integrationBackfill?: IntegrationBackfillGmailTaskDependencies;
@@ -142,6 +148,13 @@ export function createTaskList(
       : {
           [sweepPendingOutboundsJobName]: createSweepPendingOutboundsTask(
             input.pendingOutboundSweep,
+          ),
+        }),
+    ...(input?.dailyOpsDigest === undefined
+      ? {}
+      : {
+          [dailyOpsDigestJobName]: createDailyOpsDigestTask(
+            input.dailyOpsDigest,
           ),
         }),
     ...(input?.pollInboxReadState === undefined
