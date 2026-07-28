@@ -171,10 +171,15 @@ export function AudienceBuilderStep({
     selectedSenderType === "org"
       ? (criteria.newsletterSubscriberIds?.length ?? 0)
       : (criteria.contactIds?.length ?? 0);
+  // A CSV audience defines its own recipients, so the single-project
+  // requirement (SMS project_status/specific modes) must not gate it — a
+  // CSV-mode run legitimately has no project selected.
+  const requiresProjectSelection =
+    singleSelectProjects && initialFilter !== "csv_upload";
   const canContinue =
     !countLoading &&
     initialFilter !== undefined &&
-    (!singleSelectProjects || selectedProjectIds.length > 0) &&
+    (!requiresProjectSelection || selectedProjectIds.length > 0) &&
     (initialFilter === "project_status"
       ? selectedProjectIds.length > 0 &&
         criteria.statuses.length > 0 &&
