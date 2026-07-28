@@ -15,6 +15,7 @@ import {
   contactIdentitySchema,
   contactMembershipSchema,
   contactSchema,
+  dependencyAuditSummaryRecordSchema,
   expeditionDimensionSchema,
   gmailMessageDetailSchema,
   integrationBackfillJobSchema,
@@ -59,6 +60,7 @@ import {
   type ContactIdentityRecord,
   type ContactMembershipRecord,
   type ContactRecord,
+  type DependencyAuditSummaryRecord,
   type ExpeditionDimensionRecord,
   type GmailMessageDetailRecord,
   type IntegrationBackfillJobRecord,
@@ -113,6 +115,7 @@ import type {
   contactMemberships,
   contactTimelineProjection,
   contacts,
+  dependencyAuditSummary,
   expeditionDimensions,
   gmailMessageDetails,
   integrationBackfillJobs,
@@ -169,6 +172,7 @@ type MailchimpCampaignActivityDetailRow =
 type MessageAttachmentRow = typeof messageAttachments.$inferSelect;
 type ManualNoteDetailRow = typeof manualNoteDetails.$inferSelect;
 type OpsDigestWatermarkRow = typeof opsDigestWatermark.$inferSelect;
+type DependencyAuditSummaryRow = typeof dependencyAuditSummary.$inferSelect;
 type PendingComposerOutboundRow = typeof pendingComposerOutbounds.$inferSelect;
 type IdentityResolutionRow = typeof identityResolutionQueue.$inferSelect;
 type RoutingReviewRow = typeof routingReviewQueue.$inferSelect;
@@ -1610,6 +1614,7 @@ export function mapOpsDigestWatermarkRow(
     lastDigestSentAt: fromDate(row.lastDigestSentAt),
     quietStreakStartedAt: fromDate(row.quietStreakStartedAt),
     syncStateDeadLetterCounts: row.syncStateDeadLetterCountsJson,
+    reportedDependencyAdvisoryIds: row.reportedDependencyAdvisoryIdsJson,
     postmarkWebhookDeadLetter:
       row.lastSeenPostmarkWebhookDeadLetterReceivedAt === null ||
       row.lastSeenPostmarkWebhookDeadLetterId === null
@@ -1655,6 +1660,7 @@ export function mapOpsDigestWatermarkToInsert(
         ? null
         : toDate(parsed.quietStreakStartedAt),
     syncStateDeadLetterCountsJson: parsed.syncStateDeadLetterCounts,
+    reportedDependencyAdvisoryIdsJson: parsed.reportedDependencyAdvisoryIds,
     lastSeenPostmarkWebhookDeadLetterReceivedAt:
       parsed.postmarkWebhookDeadLetter === null
         ? null
@@ -1672,6 +1678,34 @@ export function mapOpsDigestWatermarkToInsert(
         ? null
         : toDate(parsed.routingReviewQueue.timestamp),
     lastSeenRoutingReviewCaseId: parsed.routingReviewQueue?.id ?? null,
+    createdAt: toDate(parsed.createdAt),
+    updatedAt: toDate(parsed.updatedAt),
+  };
+}
+
+export function mapDependencyAuditSummaryRow(
+  row: DependencyAuditSummaryRow,
+): DependencyAuditSummaryRecord {
+  return dependencyAuditSummaryRecordSchema.parse({
+    id: row.id,
+    generatedAt: row.generatedAt.toISOString(),
+    exitStatus: row.exitStatus,
+    advisories: row.advisoriesJson,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  });
+}
+
+export function mapDependencyAuditSummaryToInsert(
+  record: DependencyAuditSummaryRecord,
+): typeof dependencyAuditSummary.$inferInsert {
+  const parsed = dependencyAuditSummaryRecordSchema.parse(record);
+
+  return {
+    id: parsed.id,
+    generatedAt: toDate(parsed.generatedAt),
+    exitStatus: parsed.exitStatus,
+    advisoriesJson: parsed.advisories,
     createdAt: toDate(parsed.createdAt),
     updatedAt: toDate(parsed.updatedAt),
   };

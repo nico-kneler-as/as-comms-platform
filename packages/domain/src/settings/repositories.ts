@@ -1,4 +1,5 @@
 import type {
+  DependencyAuditSummaryRecord,
   IntegrationHealthRecord,
   OpsDigestWatermarkRecord,
 } from "@as-comms/contracts";
@@ -151,6 +152,13 @@ export interface OpsDigestWatermarkRepository {
   ): Promise<OpsDigestWatermarkRecord>;
 }
 
+export interface DependencyAuditSummaryRepository {
+  get(): Promise<DependencyAuditSummaryRecord | null>;
+  upsert(
+    record: DependencyAuditSummaryRecord,
+  ): Promise<DependencyAuditSummaryRecord>;
+}
+
 export interface Stage2RepositoryBundle {
   readonly smsMessages: SmsMessageRepository;
   readonly consentRecords: ConsentRecordRepository;
@@ -158,6 +166,7 @@ export interface Stage2RepositoryBundle {
   readonly integrationHealth: IntegrationHealthRepository;
   readonly opsAlertState: OpsAlertStateRepository;
   readonly opsDigestWatermark: OpsDigestWatermarkRepository;
+  readonly dependencyAuditSummary: DependencyAuditSummaryRepository;
   readonly projects: SettingsProjectsRepository;
   readonly users: UsersRepository;
   readonly aliases: ProjectAliasesRepository;

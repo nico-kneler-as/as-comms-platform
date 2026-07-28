@@ -6,6 +6,7 @@ import type {
   BroadcastLinkClickGeo,
   CanonicalEventProvenance,
   ComposerDraftForwardContext,
+  DependencyAuditAdvisory,
   IntegrationHealthCategory,
   IntegrationHealthStatus,
 } from "@as-comms/contracts";
@@ -229,6 +230,12 @@ export const opsDigestWatermark = pgTable(
       .$type<Record<string, number>>()
       .notNull()
       .default({}),
+    reportedDependencyAdvisoryIdsJson: jsonb(
+      "reported_dependency_advisory_ids_json",
+    )
+      .$type<readonly string[]>()
+      .notNull()
+      .default([]),
     lastSeenPostmarkWebhookDeadLetterReceivedAt: timestamp(
       "last_seen_postmark_webhook_dead_letter_received_at",
       {
@@ -266,6 +273,21 @@ export const opsDigestWatermark = pgTable(
     ),
   ],
 );
+
+export const dependencyAuditSummary = pgTable("dependency_audit_summary", {
+  id: text("id").primaryKey(),
+  generatedAt: timestamp("generated_at", {
+    mode: "date",
+    withTimezone: true,
+  }).notNull(),
+  exitStatus: integer("exit_status").notNull(),
+  advisoriesJson: jsonb("advisories_json")
+    .$type<readonly DependencyAuditAdvisory[]>()
+    .notNull()
+    .default([]),
+  createdAt: createdAtColumn,
+  updatedAt: updatedAtColumn,
+});
 
 export const contacts = pgTable(
   "contacts",

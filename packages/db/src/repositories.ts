@@ -43,6 +43,7 @@ import {
   campaignRunRecordSchema,
   contactConsentRecordSchema,
   createDraftInputSchema,
+  dependencyAuditSummaryId,
   deliveryStatusSchema,
   newAudienceSnapshotSchema,
   orgSettingsRecordSchema,
@@ -58,6 +59,7 @@ import {
   type ConsentScopeType,
   type ConsentSource,
   type CreateDraftInput,
+  type DependencyAuditSummaryRecord,
   type DeliveryStatus,
   type NewsletterSubscriberRecord,
   type NewAudienceSnapshot,
@@ -99,6 +101,8 @@ import {
   mapContactMembershipToInsert,
   mapContactRow,
   mapContactToInsert,
+  mapDependencyAuditSummaryRow,
+  mapDependencyAuditSummaryToInsert,
   mapExpeditionDimensionRow,
   mapExpeditionDimensionToInsert,
   mapGmailMessageDetailRow,
@@ -157,6 +161,7 @@ import {
   contactMemberships,
   contactTimelineProjection,
   contacts,
+  dependencyAuditSummary,
   expeditionDimensions,
   gmailMessageDetails,
   integrationBackfillJobs,
@@ -6008,6 +6013,8 @@ function createStage2RepositoriesInternal(
               quietStreakStartedAt: values.quietStreakStartedAt,
               syncStateDeadLetterCountsJson:
                 values.syncStateDeadLetterCountsJson,
+              reportedDependencyAdvisoryIdsJson:
+                values.reportedDependencyAdvisoryIdsJson,
               lastSeenPostmarkWebhookDeadLetterReceivedAt:
                 values.lastSeenPostmarkWebhookDeadLetterReceivedAt,
               lastSeenPostmarkWebhookDeadLetterId:
@@ -6029,6 +6036,42 @@ function createStage2RepositoriesInternal(
           requireRow(
             row,
             "Expected ops digest watermark row to be returned from upsert.",
+          ),
+        );
+      },
+    },
+
+    dependencyAuditSummary: {
+      async get() {
+        const [row] = await db
+          .select()
+          .from(dependencyAuditSummary)
+          .where(eq(dependencyAuditSummary.id, dependencyAuditSummaryId))
+          .limit(1);
+
+        return row === undefined ? null : mapDependencyAuditSummaryRow(row);
+      },
+
+      async upsert(record: DependencyAuditSummaryRecord) {
+        const values = mapDependencyAuditSummaryToInsert(record);
+        const [row] = await db
+          .insert(dependencyAuditSummary)
+          .values(values)
+          .onConflictDoUpdate({
+            target: dependencyAuditSummary.id,
+            set: {
+              generatedAt: values.generatedAt,
+              exitStatus: values.exitStatus,
+              advisoriesJson: values.advisoriesJson,
+              updatedAt: new Date(),
+            },
+          })
+          .returning();
+
+        return mapDependencyAuditSummaryRow(
+          requireRow(
+            row,
+            "Expected dependency audit summary row to be returned from upsert.",
           ),
         );
       },

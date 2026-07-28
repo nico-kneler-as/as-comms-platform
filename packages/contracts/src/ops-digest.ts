@@ -19,12 +19,21 @@ export type OpsDigestSyncStateDeadLetterCounts = z.infer<
   typeof opsDigestSyncStateDeadLetterCountsSchema
 >;
 
+export const opsDigestReportedDependencyAdvisoryIdsSchema = z
+  .array(z.string().min(1))
+  .default([]);
+export type OpsDigestReportedDependencyAdvisoryIds = z.infer<
+  typeof opsDigestReportedDependencyAdvisoryIdsSchema
+>;
+
 export const opsDigestWatermarkRecordSchema = z.object({
   id: z.literal(opsDigestWatermarkId),
   lastRunAt: timestampSchema.nullable(),
   lastDigestSentAt: timestampSchema.nullable(),
   quietStreakStartedAt: timestampSchema.nullable(),
   syncStateDeadLetterCounts: opsDigestSyncStateDeadLetterCountsSchema,
+  reportedDependencyAdvisoryIds:
+    opsDigestReportedDependencyAdvisoryIdsSchema,
   postmarkWebhookDeadLetter: opsDigestHighWaterMarkSchema.nullable(),
   identityResolutionQueue: opsDigestHighWaterMarkSchema.nullable(),
   routingReviewQueue: opsDigestHighWaterMarkSchema.nullable(),

@@ -1,0 +1,37 @@
+name: Dependency Audit Feed
+
+on:
+  schedule:
+    - cron: "30 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DEPENDENCY_AUDIT_FEED_URL: ${{ secrets.DEPENDENCY_AUDIT_FEED_URL }}
+      DEPENDENCY_AUDIT_FEED_SECRET: ${{ secrets.DEPENDENCY_AUDIT_FEED_SECRET }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Publish dependency audit summary
+        run: node scripts/dependency-audit-feed.mjs

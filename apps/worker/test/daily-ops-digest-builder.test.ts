@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { DependencyAuditAdvisory } from "@as-comms/contracts";
+
 import { buildDailyOpsDigest } from "../src/jobs/daily-ops-digest/builder.js";
 import type {
   DailyOpsDigestSignal,
@@ -19,6 +21,20 @@ function gap(detail: string): DailyOpsDigestSignal<never> {
   return {
     kind: "gap",
     detail,
+  };
+}
+
+function makeDependencyAdvisory(
+  overrides: Partial<DependencyAuditAdvisory> = {},
+): DependencyAuditAdvisory {
+  return {
+    ghsaId: "GHSA-1111-2222-3333",
+    packageName: "next",
+    severity: "high",
+    vulnerableRange: "<15.0.0",
+    patchedRange: ">=15.0.0",
+    dependencyType: "direct",
+    ...overrides,
   };
 }
 
@@ -107,7 +123,11 @@ function makeSnapshot(
       identityCases: [],
       routingCases: [],
     }),
-    dependencyAudit: null,
+    dependencyAudit: ok({
+      generatedAt: "2026-07-27T11:30:00.000Z",
+      exitStatus: 0,
+      advisories: [],
+    }),
     ...overrides,
   };
 }
@@ -123,6 +143,7 @@ function makeWatermark(
       gmail: 0,
       salesforce: 0,
     },
+    reportedDependencyAdvisoryIds: [],
     postmarkWebhookDeadLetter: null,
     identityResolutionQueue: null,
     routingReviewQueue: null,
@@ -474,6 +495,216 @@ describe("daily ops digest builder", () => {
     expect(genuinelyNew.kind).toBe("digest");
   });
 
+  it("reports a newly appearing dependency advisory", () => {
+    const advisory = makeDependencyAdvisory();
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-27T11:30:00.000Z",
+          exitStatus: 1,
+          advisories: [advisory],
+        }),
+      }),
+      watermark: makeWatermark(),
+    });
+
+    expect(result.kind).toBe("digest");
+    if (result.kind !== "digest") {
+      throw new Error("Expected a digest.");
+    }
+
+    expect(result.digest.sections[0]).toMatchObject({
+      kind: "dependency_audit",
+      details: [
+        {
+          label: "next (GHSA-1111-2222-3333)",
+          value: "high; direct; vulnerable <15.0.0; patched >=15.0.0",
+        },
+      ],
+    });
+    expect(result.observedState.reportedDependencyAdvisoryIds).toEqual([
+      "GHSA-1111-2222-3333:next",
+    ]);
+  });
+
+  it("keeps the same dependency advisory quiet after it has already been reported", () => {
+    const advisory = makeDependencyAdvisory();
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-28T11:30:00.000Z",
+          exitStatus: 1,
+          advisories: [advisory],
+        }),
+      }),
+      watermark: makeWatermark({
+        reportedDependencyAdvisoryIds: ["GHSA-1111-2222-3333:next"],
+      }),
+    });
+
+    expect(result.kind).toBe("nothing_to_report");
+    expect(result.observedState.reportedDependencyAdvisoryIds).toEqual([
+      "GHSA-1111-2222-3333:next",
+    ]);
+  });
+
+  it("clears disappeared dependency advisories from the reported set without reporting them again", () => {
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-28T11:30:00.000Z",
+          exitStatus: 0,
+          advisories: [],
+        }),
+      }),
+      watermark: makeWatermark({
+        reportedDependencyAdvisoryIds: ["GHSA-1111-2222-3333:next"],
+      }),
+    });
+
+    expect(result.kind).toBe("nothing_to_report");
+    expect(result.observedState.reportedDependencyAdvisoryIds).toEqual([]);
+  });
+
+  it("reports only new dependency advisories when the summary mixes new and already-reported rows", () => {
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-28T11:30:00.000Z",
+          exitStatus: 1,
+          advisories: [
+            makeDependencyAdvisory(),
+            makeDependencyAdvisory({
+              ghsaId: "GHSA-4444-5555-6666",
+              packageName: "postcss",
+              vulnerableRange: "<8.5.12",
+              patchedRange: ">=8.5.12",
+              dependencyType: "transitive",
+            }),
+          ],
+        }),
+      }),
+      watermark: makeWatermark({
+        reportedDependencyAdvisoryIds: ["GHSA-1111-2222-3333:next"],
+      }),
+    });
+
+    expect(result.kind).toBe("digest");
+    if (result.kind !== "digest") {
+      throw new Error("Expected a digest.");
+    }
+
+    expect(result.digest.sections[0]).toMatchObject({
+      kind: "dependency_audit",
+      details: [
+        {
+          label: "postcss (GHSA-4444-5555-6666)",
+          value: "high; transitive; vulnerable <8.5.12; patched >=8.5.12",
+        },
+      ],
+    });
+  });
+
+  it("reports critical and high dependency advisories but ignores anything below threshold", () => {
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-28T11:30:00.000Z",
+          exitStatus: 1,
+          advisories: [
+            makeDependencyAdvisory({
+              ghsaId: "GHSA-critical-0001",
+              packageName: "authjs",
+              severity: "critical",
+              vulnerableRange: "<1.2.3",
+              patchedRange: ">=1.2.3",
+            }),
+            makeDependencyAdvisory(),
+            makeDependencyAdvisory({
+              ghsaId: "GHSA-low-0001",
+              packageName: "left-pad",
+              severity: "low",
+              vulnerableRange: "<2.0.0",
+              patchedRange: ">=2.0.0",
+            }),
+          ],
+        }),
+      }),
+      watermark: makeWatermark(),
+    });
+
+    expect(result.kind).toBe("digest");
+    if (result.kind !== "digest") {
+      throw new Error("Expected a digest.");
+    }
+
+    expect(result.digest.sections[0]).toMatchObject({
+      kind: "dependency_audit",
+      details: [
+        {
+          label: "authjs (GHSA-critical-0001)",
+        },
+        {
+          label: "next (GHSA-1111-2222-3333)",
+        },
+      ],
+    });
+  });
+
+  it("surfaces a stale dependency advisory summary as a gap instead of implying all clear", () => {
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok({
+          generatedAt: "2026-07-25T00:00:00.000Z",
+          exitStatus: 0,
+          advisories: [],
+        }),
+      }),
+      watermark: makeWatermark(),
+    });
+
+    expect(result.kind).toBe("digest");
+    if (result.kind !== "digest") {
+      throw new Error("Expected a digest.");
+    }
+
+    expect(result.digest.sections[0]).toMatchObject({
+      kind: "dependency_audit",
+      tone: "gap",
+      details: [
+        {
+          label: "Gap",
+          value: "Dependency check has not reported since 2026-07-25T00:00:00.000Z.",
+        },
+      ],
+    });
+  });
+
+  it("surfaces an absent dependency advisory summary as a gap", () => {
+    const result = buildDailyOpsDigest({
+      snapshot: makeSnapshot({
+        dependencyAudit: ok(null),
+      }),
+      watermark: makeWatermark(),
+    });
+
+    expect(result.kind).toBe("digest");
+    if (result.kind !== "digest") {
+      throw new Error("Expected a digest.");
+    }
+
+    expect(result.digest.sections[0]).toMatchObject({
+      kind: "dependency_audit",
+      tone: "gap",
+      details: [
+        {
+          label: "Gap",
+          value: "Dependency check has not reported yet.",
+        },
+      ],
+    });
+  });
+
   it("fires the weekly all-quiet note at 7 quiet days, not 6, and prefers a real report over the quiet note", () => {
     const sixDays = buildDailyOpsDigest({
       snapshot: makeSnapshot(),
@@ -538,7 +769,7 @@ describe("daily ops digest builder", () => {
     });
   });
 
-  it("composes multiple simultaneous signals in a stable order", () => {
+  it("composes the dependency advisory section with the existing signals in a stable order", () => {
     const result = buildDailyOpsDigest({
       snapshot: makeSnapshot({
         syncState: ok({
@@ -590,6 +821,11 @@ describe("daily ops digest builder", () => {
           })),
           routingCases: [],
         }),
+        dependencyAudit: ok({
+          generatedAt: "2026-07-27T11:30:00.000Z",
+          exitStatus: 1,
+          advisories: [makeDependencyAdvisory()],
+        }),
       }),
       watermark: makeWatermark({
         lastDigestSentAt: "2026-07-27T12:00:00.000Z",
@@ -609,6 +845,7 @@ describe("daily ops digest builder", () => {
       "sms_messages",
       "integration_health",
       "review_queues",
+      "dependency_audit",
     ]);
   });
 

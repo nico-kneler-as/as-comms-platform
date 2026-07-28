@@ -1,6 +1,7 @@
 import type {
   DailyOpsDigest,
   DailyOpsDigestBuildResult,
+  DailyOpsDigestDependencyAuditSummary,
   DailyOpsDigestHighWaterMark,
   DailyOpsDigestObservedState,
   DailyOpsDigestSection,
@@ -9,6 +10,7 @@ import type {
   DailyOpsDigestWatermarkState,
 } from "./types.js";
 import {
+  dependencyAuditStaleWindowMs,
   dailyOpsDigestCategory,
   reviewQueueDailyBaselineMax,
   sourceEvidenceQuarantineThreshold,
@@ -37,6 +39,65 @@ function formatMinutes(seconds: number): string {
   return Number.isInteger(minutes)
     ? `${String(minutes)} minute${minutes === 1 ? "" : "s"}`
     : `${String(seconds)} seconds`;
+}
+
+function isDependencyAuditSeverityReportable(severity: string): boolean {
+  return severity === "critical" || severity === "high";
+}
+
+function toDependencyAdvisoryKey(
+  advisory: DailyOpsDigestDependencyAuditSummary["advisories"][number],
+): string {
+  return `${advisory.ghsaId}:${advisory.packageName}`;
+}
+
+function listReportableDependencyAdvisories(
+  summary: DailyOpsDigestDependencyAuditSummary,
+) {
+  return summary.advisories.filter((advisory) =>
+    isDependencyAuditSeverityReportable(advisory.severity),
+  );
+}
+
+function hasFreshDependencyAuditSummary(input: {
+  readonly summary: DailyOpsDigestDependencyAuditSummary;
+  readonly runAt: string;
+}): boolean {
+  const generatedAtMs = toMillis(input.summary.generatedAt);
+  const runAtMs = toMillis(input.runAt);
+
+  if (generatedAtMs === null || runAtMs === null) {
+    return false;
+  }
+
+  return runAtMs - generatedAtMs <= dependencyAuditStaleWindowMs;
+}
+
+function compareDependencyAdvisories(
+  left: DailyOpsDigestDependencyAuditSummary["advisories"][number],
+  right: DailyOpsDigestDependencyAuditSummary["advisories"][number],
+): number {
+  const severityOrder = {
+    critical: 0,
+    high: 1,
+    moderate: 2,
+    low: 3,
+  } as const;
+
+  const severityDelta =
+    severityOrder[left.severity] - severityOrder[right.severity];
+
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+
+  const packageDelta = left.packageName.localeCompare(right.packageName);
+
+  if (packageDelta !== 0) {
+    return packageDelta;
+  }
+
+  return left.ghsaId.localeCompare(right.ghsaId);
 }
 
 function isAfterHighWaterMark(
@@ -86,6 +147,19 @@ function maxHighWaterMark(
 function buildObservedState(
   snapshot: DailyOpsDigestSnapshot,
 ): DailyOpsDigestObservedState {
+  const dependencyAuditSummary =
+    snapshot.dependencyAudit.kind === "ok" ? snapshot.dependencyAudit.value : null;
+  const trackedDependencyAdvisoryIds =
+    dependencyAuditSummary !== null &&
+    hasFreshDependencyAuditSummary({
+      summary: dependencyAuditSummary,
+      runAt: snapshot.runAt,
+    })
+      ? listReportableDependencyAdvisories(dependencyAuditSummary).map(
+          toDependencyAdvisoryKey,
+        )
+      : null;
+
   return {
     ...(snapshot.syncState.kind === "ok"
       ? {
@@ -97,6 +171,11 @@ function buildObservedState(
           ),
         }
       : {}),
+    ...(trackedDependencyAdvisoryIds === null
+      ? {}
+      : {
+          reportedDependencyAdvisoryIds: trackedDependencyAdvisoryIds,
+        }),
     ...(snapshot.postmarkWebhookDeadLetter.kind === "ok"
       ? {
           postmarkWebhookDeadLetter: maxHighWaterMark(
@@ -537,6 +616,70 @@ function buildReviewQueueSection(
   };
 }
 
+function buildDependencyAuditSection(
+  snapshot: DailyOpsDigestSnapshot,
+  watermark: DailyOpsDigestWatermarkState | null,
+): DailyOpsDigestSection | null {
+  if (snapshot.dependencyAudit.kind === "gap") {
+    return buildGapSection({
+      kind: "dependency_audit",
+      title: "Dependency advisories",
+      detail: snapshot.dependencyAudit.detail,
+      linkTarget: "logs",
+    });
+  }
+
+  const summary = snapshot.dependencyAudit.value;
+
+  if (summary === null) {
+    return buildGapSection({
+      kind: "dependency_audit",
+      title: "Dependency advisories",
+      detail: "Dependency check has not reported yet.",
+      linkTarget: "logs",
+    });
+  }
+
+  if (
+    !hasFreshDependencyAuditSummary({
+      summary,
+      runAt: snapshot.runAt,
+    })
+  ) {
+    return buildGapSection({
+      kind: "dependency_audit",
+      title: "Dependency advisories",
+      detail: `Dependency check has not reported since ${summary.generatedAt}.`,
+      linkTarget: "logs",
+    });
+  }
+
+  const reportedAdvisoryIds = new Set(
+    watermark?.reportedDependencyAdvisoryIds ?? [],
+  );
+  const newAdvisories = listReportableDependencyAdvisories(summary)
+    .filter((advisory) => !reportedAdvisoryIds.has(toDependencyAdvisoryKey(advisory)))
+    .sort(compareDependencyAdvisories);
+
+  if (newAdvisories.length === 0) {
+    return null;
+  }
+
+  return {
+    kind: "dependency_audit",
+    tone: "alert",
+    title: "Dependency advisories",
+    summary: `${pluralize(newAdvisories.length, "new dependency advisory")} would fail the blocking audit.`,
+    baseline:
+      "Baseline is zero new high/critical advisories. Already-reported advisories stay quiet until they disappear from the latest summary.",
+    details: newAdvisories.map((advisory) => ({
+      label: `${advisory.packageName} (${advisory.ghsaId})`,
+      value: `${advisory.severity}; ${advisory.dependencyType}; vulnerable ${advisory.vulnerableRange}; patched ${advisory.patchedRange}`,
+    })),
+    linkTarget: "logs",
+  };
+}
+
 function buildAllQuietDigest(snapshot: DailyOpsDigestSnapshot): DailyOpsDigest {
   return {
     kind: "all_quiet",
@@ -563,6 +706,7 @@ export function buildDailyOpsDigest(input: {
     buildSmsSection(input.snapshot),
     buildIntegrationHealthSection(input.snapshot, input.watermark),
     buildReviewQueueSection(input.snapshot, input.watermark),
+    buildDependencyAuditSection(input.snapshot, input.watermark),
   ].filter((section): section is DailyOpsDigestSection => section !== null);
 
   if (sections.length > 0) {

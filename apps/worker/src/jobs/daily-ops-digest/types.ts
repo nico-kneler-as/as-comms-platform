@@ -1,4 +1,5 @@
 import type {
+  DependencyAuditAdvisory,
   IntegrationHealthStatus,
   SyncStatus,
 } from "@as-comms/contracts";
@@ -12,6 +13,7 @@ export const reviewQueueDailyBaselineMax = 10;
 export const weeklyQuietDays = 7;
 export const syncStateFailureConsecutiveThreshold = 3;
 export const syncStateFailurePollIntervalMultiplier = 3;
+export const dependencyAuditStaleWindowMs = 36 * 60 * 60 * 1000;
 
 export interface DailyOpsDigestWindow {
   readonly startsAt: string;
@@ -59,6 +61,12 @@ export interface DailyOpsDigestIntegrationHealthSignal {
   readonly updatedAt: string;
 }
 
+export interface DailyOpsDigestDependencyAuditSummary {
+  readonly generatedAt: string;
+  readonly exitStatus: number;
+  readonly advisories: readonly DependencyAuditAdvisory[];
+}
+
 export interface DailyOpsDigestSnapshot {
   readonly runAt: string;
   readonly digestDateDenver: string;
@@ -88,7 +96,7 @@ export interface DailyOpsDigestSnapshot {
     readonly identityCases: readonly DailyOpsDigestReviewQueueCase[];
     readonly routingCases: readonly DailyOpsDigestReviewQueueCase[];
   }>;
-  readonly dependencyAudit?: DailyOpsDigestSignal<unknown> | null;
+  readonly dependencyAudit: DailyOpsDigestSignal<DailyOpsDigestDependencyAuditSummary | null>;
 }
 
 export interface DailyOpsDigestHighWaterMark {
@@ -101,6 +109,7 @@ export interface DailyOpsDigestWatermarkState {
   readonly lastDigestSentAt: string | null;
   readonly quietStreakStartedAt: string | null;
   readonly syncStateDeadLetterCounts: Readonly<Record<string, number>>;
+  readonly reportedDependencyAdvisoryIds: readonly string[];
   readonly postmarkWebhookDeadLetter: DailyOpsDigestHighWaterMark | null;
   readonly identityResolutionQueue: DailyOpsDigestHighWaterMark | null;
   readonly routingReviewQueue: DailyOpsDigestHighWaterMark | null;
@@ -108,6 +117,7 @@ export interface DailyOpsDigestWatermarkState {
 
 export interface DailyOpsDigestObservedState {
   readonly syncStateDeadLetterCounts?: Readonly<Record<string, number>>;
+  readonly reportedDependencyAdvisoryIds?: readonly string[];
   readonly postmarkWebhookDeadLetter?: DailyOpsDigestHighWaterMark | null;
   readonly identityResolutionQueue?: DailyOpsDigestHighWaterMark | null;
   readonly routingReviewQueue?: DailyOpsDigestHighWaterMark | null;
@@ -120,7 +130,8 @@ export type DailyOpsDigestSectionKind =
   | "pending_composer_outbounds"
   | "sms_messages"
   | "integration_health"
-  | "review_queues";
+  | "review_queues"
+  | "dependency_audit";
 
 export interface DailyOpsDigestSection {
   readonly kind: DailyOpsDigestSectionKind;
