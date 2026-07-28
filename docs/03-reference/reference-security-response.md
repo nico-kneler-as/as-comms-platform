@@ -145,6 +145,14 @@ Fast filters operators can add in a pinch:
 
 ## Dependency-audit exceptions (`pnpm.auditConfig.ignoreGhsas`)
 
+The nightly dependency-advisory feed uses the same high-severity audit rule as
+the CI gate and posts a compact summary to
+`/api/internal/dependency-audit` before the 07:00 Denver digest run.
+
+- `web` env: `DEPENDENCY_AUDIT_FEED_SECRET`
+- GitHub Actions secrets: `DEPENDENCY_AUDIT_FEED_URL` (full route URL) and `DEPENDENCY_AUDIT_FEED_SECRET` (must match `web`)
+- When the digest reports a new advisory, fix or override the dependency first. Add an `ignoreGhsas` exception only after confirming the vulnerable copy is genuinely out of runtime scope and updating this doc.
+
 The CI-only gate (`pnpm audit --audit-level high`, `scripts/security-check.mjs`)
 blocks merges on high/critical advisories. Entries in `ignoreGhsas` are
 deliberate exceptions; each one needs a reason here.

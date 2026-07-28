@@ -23,6 +23,7 @@ import {
   contactConsent,
   contactTimelineProjection,
   databaseSchema,
+  dependencyAuditSummary,
   internalNotes,
   messageAttachments,
   newsletterSubscribers,
@@ -63,6 +64,7 @@ describe("Stage 1 DB schema", () => {
       "contactMemberships",
       "contactTimelineProjection",
       "contacts",
+      "dependencyAuditSummary",
       "expeditionDimensions",
       "gmailMessageDetails",
       "identityResolutionQueue",
@@ -112,6 +114,9 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(opsAlertState)).toBe("ops_alert_state");
     expect(getTableName(opsDigestWatermark)).toBe("ops_digest_watermark");
+    expect(getTableName(dependencyAuditSummary)).toBe(
+      "dependency_audit_summary"
+    );
     expect(getTableName(orgSenders)).toBe("org_senders");
     expect(getTableName(sourceEvidenceLog)).toBe("source_evidence_log");
     expect(getTableName(sourceEvidenceQuarantine)).toBe(

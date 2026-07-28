@@ -1,8 +1,9 @@
 import { and, asc, count, desc, eq, gte, inArray, lt } from "drizzle-orm";
 
-import type { Provider } from "@as-comms/contracts";
+import { dependencyAuditSummaryId, type Provider } from "@as-comms/contracts";
 import {
   type Stage1Database,
+  dependencyAuditSummary,
   identityResolutionQueue,
   integrationHealth,
   pendingComposerOutbounds,
@@ -243,6 +244,7 @@ export async function collectDailyOpsDigestSnapshot(input: {
     smsMessagesSignal,
     integrationHealthSignal,
     reviewQueuesSignal,
+    dependencyAuditSignal,
   ] = await Promise.all([
     collectSignal(() =>
       collectSyncStateSignal({
@@ -402,6 +404,27 @@ export async function collectDailyOpsDigestSnapshot(input: {
         })),
       };
     }),
+    collectSignal(async () => {
+      const [row] = await input.db
+        .select({
+          generatedAt: dependencyAuditSummary.generatedAt,
+          exitStatus: dependencyAuditSummary.exitStatus,
+          advisories: dependencyAuditSummary.advisoriesJson,
+        })
+        .from(dependencyAuditSummary)
+        .where(eq(dependencyAuditSummary.id, dependencyAuditSummaryId))
+        .limit(1);
+
+      if (row === undefined) {
+        return null;
+      }
+
+      return {
+        generatedAt: row.generatedAt.toISOString(),
+        exitStatus: row.exitStatus,
+        advisories: row.advisories,
+      };
+    }),
   ]);
 
   return {
@@ -415,6 +438,6 @@ export async function collectDailyOpsDigestSnapshot(input: {
     smsMessages: smsMessagesSignal,
     integrationHealth: integrationHealthSignal,
     reviewQueues: reviewQueuesSignal,
-    dependencyAudit: null,
+    dependencyAudit: dependencyAuditSignal,
   };
 }

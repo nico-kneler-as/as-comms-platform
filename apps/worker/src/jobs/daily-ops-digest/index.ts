@@ -55,6 +55,7 @@ function toWatermarkState(
     lastDigestSentAt: record.lastDigestSentAt,
     quietStreakStartedAt: record.quietStreakStartedAt,
     syncStateDeadLetterCounts: record.syncStateDeadLetterCounts,
+    reportedDependencyAdvisoryIds: record.reportedDependencyAdvisoryIds,
     postmarkWebhookDeadLetter: record.postmarkWebhookDeadLetter,
     identityResolutionQueue: record.identityResolutionQueue,
     routingReviewQueue: record.routingReviewQueue,
@@ -68,6 +69,7 @@ function buildDefaultWatermark(runAt: string): OpsDigestWatermarkRecord {
     lastDigestSentAt: null,
     quietStreakStartedAt: null,
     syncStateDeadLetterCounts: {},
+    reportedDependencyAdvisoryIds: [],
     postmarkWebhookDeadLetter: null,
     identityResolutionQueue: null,
     routingReviewQueue: null,
@@ -99,6 +101,11 @@ function mergeObservedState(
     ...base,
     syncStateDeadLetterCounts:
       observedState.syncStateDeadLetterCounts ?? base.syncStateDeadLetterCounts,
+    reportedDependencyAdvisoryIds:
+      Array.from(
+        observedState.reportedDependencyAdvisoryIds ??
+          base.reportedDependencyAdvisoryIds,
+      ),
     postmarkWebhookDeadLetter: mergeHighWaterMark(
       base.postmarkWebhookDeadLetter,
       observedState.postmarkWebhookDeadLetter,
