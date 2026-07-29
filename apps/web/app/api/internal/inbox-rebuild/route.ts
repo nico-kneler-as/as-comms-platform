@@ -30,16 +30,18 @@ function isAuthorized(request: Request): boolean {
 
   const received = request.headers.get("authorization") ?? "";
   const expectedHeader = `Bearer ${expectedToken}`;
-  // Length check first — `timingSafeEqual` throws on length mismatch, and
-  // the throw itself would leak a length signal via timing. Short-circuit
-  // cleanly so equal-length comparisons run in constant time.
-  if (received.length !== expectedHeader.length) {
+  const receivedBuffer = Buffer.from(received, "utf8");
+  const expectedBuffer = Buffer.from(expectedHeader, "utf8");
+  // Compare BYTE lengths, not string lengths. `timingSafeEqual` throws a
+  // RangeError on a byte-length mismatch, and a multi-byte header can match
+  // on `String.length` while differing in bytes (e.g. "Bearer abcñ23" vs
+  // "Bearer abc123") — which would surface as an unhandled 500 instead of a
+  // 401. Short-circuiting here keeps equal-length comparisons constant time.
+  if (receivedBuffer.length !== expectedBuffer.length) {
     return false;
   }
-  return timingSafeEqual(
-    Buffer.from(received, "utf8"),
-    Buffer.from(expectedHeader, "utf8"),
-  );
+
+  return timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
 function compareCanonicalEventOrder(
