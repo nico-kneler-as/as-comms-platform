@@ -1,17 +1,53 @@
+import { createHash } from "node:crypto"
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-// Deliberately NO vi.mock("mcp-handler") here. `mcp-route.test.ts` mocks the
-// adapter to test the auth guard in isolation, which means nothing there
-// exercises the real Streamable HTTP transport. This file closes that gap by
-// driving actual MCP JSON-RPC through the real handler.
-import { POST } from "../../app/api/mcp/route"
+import type { UserRecord } from "@as-comms/domain"
+
+import { POST as MCP_POST } from "../../app/api/mcp/route"
+import { POST as TOKEN_POST } from "../../app/token/route"
+import {
+  createStage1WebTestRuntime,
+  type Stage1WebTestRuntime
+} from "../../src/server/stage1-runtime.test-support"
 
 const MCP_ACCEPT = "application/json, text/event-stream"
+const CLIENT_ID = "client_test"
+const CLIENT_SECRET = "top-secret"
+const USER_ID = "user-1"
+const RESOURCE = "https://as.example.com/api/mcp"
+const REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback"
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex")
+}
+
+function pkceS256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("base64url")
+}
+
+function buildUserRecord(
+  overrides: Partial<UserRecord> = {}
+): UserRecord {
+  const now = new Date("2026-07-29T12:00:00.000Z")
+
+  return {
+    id: USER_ID,
+    name: "Operator One",
+    email: "operator@adventurescientists.org",
+    emailVerified: null,
+    image: null,
+    role: "operator",
+    deactivatedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  }
+}
 
 async function readMcpBody(response: Response): Promise<unknown> {
   const text = await response.text()
 
-  // Streamable HTTP may answer as a single JSON body or as an SSE frame.
   if (!text.startsWith("event:") && !text.includes("data:")) {
     return JSON.parse(text)
   }
@@ -27,9 +63,13 @@ async function readMcpBody(response: Response): Promise<unknown> {
   return JSON.parse(dataLine.slice("data:".length).trim())
 }
 
-function mcpRequest(body: unknown, sessionId?: string): Request {
+function mcpRequest(
+  body: unknown,
+  accessToken: string,
+  sessionId?: string
+): Request {
   const headers: Record<string, string> = {
-    authorization: "Bearer integration-token",
+    authorization: `Bearer ${accessToken}`,
     "content-type": "application/json",
     accept: MCP_ACCEPT
   }
@@ -57,16 +97,83 @@ const initializeBody = {
 }
 
 describe("mcp transport (real mcp-handler)", () => {
-  beforeEach(() => {
-    vi.stubEnv("MCP_DEV_TOKEN", "integration-token")
+  let runtime: Stage1WebTestRuntime | null = null
+
+  beforeEach(async () => {
+    runtime = await createStage1WebTestRuntime()
+    await runtime.context.settings.users.upsert(buildUserRecord())
+    await runtime.runtime.oauth.createClient({
+      clientId: CLIENT_ID,
+      clientSecretHash: sha256Hex(CLIENT_SECRET),
+      name: "Claude Connector",
+      allowedRedirectUris: [REDIRECT_URI, "http://localhost/callback"]
+    })
+    vi.stubEnv("MCP_PUBLIC_URL", RESOURCE)
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllEnvs()
+    if (runtime !== null) {
+      await runtime.dispose()
+      runtime = null
+    }
   })
+
+  async function issueAccessToken(): Promise<string> {
+    if (runtime === null) {
+      throw new Error("Missing test runtime.")
+    }
+
+    const codeVerifier =
+      "verifier-1234567890123456789012345678901234567890123"
+    const code = "authorization-code"
+    await runtime.runtime.oauth.createAuthorizationCode({
+      authorizationCodeHash: sha256Hex(code),
+      clientId: CLIENT_ID,
+      userId: USER_ID,
+      redirectUri: REDIRECT_URI,
+      codeChallenge: pkceS256(codeVerifier),
+      scope: "mcp:read offline_access",
+      resource: RESOURCE,
+      expiresAt: "2026-07-29T12:02:00.000Z"
+    })
+
+    const response = await TOKEN_POST(
+      new Request("http://localhost/token", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
+          code,
+          code_verifier: codeVerifier,
+          redirect_uri: REDIRECT_URI,
+          resource: RESOURCE
+        }).toString()
+      })
+    )
+
+    if (response.status !== 200) {
+      throw new Error(`Failed to issue access token: ${await response.text()}`)
+    }
+
+    const body = (await response.json()) as {
+      access_token?: string
+    }
+
+    if (!body.access_token) {
+      throw new Error("Token response did not include an access token.")
+    }
+
+    return body.access_token
+  }
 
   it("completes an MCP initialize handshake and reports server info", async () => {
-    const response = await POST(mcpRequest(initializeBody))
+    const accessToken = await issueAccessToken()
+    const response = await MCP_POST(mcpRequest(initializeBody, accessToken))
 
     expect(response.status).toBe(200)
 
@@ -85,13 +192,17 @@ describe("mcp transport (real mcp-handler)", () => {
   })
 
   it("advertises get_connector_info via tools/list", async () => {
-    const initializeResponse = await POST(mcpRequest(initializeBody))
+    const accessToken = await issueAccessToken()
+    const initializeResponse = await MCP_POST(
+      mcpRequest(initializeBody, accessToken)
+    )
     const sessionId =
       initializeResponse.headers.get("mcp-session-id") ?? undefined
 
-    const response = await POST(
+    const response = await MCP_POST(
       mcpRequest(
         { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
+        accessToken,
         sessionId
       )
     )
@@ -107,11 +218,14 @@ describe("mcp transport (real mcp-handler)", () => {
   })
 
   it("executes get_connector_info through tools/call", async () => {
-    const initializeResponse = await POST(mcpRequest(initializeBody))
+    const accessToken = await issueAccessToken()
+    const initializeResponse = await MCP_POST(
+      mcpRequest(initializeBody, accessToken)
+    )
     const sessionId =
       initializeResponse.headers.get("mcp-session-id") ?? undefined
 
-    const response = await POST(
+    const response = await MCP_POST(
       mcpRequest(
         {
           jsonrpc: "2.0",
@@ -119,6 +233,7 @@ describe("mcp transport (real mcp-handler)", () => {
           method: "tools/call",
           params: { name: "get_connector_info", arguments: {} }
         },
+        accessToken,
         sessionId
       )
     )

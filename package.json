@@ -23,6 +23,7 @@
     "ops:merge-sf-contact-pair": "pnpm --filter @as-comms/worker ops:merge-sf-contact-pair",
     "ops:worker:reprocess-pending-campaign-sends": "pnpm --filter @as-comms/worker ops:reprocess-pending-campaign-sends",
     "ops:cleanup-non-volunteer-contacts": "tsx scripts/ops/cleanup-non-volunteer-contacts.ts",
+    "ops:mcp-create-oauth-client": "tsx scripts/ops/mcp-create-oauth-client.ts",
     "ops:reclassify-salesforce-tasks": "pnpm --filter @as-comms/worker ops:reclassify-salesforce-tasks",
     "ops:worker:seed-aliases-from-env": "tsx scripts/ops/seed-aliases-from-env.ts",
     "ops:backfill-project-aliases": "tsx scripts/ops/backfill-project-aliases.ts",

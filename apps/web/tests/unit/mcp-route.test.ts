@@ -1,26 +1,77 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mcpHandler = vi.hoisted(() => vi.fn())
-const createMcpHandler = vi.hoisted(() =>
-  vi.fn(() => mcpHandler)
-)
+const createMcpHandler = vi.hoisted(() => vi.fn(() => mcpHandler))
+const validateMcpAccessToken = vi.hoisted(() => vi.fn())
+const getMcpOAuthRepository = vi.hoisted(() => vi.fn())
+const findAuthorizedMcpUserById = vi.hoisted(() => vi.fn())
 
 vi.mock("mcp-handler", () => ({
   createMcpHandler
 }))
 
+vi.mock("../../src/server/mcp/oauth/core", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/server/mcp/oauth/core")
+  >("../../src/server/mcp/oauth/core")
+
+  return {
+    ...actual,
+    validateMcpAccessToken
+  }
+})
+
+vi.mock("../../src/server/stage1-runtime", () => ({
+  getMcpOAuthRepository
+}))
+
+vi.mock("../../src/server/mcp/oauth/runtime", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../src/server/mcp/oauth/runtime")
+  >("../../src/server/mcp/oauth/runtime")
+
+  return {
+    ...actual,
+    findAuthorizedMcpUserById
+  }
+})
+
 import { DELETE, GET, POST } from "../../app/api/mcp/route"
 
 describe("mcp route", () => {
   beforeEach(() => {
-    vi.stubEnv("MCP_DEV_TOKEN", "test-token")
+    vi.stubEnv("MCP_PUBLIC_URL", "https://as.example.com/api/mcp")
     mcpHandler.mockReset()
+    validateMcpAccessToken.mockReset()
+    getMcpOAuthRepository.mockReset()
+    findAuthorizedMcpUserById.mockReset()
+
     mcpHandler.mockImplementation((request: Request) =>
       Response.json({
         ok: true,
-        method: request.method
+        method: request.method,
+        auth: request.auth ?? null
       })
     )
+
+    validateMcpAccessToken.mockResolvedValue({
+      kind: "success",
+      scopes: ["mcp:read"],
+      token: {
+        clientId: "client_test",
+        userId: "user-1",
+        resource: "https://as.example.com/api/mcp",
+        accessExpiresAt: "2026-07-29T13:00:00.000Z"
+      }
+    })
+    getMcpOAuthRepository.mockResolvedValue({
+      revokeAllTokensForUser: vi.fn().mockResolvedValue(1)
+    })
+    findAuthorizedMcpUserById.mockResolvedValue({
+      id: "user-1",
+      email: "operator@adventurescientists.org",
+      role: "operator"
+    })
   })
 
   afterEach(() => {
@@ -34,7 +85,7 @@ describe("mcp route", () => {
     expect(createMcpHandler).toHaveBeenCalledTimes(1)
   })
 
-  it("rejects requests without an authorization header", async () => {
+  it("returns the exact 401 handshake when the bearer token is missing", async () => {
     const response = await POST(
       new Request("http://localhost/api/mcp", {
         method: "POST"
@@ -43,13 +94,19 @@ describe("mcp route", () => {
 
     expect(mcpHandler).not.toHaveBeenCalled()
     expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      code: "unauthorized"
-    })
+    expect(response.headers.get("WWW-Authenticate")).toBe(
+      'Bearer resource_metadata="https://as.example.com/.well-known/oauth-protected-resource", scope="mcp:read"'
+    )
   })
 
-  it("rejects requests with the wrong bearer token", async () => {
+  it("returns the same 401 handshake when bearer validation fails", async () => {
+    validateMcpAccessToken.mockResolvedValueOnce({
+      kind: "error",
+      error: "invalid_grant",
+      errorDescription: "invalid",
+      status: 401
+    })
+
     const response = await POST(
       new Request("http://localhost/api/mcp", {
         method: "POST",
@@ -61,13 +118,35 @@ describe("mcp route", () => {
 
     expect(mcpHandler).not.toHaveBeenCalled()
     expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      code: "unauthorized"
-    })
+    expect(response.headers.get("WWW-Authenticate")).toBe(
+      'Bearer resource_metadata="https://as.example.com/.well-known/oauth-protected-resource", scope="mcp:read"'
+    )
   })
 
-  it("accepts authenticated GET, POST, and DELETE requests", async () => {
+  it("revokes the user's tokens and returns 401 when the user is no longer authorized", async () => {
+    const oauthRepository = {
+      revokeAllTokensForUser: vi.fn().mockResolvedValue(1)
+    }
+    getMcpOAuthRepository.mockResolvedValueOnce(oauthRepository)
+    findAuthorizedMcpUserById.mockResolvedValueOnce(null)
+
+    const response = await POST(
+      new Request("http://localhost/api/mcp", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer valid-token"
+        }
+      })
+    )
+
+    expect(oauthRepository.revokeAllTokensForUser).toHaveBeenCalledWith(
+      "user-1",
+      expect.any(Date)
+    )
+    expect(response.status).toBe(401)
+  })
+
+  it("accepts authenticated GET, POST, and DELETE requests and forwards auth context", async () => {
     for (const [method, handler] of [
       ["GET", GET],
       ["POST", POST],
@@ -77,68 +156,27 @@ describe("mcp route", () => {
         new Request("http://localhost/api/mcp", {
           method,
           headers: {
-            authorization: "Bearer test-token"
+            authorization: "Bearer valid-token"
           }
         })
       )
 
       expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toEqual({
+      await expect(response.json()).resolves.toMatchObject({
         ok: true,
-        method
+        method,
+        auth: {
+          clientId: "client_test",
+          extra: {
+            userEmail: "operator@adventurescientists.org",
+            userId: "user-1",
+            userRole: "operator"
+          },
+          scopes: ["mcp:read"]
+        }
       })
     }
 
     expect(mcpHandler).toHaveBeenCalledTimes(3)
   })
-
-  it("returns 401 instead of throwing for a multi-byte header of equal string length", async () => {
-    // Regression guard. "Bearer test-token" and "Bearer test-tokeñ" are both
-    // 17 JS characters, but the latter is 18 UTF-8 bytes. Gating on
-    // `String.length` lets it reach `timingSafeEqual`, which throws a
-    // RangeError on a byte-length mismatch — surfacing as a 500 rather than
-    // a clean 401. The guard must compare byte lengths.
-    const response = await POST(
-      new Request("http://localhost/api/mcp", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer test-tokeñ"
-        }
-      })
-    )
-
-    expect(mcpHandler).not.toHaveBeenCalled()
-    expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      code: "unauthorized"
-    })
-  })
-
-  it.each([undefined, ""])(
-    "rejects requests when MCP_DEV_TOKEN is %s even if a header is supplied",
-    async (token) => {
-      if (token === undefined) {
-        vi.unstubAllEnvs()
-      } else {
-        vi.stubEnv("MCP_DEV_TOKEN", token)
-      }
-
-      const response = await POST(
-        new Request("http://localhost/api/mcp", {
-          method: "POST",
-          headers: {
-            authorization: "Bearer test-token"
-          }
-        })
-      )
-
-      expect(mcpHandler).not.toHaveBeenCalled()
-      expect(response.status).toBe(401)
-      await expect(response.json()).resolves.toEqual({
-        ok: false,
-        code: "unauthorized"
-      })
-    }
-  )
 })

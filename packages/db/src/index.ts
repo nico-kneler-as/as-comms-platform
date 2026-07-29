@@ -5,6 +5,7 @@ export * from "./broadcast-uploaded-recipients-repository.js";
 export * from "./client.js";
 export * from "./composer-drafts-repository.js";
 export * from "./media-assets-repository.js";
+export * from "./mcp-oauth-repository.js";
 export * from "./mappers.js";
 export * from "./migrator.js";
 export * from "./newsletter-subscribers-repository.js";

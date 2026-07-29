@@ -8,12 +8,35 @@ export const metadata = {
   title: "Sign in — AS Comms"
 };
 
-async function signInWithGoogle(): Promise<void> {
-  "use server";
-  await signIn("google", { redirectTo: "/inbox" });
+interface SignInPageProps {
+  readonly searchParams: Promise<{
+    readonly callbackUrl?: string | readonly string[];
+  }>;
 }
 
-export default function SignInPage() {
+function resolveRedirectTarget(
+  callbackUrl: string | readonly string[] | undefined,
+): string {
+  if (
+    typeof callbackUrl === "string" &&
+    callbackUrl.startsWith("/") &&
+    !callbackUrl.startsWith("//")
+  ) {
+    return callbackUrl;
+  }
+
+  return "/inbox";
+}
+
+export default async function SignInPage({ searchParams }: SignInPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const redirectTo = resolveRedirectTarget(resolvedSearchParams.callbackUrl);
+
+  async function signInWithGoogle(): Promise<void> {
+    "use server";
+    await signIn("google", { redirectTo });
+  }
+
   return (
     <main className="flex min-h-dvh w-full items-center justify-center bg-slate-50 p-6">
       <section className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-8 shadow-sm">

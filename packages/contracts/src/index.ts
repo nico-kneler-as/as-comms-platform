@@ -1,6 +1,7 @@
 export * from "./dependency-audit.js";
 export * from "./health.js";
 export * from "./jobs.js";
+export * from "./mcp-oauth.js";
 export * from "./ops-digest.js";
 export * from "./settings.js";
 export * from "./settings-records.js";
