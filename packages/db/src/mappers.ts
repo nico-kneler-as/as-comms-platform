@@ -26,6 +26,9 @@ import {
   messageAttachmentSchema,
   manualNoteDetailSchema,
   mediaAssetRecordSchema,
+  mcpOAuthAuthorizationCodeRecordSchema,
+  mcpOAuthClientRecordSchema,
+  mcpOAuthTokenRecordSchema,
   opsDigestWatermarkRecordSchema,
   type BroadcastLinkClickClient,
   type BroadcastLinkClickGeo,
@@ -37,6 +40,9 @@ import {
   newsletterSuppressionRecordSchema,
   upsertNewsletterSubscriberInputSchema,
   upsertNewsletterSuppressionInputSchema,
+  createMcpOAuthAuthorizationCodeInputSchema,
+  createMcpOAuthClientInputSchema,
+  createMcpOAuthTokenInputSchema,
   createOrgSenderInputSchema,
   orgSenderRecordSchema,
   projectKnowledgeEntrySchema,
@@ -71,6 +77,9 @@ import {
   type MessageAttachmentRecord,
   type ManualNoteDetailRecord,
   type MediaAssetRecord as MediaAssetContractRecord,
+  type McpOAuthAuthorizationCodeRecord,
+  type McpOAuthClientRecord,
+  type McpOAuthTokenRecord,
   type NewsletterSubscriberRecord,
   type NewsletterSuppressionRecord,
   type OpsDigestWatermarkRecord,
@@ -124,6 +133,9 @@ import type {
   mailchimpCampaignActivityDetails,
   messageAttachments,
   manualNoteDetails,
+  mcpOAuthAuthorizationCodes,
+  mcpOAuthClients,
+  mcpOAuthTokens,
   newsletterSubscribers,
   newsletterSuppressions,
   orgSenders,
@@ -191,6 +203,10 @@ type BroadcastOpenDbRowInsert = typeof broadcastOpens.$inferInsert;
 type BroadcastUploadedRecipientDbRowInsert =
   typeof broadcastUploadedRecipients.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
+type McpOAuthClientTableRowInsert = typeof mcpOAuthClients.$inferInsert;
+type McpOAuthAuthorizationCodeTableRowInsert =
+  typeof mcpOAuthAuthorizationCodes.$inferInsert;
+type McpOAuthTokenTableRowInsert = typeof mcpOAuthTokens.$inferInsert;
 type NewsletterSubscriberTableRowInsert =
   typeof newsletterSubscribers.$inferInsert;
 type NewsletterSuppressionTableRowInsert =
@@ -323,6 +339,66 @@ export type MediaAssetRowInsert = BroadcastMediaAssetRowInsert;
 export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
 
 export type MediaAssetRecord = MediaAssetContractRecord;
+
+export type McpOAuthClientRow = Readonly<{
+  id: string;
+  client_id: string;
+  client_secret_hash: string;
+  name: string;
+  allowed_redirect_uris: readonly string[];
+  revoked_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type McpOAuthClientInsert = z.input<typeof createMcpOAuthClientInputSchema>;
+
+export type McpOAuthClientRowInsert = McpOAuthClientTableRowInsert;
+
+export type McpOAuthAuthorizationCodeRow = Readonly<{
+  id: string;
+  authorization_code_hash: string;
+  client_id: string;
+  user_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  scope: string;
+  resource: string;
+  expires_at: Date;
+  consumed_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type McpOAuthAuthorizationCodeInsert = z.input<
+  typeof createMcpOAuthAuthorizationCodeInputSchema
+>;
+
+export type McpOAuthAuthorizationCodeRowInsert =
+  McpOAuthAuthorizationCodeTableRowInsert;
+
+export type McpOAuthTokenRow = Readonly<{
+  id: string;
+  access_token_hash: string;
+  refresh_token_hash: string;
+  client_id: string;
+  user_id: string;
+  scope: string;
+  resource: string;
+  token_family_id: string;
+  authorization_code_hash: string | null;
+  rotated_from_token_id: string | null;
+  access_expires_at: Date;
+  refresh_expires_at: Date;
+  rotated_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type McpOAuthTokenInsert = z.input<typeof createMcpOAuthTokenInputSchema>;
+
+export type McpOAuthTokenRowInsert = McpOAuthTokenTableRowInsert;
 
 export type BroadcastLinkClickRow = Readonly<{
   id: string;
@@ -548,6 +624,113 @@ export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInse
     filename: parsed.filename,
     contentType: parsed.contentType,
     sizeBytes: parsed.sizeBytes,
+  };
+}
+
+export function mapMcpOAuthClientRow(
+  row: McpOAuthClientRow,
+): McpOAuthClientRecord {
+  return mcpOAuthClientRecordSchema.parse({
+    id: row.id,
+    clientId: row.client_id,
+    clientSecretHash: row.client_secret_hash,
+    name: row.name,
+    allowedRedirectUris: row.allowed_redirect_uris,
+    revokedAt: row.revoked_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapMcpOAuthClientInsert(
+  record: McpOAuthClientInsert,
+): McpOAuthClientRowInsert {
+  const parsed = createMcpOAuthClientInputSchema.parse(record);
+
+  return {
+    clientId: parsed.clientId,
+    clientSecretHash: parsed.clientSecretHash,
+    name: parsed.name,
+    allowedRedirectUris: parsed.allowedRedirectUris,
+  };
+}
+
+export function mapMcpOAuthAuthorizationCodeRow(
+  row: McpOAuthAuthorizationCodeRow,
+): McpOAuthAuthorizationCodeRecord {
+  return mcpOAuthAuthorizationCodeRecordSchema.parse({
+    id: row.id,
+    authorizationCodeHash: row.authorization_code_hash,
+    clientId: row.client_id,
+    userId: row.user_id,
+    redirectUri: row.redirect_uri,
+    codeChallenge: row.code_challenge,
+    scope: row.scope,
+    resource: row.resource,
+    expiresAt: row.expires_at.toISOString(),
+    consumedAt: row.consumed_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapMcpOAuthAuthorizationCodeInsert(
+  record: McpOAuthAuthorizationCodeInsert,
+): McpOAuthAuthorizationCodeRowInsert {
+  const parsed = createMcpOAuthAuthorizationCodeInputSchema.parse(record);
+
+  return {
+    authorizationCodeHash: parsed.authorizationCodeHash,
+    clientId: parsed.clientId,
+    userId: parsed.userId,
+    redirectUri: parsed.redirectUri,
+    codeChallenge: parsed.codeChallenge,
+    scope: parsed.scope,
+    resource: parsed.resource,
+    expiresAt: toDate(parsed.expiresAt),
+  };
+}
+
+export function mapMcpOAuthTokenRow(
+  row: McpOAuthTokenRow,
+): McpOAuthTokenRecord {
+  return mcpOAuthTokenRecordSchema.parse({
+    id: row.id,
+    accessTokenHash: row.access_token_hash,
+    refreshTokenHash: row.refresh_token_hash,
+    clientId: row.client_id,
+    userId: row.user_id,
+    scope: row.scope,
+    resource: row.resource,
+    tokenFamilyId: row.token_family_id,
+    authorizationCodeHash: row.authorization_code_hash,
+    rotatedFromTokenId: row.rotated_from_token_id,
+    accessExpiresAt: row.access_expires_at.toISOString(),
+    refreshExpiresAt: row.refresh_expires_at.toISOString(),
+    rotatedAt: row.rotated_at?.toISOString() ?? null,
+    revokedAt: row.revoked_at?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapMcpOAuthTokenInsert(
+  record: McpOAuthTokenInsert,
+): McpOAuthTokenRowInsert {
+  const parsed = createMcpOAuthTokenInputSchema.parse(record);
+
+  return {
+    accessTokenHash: parsed.accessTokenHash,
+    refreshTokenHash: parsed.refreshTokenHash,
+    clientId: parsed.clientId,
+    userId: parsed.userId,
+    scope: parsed.scope,
+    resource: parsed.resource,
+    tokenFamilyId: parsed.tokenFamilyId,
+    authorizationCodeHash: parsed.authorizationCodeHash ?? null,
+    rotatedFromTokenId: parsed.rotatedFromTokenId ?? null,
+    accessExpiresAt: toDate(parsed.accessExpiresAt),
+    refreshExpiresAt: toDate(parsed.refreshExpiresAt),
   };
 }
 

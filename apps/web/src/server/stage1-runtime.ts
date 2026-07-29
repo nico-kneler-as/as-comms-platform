@@ -4,6 +4,7 @@ import {
   countMediaAssets,
   countBroadcastUploadedRecipientsForRun,
   createOrgSender,
+  createMcpOAuthRepositoryFromConnection,
   createMediaAsset,
   createDatabaseConnection,
   insertBroadcastLinkClick,
@@ -28,6 +29,7 @@ import {
   verificationTokens,
   type BroadcastUploadedRecipientInsert,
   type DatabaseConnection,
+  type McpOAuthRepository,
   type Stage5RepositoryBundle,
 } from "@as-comms/db";
 import type { CreateOrgSenderInput } from "@as-comms/contracts";
@@ -76,6 +78,7 @@ export interface Stage1WebRuntime {
   readonly connection: Pick<DatabaseConnection, "db" | "sql"> | null;
   readonly repositories: Stage1RepositoryBundle;
   readonly campaigns: Stage5RepositoryBundle;
+  readonly oauth: McpOAuthRepository;
   readonly settings: Stage2RepositoryBundle;
   readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
@@ -86,6 +89,7 @@ export interface Stage1WebTransaction {
   readonly db: NonNullable<Stage1WebRuntime["connection"]>["db"];
   readonly repositories: Stage1RepositoryBundle;
   readonly campaigns: Stage5RepositoryBundle;
+  readonly oauth: McpOAuthRepository;
   readonly settings: Stage2RepositoryBundle;
 }
 
@@ -115,6 +119,7 @@ function createRuntime(): Stage1WebRuntime {
   });
   const repositories = createStage1RepositoryBundleFromConnection(connection);
   const campaigns = createStage5RepositoryBundleFromConnection(connection);
+  const oauth = createMcpOAuthRepositoryFromConnection(connection);
   const settings = createStage2RepositoryBundleFromConnection(connection);
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
@@ -127,6 +132,7 @@ function createRuntime(): Stage1WebRuntime {
     connection,
     repositories,
     campaigns,
+    oauth,
     settings,
     normalization,
     timelinePresentation: createStage1TimelinePresentationService(repositories),
@@ -158,9 +164,15 @@ export async function withStage1WebTransaction<T>(
       db: tx,
       repositories: createStage1RepositoryBundle(tx),
       campaigns: createStage5RepositoryBundle(tx),
+      oauth: createMcpOAuthRepositoryFromConnection({ db: tx }),
       settings: createStage2RepositoryBundle(tx),
     }),
   );
+}
+
+export async function getMcpOAuthRepository(): Promise<McpOAuthRepository> {
+  const runtime = await getStage1WebRuntime();
+  return runtime.oauth;
 }
 
 export async function getSettingsRepositories(): Promise<Stage2RepositoryBundle> {

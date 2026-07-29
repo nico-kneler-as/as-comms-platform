@@ -1730,6 +1730,118 @@ export const orgSenders = pgTable(
   ],
 );
 
+export const mcpOAuthClients = pgTable(
+  "mcp_oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id").notNull(),
+    clientSecretHash: text("client_secret_hash").notNull(),
+    name: text("name").notNull(),
+    allowedRedirectUris: jsonb("allowed_redirect_uris")
+      .$type<readonly string[]>()
+      .notNull(),
+    revokedAt: timestamp("revoked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("mcp_oauth_clients_client_id_unique").on(table.clientId),
+    index("mcp_oauth_clients_revoked_at_idx").on(table.revokedAt),
+  ],
+);
+
+export const mcpOAuthAuthorizationCodes = pgTable(
+  "mcp_oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    authorizationCodeHash: text("authorization_code_hash").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpOAuthClients.clientId, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge").notNull(),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    expiresAt: timestamp("expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    consumedAt: timestamp("consumed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("mcp_oauth_authorization_codes_hash_unique").on(
+      table.authorizationCodeHash,
+    ),
+    index("mcp_oauth_authorization_codes_client_id_idx").on(table.clientId),
+    index("mcp_oauth_authorization_codes_user_id_idx").on(table.userId),
+    index("mcp_oauth_authorization_codes_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+export const mcpOAuthTokens = pgTable(
+  "mcp_oauth_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accessTokenHash: text("access_token_hash").notNull(),
+    refreshTokenHash: text("refresh_token_hash").notNull(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => mcpOAuthClients.clientId, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    resource: text("resource").notNull(),
+    tokenFamilyId: uuid("token_family_id").notNull(),
+    authorizationCodeHash: text("authorization_code_hash"),
+    rotatedFromTokenId: uuid("rotated_from_token_id"),
+    accessExpiresAt: timestamp("access_expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    rotatedAt: timestamp("rotated_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    revokedAt: timestamp("revoked_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    uniqueIndex("mcp_oauth_tokens_access_hash_unique").on(
+      table.accessTokenHash,
+    ),
+    uniqueIndex("mcp_oauth_tokens_refresh_hash_unique").on(
+      table.refreshTokenHash,
+    ),
+    index("mcp_oauth_tokens_client_id_idx").on(table.clientId),
+    index("mcp_oauth_tokens_user_id_idx").on(table.userId),
+    index("mcp_oauth_tokens_family_id_idx").on(table.tokenFamilyId),
+    index("mcp_oauth_tokens_access_expires_at_idx").on(table.accessExpiresAt),
+    index("mcp_oauth_tokens_refresh_expires_at_idx").on(
+      table.refreshExpiresAt,
+    ),
+  ],
+);
+
 export const newsletterSubscribers = pgTable(
   "newsletter_subscribers",
   {

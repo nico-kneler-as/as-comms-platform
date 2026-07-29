@@ -1,7 +1,4 @@
-import { timingSafeEqual } from "node:crypto"
-
 import { createMcpHandler } from "mcp-handler"
-import { NextResponse } from "next/server"
 
 import {
   DEFAULT_MCP_ENVIRONMENT_NAME,
@@ -9,38 +6,19 @@ import {
   MCP_SERVER_NAME,
   registerConnectorTools
 } from "../../../src/server/mcp/index"
+import { getMcpOAuthRepository } from "../../../src/server/stage1-runtime"
+import { validateMcpAccessToken } from "../../../src/server/mcp/oauth/core"
+import {
+  createMcpAuthInfo,
+  createMcpUnauthorizedResponse,
+  findAuthorizedMcpUserById,
+  getMcpOAuthMetadataConfigFromEnv,
+  readBearerToken
+} from "../../../src/server/mcp/oauth/runtime"
 
 export const dynamic = "force-dynamic"
 
-function isAuthorized(request: Request): boolean {
-  const expectedToken = process.env.MCP_DEV_TOKEN
-
-  // Brick 1 stopgap only. Brick 2 replaces this with OAuth, and this bearer
-  // token guard must not ship to the team as the final auth model.
-  if (!expectedToken || expectedToken.trim().length === 0) {
-    return false
-  }
-
-  const received = request.headers.get("authorization") ?? ""
-  const expectedHeader = `Bearer ${expectedToken}`
-  const receivedBuffer = Buffer.from(received, "utf8")
-  const expectedBuffer = Buffer.from(expectedHeader, "utf8")
-  // Compare BYTE lengths, not string lengths. `timingSafeEqual` throws a
-  // RangeError on a byte-length mismatch, and a multi-byte header can match
-  // on `String.length` while differing in bytes (e.g. "Bearer abcñ23" vs
-  // "Bearer abc123") — which would surface as an unhandled 500 instead of a
-  // 401. Short-circuiting here keeps equal-length comparisons constant time.
-  if (receivedBuffer.length !== expectedBuffer.length) {
-    return false
-  }
-
-  return timingSafeEqual(receivedBuffer, expectedBuffer)
-}
-
 function resolveEnvironmentName(): string {
-  // Railway is the deploy target for every app in this repo; the capture
-  // services read `RAILWAY_*` for the same purpose. There is no Vercel
-  // deployment, so no `VERCEL_ENV` fallback.
   const railwayEnvironment = process.env.RAILWAY_ENVIRONMENT
 
   if (railwayEnvironment && railwayEnvironment.trim().length > 0) {
@@ -75,12 +53,40 @@ const mcpHandler = createMcpHandler(
 )
 
 async function handleMcpRequest(request: Request): Promise<Response> {
-  if (!isAuthorized(request)) {
-    return NextResponse.json(
-      { ok: false, code: "unauthorized" },
-      { status: 401 }
-    )
+  const accessToken = readBearerToken(request)
+  if (accessToken === null) {
+    return createMcpUnauthorizedResponse()
   }
+
+  const metadata = getMcpOAuthMetadataConfigFromEnv()
+  const oauthRepository = await getMcpOAuthRepository()
+  const validation = await validateMcpAccessToken({
+    store: oauthRepository,
+    accessToken,
+    expectedResource: metadata.resource,
+    now: new Date()
+  })
+
+  if (validation.kind === "error") {
+    return createMcpUnauthorizedResponse()
+  }
+
+  const user = await findAuthorizedMcpUserById(validation.token.userId)
+  if (user === null) {
+    await oauthRepository.revokeAllTokensForUser(validation.token.userId, new Date())
+    return createMcpUnauthorizedResponse()
+  }
+
+  request.auth = createMcpAuthInfo({
+    token: accessToken,
+    clientId: validation.token.clientId,
+    scope: validation.scopes,
+    resource: validation.token.resource,
+    expiresAtSeconds: Math.floor(
+      new Date(validation.token.accessExpiresAt).getTime() / 1000
+    ),
+    user
+  })
 
   return mcpHandler(request)
 }

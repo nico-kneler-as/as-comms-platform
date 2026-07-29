@@ -74,6 +74,10 @@ describe("Stage 1 DB schema", () => {
       "mailchimpCampaignActivityDetails",
       "mailchimpCampaignTailState",
       "manualNoteDetails",
+      // MCP connector OAuth authorization server (PRD #677 Brick 2)
+      "mcpOAuthAuthorizationCodes",
+      "mcpOAuthClients",
+      "mcpOAuthTokens",
       "messageAttachments",
       "newsletterSubscribers",
       "newsletterSuppressions",

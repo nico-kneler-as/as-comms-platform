@@ -1,51 +1,66 @@
-# MCP transport brick 1
+# MCP connector
 
-This directory holds the pure MCP plumbing for brick 1:
+The MCP transport at `/api/mcp` now authenticates operators through our own OAuth 2.1 authorization server.
 
-- tool registration
-- response-budget helpers
-- contact PII allowlisting
-- the `get_connector_info` smoke tool
+## Required env
 
-## Local run
+- `MCP_PUBLIC_URL`
+  Use the exact public MCP resource URL, including `/api/mcp`.
+  Example: `https://as-comms.example.com/api/mcp`
 
-Start the web app with a development bearer token:
+`MCP_PUBLIC_URL` drives:
+
+- the protected resource metadata `resource` field
+- the `WWW-Authenticate` `resource_metadata` URL
+- the expected RFC 8707 `resource` value on issued tokens
+
+Do not reconstruct this URL from request headers.
+
+## Endpoints
+
+- MCP resource: `/api/mcp`
+- Protected resource metadata: `/.well-known/oauth-protected-resource`
+- Authorization server metadata: `/.well-known/oauth-authorization-server`
+- Authorization endpoint: `/api/oauth/authorize`
+- Token endpoint: `/api/oauth/token`
+
+## Flow
+
+1. Claude discovers the MCP resource and receives `401` with:
+   `WWW-Authenticate: Bearer resource_metadata="<absolute metadata URL>", scope="mcp:read"`
+2. Claude reads the protected resource metadata and the authorization server metadata.
+3. Claude sends the operator to `/api/oauth/authorize` with `response_type=code`, PKCE `S256`, `mcp:read`, and `resource=<MCP_PUBLIC_URL>`.
+4. `/api/oauth/authorize` reuses the existing Auth.js session. If there is no session, it redirects to `/auth/sign-in` and returns to the original authorize URL after Google sign-in.
+5. `/api/oauth/token` accepts `application/x-www-form-urlencoded` exchanges for `authorization_code` and `refresh_token`.
+6. `/api/mcp` accepts bearer access tokens only. `MCP_DEV_TOKEN` is gone; there is no fallback path.
+
+## Client provisioning
+
+Mint a connector client with:
 
 ```bash
-MCP_DEV_TOKEN=replace-me pnpm dev:web
+pnpm ops:mcp-create-oauth-client -- --name "Claude MCP connector"
 ```
 
-The Streamable HTTP MCP endpoint is:
+The script prints the plaintext `client_id` and `client_secret` once, stores only the SHA-256 hash of the secret, and pre-registers:
 
-```text
-http://localhost:3000/api/mcp
-```
+- `https://claude.ai/api/mcp/auth_callback`
+- `http://localhost/callback`
+- `http://127.0.0.1/callback`
 
-## Claude Code
+## Local testing
 
-Claude Code supports remote HTTP MCP servers plus custom headers. A local setup looks like:
+For Claude.ai, use a real public deployment URL for `MCP_PUBLIC_URL`; the metadata `resource` must match what the owner types into Claude exactly.
 
-```bash
-claude mcp add --transport http as-comms-local http://localhost:3000/api/mcp \
-  --header "Authorization: Bearer ${MCP_DEV_TOKEN}"
-```
+For Claude Code loopback testing:
 
-Equivalent `.mcp.json` shape:
+1. Run the web app with `MCP_PUBLIC_URL=http://localhost:3000/api/mcp`.
+2. Mint a client with `pnpm ops:mcp-create-oauth-client`.
+3. Configure the connector with:
+   - resource URL: `http://localhost:3000/api/mcp`
+   - client ID: the printed `client_id`
+   - client secret: the printed `client_secret`
+4. When Claude Code opens the browser, sign in with an active `@adventurescientists.org` Google account.
+5. Confirm the token exchange succeeds and `/api/mcp` answers authenticated `initialize`, `tools/list`, and `tools/call`.
 
-```json
-{
-  "mcpServers": {
-    "as-comms-local": {
-      "type": "http",
-      "url": "http://localhost:3000/api/mcp",
-      "headers": {
-        "Authorization": "Bearer ${MCP_DEV_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-## Auth note
-
-`MCP_DEV_TOKEN` is a brick-1-only stopgap for local transport testing. Brick 2 replaces it with OAuth. Do not ship this bearer-token guard to the team as the final auth model.
+Claude Code uses loopback redirect URIs of the form `http://localhost:<ephemeral-port>/callback` and `http://127.0.0.1:<ephemeral-port>/callback`; the auth server accepts those port-agnostically.

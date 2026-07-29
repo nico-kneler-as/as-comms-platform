@@ -23,6 +23,7 @@ import {
   type Stage1WebRuntime,
 } from "./stage1-runtime";
 import {
+  createMcpOAuthRepository,
   createOrgSender,
   createStage5RepositoryBundle,
   insertBroadcastLinkClick,
@@ -50,6 +51,9 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
     },
     repositories: context.repositories,
     campaigns: createStage5RepositoryBundle(context.db),
+    oauth: createMcpOAuthRepository(
+      context.db as unknown as Parameters<typeof createMcpOAuthRepository>[0],
+    ),
     settings: context.settings,
     normalization: context.normalization,
     timelinePresentation: createStage1TimelinePresentationService(

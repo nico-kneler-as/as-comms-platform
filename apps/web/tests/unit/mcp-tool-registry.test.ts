@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js"
 import type { AnyZodObject } from "zod"
 import { z } from "zod"
 
@@ -13,7 +14,12 @@ interface RegisteredToolCapture {
     description: string
     inputSchema: AnyZodObject
   }
-  callback: (input: unknown) => Promise<unknown>
+  callback: (
+    input: unknown,
+    extra?: {
+      authInfo?: AuthInfo
+    }
+  ) => Promise<unknown>
 }
 
 function getRegistration(
@@ -41,7 +47,12 @@ function createFakeServer() {
           description: string
           inputSchema: AnyZodObject
         },
-        callback: (input: unknown) => Promise<unknown>
+        callback: (
+          input: unknown,
+          extra?: {
+            authInfo?: AuthInfo
+          }
+        ) => Promise<unknown>
       ) => {
       registrations.set(name, { config, callback })
       return {} as never
@@ -186,6 +197,50 @@ describe("mcp tool registry", () => {
       structuredContent: {
         connectorVersion: "brick-1",
         registeredToolCount: 1
+      }
+    })
+  })
+
+  it("passes the authenticated operator from authInfo into the handler context", async () => {
+    const handlerSpy = vi.fn()
+    const entry = {
+      name: "auth_context_tool",
+      title: "Auth Context Tool",
+      description: "Expose the authenticated user.",
+      inputSchema: z.object({}).strict(),
+      handler: (_input, context) => {
+        handlerSpy(context)
+        return {
+          ok: true
+        }
+      }
+    } satisfies McpToolEntry
+    const { server, registrations } = createFakeServer()
+
+    createMcpToolRegistry([entry]).registerOn(server)
+    const registered = getRegistration(registrations, "auth_context_tool")
+
+    await registered.callback(undefined, {
+      authInfo: {
+        token: "token-1",
+        clientId: "client-1",
+        scopes: ["mcp:read"],
+        extra: {
+          userEmail: "operator@adventurescientists.org",
+          userId: "user-1",
+          userRole: "operator"
+        }
+      }
+    })
+
+    expect(handlerSpy).toHaveBeenCalledWith({
+      authInfo: expect.objectContaining({
+        clientId: "client-1"
+      }) as unknown,
+      authenticatedUser: {
+        userEmail: "operator@adventurescientists.org",
+        userId: "user-1",
+        userRole: "operator"
       }
     })
   })
