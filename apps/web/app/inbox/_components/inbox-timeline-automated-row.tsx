@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { TRANSITION } from "@/app/_lib/design-tokens-v2";
 
 import type {
+  InboxTimelineCampaignActivityViewModel,
   InboxTimelineEntryKind,
   InboxTimelineEntryViewModel,
 } from "../_lib/view-models";
@@ -117,10 +118,14 @@ function describeEventRow(input: {
   };
 }
 
+// Accepts every campaign activity type, but the returned visual state stays at
+// the four badges that exist; delivery-lifecycle types (delivered/bounced/
+// complained) fall through to "sent", the pre-existing default.
 function describeCampaignVisualState(
-  activities: readonly {
-    readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
-  }[],
+  activities: readonly Pick<
+    InboxTimelineCampaignActivityViewModel,
+    "activityType"
+  >[],
 ): "sent" | "opened" | "clicked" | "unsubscribed" {
   if (activities.some((activity) => activity.activityType === "unsubscribed")) {
     return "unsubscribed";

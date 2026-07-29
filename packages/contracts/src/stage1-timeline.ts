@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { providerSchema, reviewStateSchema } from "./stage1-taxonomy.js";
+import {
+  campaignEmailActivityTypeSchema,
+  providerSchema,
+  reviewStateSchema,
+} from "./stage1-taxonomy.js";
 
 const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
@@ -14,13 +18,6 @@ const timelineFamilySchema = z.enum([
   "one_to_one_sms",
   "internal_note",
 ]);
-const campaignEmailActivityTypeSchema = z.enum([
-  "sent",
-  "opened",
-  "clicked",
-  "unsubscribed",
-]);
-
 const timelineItemBaseSchema = z.object({
   id: idSchema,
   contactId: idSchema,

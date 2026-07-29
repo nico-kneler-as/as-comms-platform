@@ -1025,6 +1025,18 @@ export async function sendSmsBroadcastNow(rawInput: {
         `SMS broadcasts can only be sent from draft state. Current state: ${run.state}.`,
       );
     }
+    // Without this guard the freeze planner throws a raw internal
+    // "SMS broadcast body is empty", which reaches the operator verbatim.
+    // The test-send and preview paths already check this explicitly.
+    if (
+      run.bodyTextTemplate === null ||
+      run.bodyTextTemplate.trim().length === 0
+    ) {
+      return errorResult(
+        "campaign_sms_send_missing_body",
+        "This broadcast has no saved message copy. Reopen the compose step, re-enter the message, and save before sending.",
+      );
+    }
 
     const queuedAt = new Date();
     const audience = await resolveSmsBroadcastAudienceForRun({

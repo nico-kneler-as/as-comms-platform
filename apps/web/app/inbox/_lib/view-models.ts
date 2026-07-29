@@ -1,4 +1,7 @@
-import type { CanonicalEventType } from "@as-comms/contracts";
+import type {
+  CampaignEmailActivityType,
+  CanonicalEventType,
+} from "@as-comms/contracts";
 
 /**
  * Inbox — UI-facing view models.
@@ -222,7 +225,7 @@ export type InboxTimelineEntrySendStatus =
   | null;
 
 export interface InboxTimelineCampaignActivityViewModel {
-  readonly activityType: "sent" | "opened" | "clicked" | "unsubscribed";
+  readonly activityType: CampaignEmailActivityType;
   readonly occurredAt: string;
   readonly occurredAtLabel: string;
   readonly label: string;

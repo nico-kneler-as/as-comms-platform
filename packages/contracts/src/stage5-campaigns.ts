@@ -341,6 +341,18 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
       return;
     }
 
+    // A CSV audience defines its own recipients and needs no project (PRD
+    // #674); SMS runs are always kind='project'. Without this exemption the
+    // draft→scheduled transition fails validation and the whole send rolls
+    // back, so the exemption must outlive the draft state above.
+    if (
+      value.kind === "project" &&
+      value.projectId === null &&
+      value.audienceCriteria.initialFilter === "csv_upload"
+    ) {
+      return;
+    }
+
     const result = campaignRunProjectScopeSchema.safeParse(value);
 
     if (!result.success) {
