@@ -448,14 +448,25 @@ function isSameCampaignEmailDuplicate(
 function campaignEmailPresentationPriority(
   item: Extract<TimelineItem, { family: "campaign_email" }>,
 ): number {
+  // Higher wins when one campaign email yields several activity rows. Failure
+  // outcomes outrank everything (an operator must see a bounce or complaint);
+  // a bare delivery confirmation ranks lowest because any richer record says
+  // more. The original four keep their relative order, so display for
+  // already-supported activity types is unchanged.
   switch (item.activityType) {
+    case "bounced":
+      return 7;
+    case "complained":
+      return 6;
     case "sent":
-      return 4;
+      return 5;
     case "opened":
-      return 3;
+      return 4;
     case "clicked":
-      return 2;
+      return 3;
     case "unsubscribed":
+      return 2;
+    case "delivered":
       return 1;
   }
 }

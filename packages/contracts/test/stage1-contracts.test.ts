@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   audienceCriteriaSchema,
+  campaignEmailActivityTypeValues,
+  campaignEmailTimelineItemSchema,
+  campaignRunRecordSchema,
   canonicalEventSchema,
   canonicalEventTypeValues,
   identityResolutionReasonCodeValues,
@@ -180,5 +183,72 @@ describe("Stage 1 contracts", () => {
     expect(parsedCsvMode.initialFilter).toBe("csv_upload");
     expect(parsedWithoutMode.initialFilter).toBeUndefined();
     expect(parsedUnknownMode.success).toBe(false);
+  });
+
+  it("accepts every campaign email activity type on a timeline item", () => {
+    // The timeline schema used to keep its own narrower copy of this enum,
+    // omitting delivered/bounced/complained. Once the Postmark webhook began
+    // writing those events, parsing a contact's timeline threw and the whole
+    // inbox contact page failed to render. Assert against the canonical list
+    // so the two can never drift apart again.
+    for (const activityType of campaignEmailActivityTypeValues) {
+      const parsed = campaignEmailTimelineItemSchema.safeParse({
+        id: `tli_${activityType}`,
+        contactId: "contact_1",
+        canonicalEventId: `evt_${activityType}`,
+        family: "campaign_email",
+        occurredAt: "2026-07-29T00:00:00.000Z",
+        sortKey: `2026-07-29T00:00:00.000Z:${activityType}`,
+        reviewState: "clear",
+        primaryProvider: "postmark",
+        summary: `Campaign email ${activityType}`,
+        activityType,
+        campaignName: "Beech Training Reminder",
+        campaignId: "run_1",
+        audienceId: null,
+        snippet: "",
+      });
+
+      expect(parsed.success, `expected ${activityType} to parse`).toBe(true);
+    }
+  });
+
+  it("allows a project-kind run with no project once its audience is a CSV", () => {
+    // SMS runs are always kind='project', and a CSV audience defines its own
+    // recipients with no project (PRD #674). The projectId requirement was
+    // previously waived only for drafts, so the draft→scheduled transition at
+    // send time failed validation and rolled the whole send back.
+    const baseRun = {
+      id: "run_csv_1",
+      kind: "project" as const,
+      launchType: "sms" as const,
+      projectId: null,
+      name: "Beech Training Reminder",
+      bodyTextTemplate: "Hey {{firstName}}, training reminder.",
+      audienceCriteria: { initialFilter: "csv_upload" as const },
+      createdAt: "2026-07-28T16:12:25.525Z",
+      updatedAt: "2026-07-28T16:12:25.525Z",
+    };
+
+    const scheduledCsvRun = campaignRunRecordSchema.safeParse({
+      ...baseRun,
+      state: "scheduled",
+      scheduledAt: "2026-07-29T18:00:00.000Z",
+    });
+    const completeCsvRun = campaignRunRecordSchema.safeParse({
+      ...baseRun,
+      state: "complete",
+      completedAt: "2026-07-29T18:05:00.000Z",
+    });
+    // A project-status audience still requires a project outside draft state.
+    const scheduledProjectRun = campaignRunRecordSchema.safeParse({
+      ...baseRun,
+      state: "scheduled",
+      audienceCriteria: { initialFilter: "project_status" as const },
+    });
+
+    expect(scheduledCsvRun.success).toBe(true);
+    expect(completeCsvRun.success).toBe(true);
+    expect(scheduledProjectRun.success).toBe(false);
   });
 });
