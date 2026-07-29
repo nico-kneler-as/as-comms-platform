@@ -13,7 +13,7 @@ function jsonHeaders(): HeadersInit {
   };
 }
 
-export async function GET() {
+export function GET() {
   const metadata = getMcpOAuthMetadataConfigFromEnv();
 
   return Response.json(createAuthorizationServerMetadata(metadata), {
@@ -21,7 +21,7 @@ export async function GET() {
   });
 }
 
-export async function OPTIONS() {
+export function OPTIONS() {
   return new Response(null, {
     status: 200,
     headers: jsonHeaders(),

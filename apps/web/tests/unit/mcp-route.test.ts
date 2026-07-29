@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import type * as OAuthCoreModule from "../../src/server/mcp/oauth/core"
+import type * as OAuthRuntimeModule from "../../src/server/mcp/oauth/runtime"
+
 const mcpHandler = vi.hoisted(() => vi.fn())
 const createMcpHandler = vi.hoisted(() => vi.fn(() => mcpHandler))
 const validateMcpAccessToken = vi.hoisted(() => vi.fn())
@@ -11,9 +14,9 @@ vi.mock("mcp-handler", () => ({
 }))
 
 vi.mock("../../src/server/mcp/oauth/core", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/server/mcp/oauth/core")
-  >("../../src/server/mcp/oauth/core")
+  const actual = await vi.importActual<typeof OAuthCoreModule>(
+    "../../src/server/mcp/oauth/core"
+  )
 
   return {
     ...actual,
@@ -26,9 +29,9 @@ vi.mock("../../src/server/stage1-runtime", () => ({
 }))
 
 vi.mock("../../src/server/mcp/oauth/runtime", async () => {
-  const actual = await vi.importActual<
-    typeof import("../../src/server/mcp/oauth/runtime")
-  >("../../src/server/mcp/oauth/runtime")
+  const actual = await vi.importActual<typeof OAuthRuntimeModule>(
+    "../../src/server/mcp/oauth/runtime"
+  )
 
   return {
     ...actual,

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UserRecord } from "@as-comms/domain";
 
-import { POST } from "../../app/token/route";
+import { POST } from "../../app/api/oauth/token/route";
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime,
@@ -44,7 +44,7 @@ function buildUserRecord(
 }
 
 function formRequest(body: URLSearchParams): Request {
-  return new Request("http://localhost/token", {
+  return new Request("http://localhost/api/oauth/token", {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
@@ -91,7 +91,10 @@ describe("token route", () => {
       codeChallenge: pkceS256(codeVerifier),
       scope: "mcp:read offline_access",
       resource: RESOURCE,
-      expiresAt: "2026-07-29T12:02:00.000Z",
+      // Relative, NOT an absolute timestamp. The route under test reads the
+      // real clock, so a hardcoded expiry makes this test pass only until that
+      // wall-clock moment and fail every run afterwards.
+      expiresAt: new Date(Date.now() + 120_000).toISOString(),
     });
 
     const response = await POST(
@@ -110,8 +113,8 @@ describe("token route", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      access_token: expect.any(String),
-      refresh_token: expect.any(String),
+      access_token: expect.any(String) as unknown,
+      refresh_token: expect.any(String) as unknown,
       token_type: "Bearer",
       expires_in: 3600,
       scope: "mcp:read offline_access",
@@ -120,7 +123,7 @@ describe("token route", () => {
 
   it("rejects JSON requests with a proper RFC 6749 error instead of throwing", async () => {
     const response = await POST(
-      new Request("http://localhost/token", {
+      new Request("http://localhost/api/oauth/token", {
         method: "POST",
         headers: {
           "content-type": "application/json",

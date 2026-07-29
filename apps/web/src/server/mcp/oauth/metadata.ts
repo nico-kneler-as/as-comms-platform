@@ -27,8 +27,12 @@ export function resolveMcpOAuthMetadataConfig(
   return {
     issuer,
     resource,
-    authorizationEndpoint: new URL("/authorize", issuer).toString(),
-    tokenEndpoint: new URL("/token", issuer).toString(),
+    // Under `/api/` like every other machine endpoint in this app, and out of
+    // the page-route namespace. These URLs get baked into Claude's stored
+    // connector config once an Owner registers it, so they should not move
+    // after that point.
+    authorizationEndpoint: new URL("/api/oauth/authorize", issuer).toString(),
+    tokenEndpoint: new URL("/api/oauth/token", issuer).toString(),
     protectedResourceMetadataUrl: new URL(
       "/.well-known/oauth-protected-resource",
       issuer,

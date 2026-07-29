@@ -27,7 +27,7 @@ function resolveEnvironmentName(): string {
 
   const nodeEnvironment = process.env.NODE_ENV
 
-  if (nodeEnvironment && nodeEnvironment.trim().length > 0) {
+  if (nodeEnvironment.trim().length > 0) {
     return nodeEnvironment
   }
 

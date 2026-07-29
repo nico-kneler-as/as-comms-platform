@@ -90,6 +90,15 @@ describe("mcp oauth repository", () => {
 
     await context.settings.users.upsert(buildUserRecord());
     const repository = createMcpOAuthRepository(context.db);
+    // Seed the FK parent. `mcp_oauth_tokens.client_id` references
+    // `mcp_oauth_clients.client_id`, and PGlite enforces it — without this the
+    // insert fails with 23503 rather than exercising rotation.
+    await repository.createClient({
+      clientId: CLIENT_ID,
+      clientSecretHash: sha256Hex(CLIENT_SECRET),
+      name: "Claude Connector",
+      allowedRedirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+    });
     const original = await repository.createTokenFamily({
       accessTokenHash: sha256Hex("access-token-1"),
       refreshTokenHash: sha256Hex("refresh-token-1"),

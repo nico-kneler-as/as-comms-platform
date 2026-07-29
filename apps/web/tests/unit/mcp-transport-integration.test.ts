@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { UserRecord } from "@as-comms/domain"
 
 import { POST as MCP_POST } from "../../app/api/mcp/route"
-import { POST as TOKEN_POST } from "../../app/token/route"
+import { POST as TOKEN_POST } from "../../app/api/oauth/token/route"
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime
@@ -135,11 +135,14 @@ describe("mcp transport (real mcp-handler)", () => {
       codeChallenge: pkceS256(codeVerifier),
       scope: "mcp:read offline_access",
       resource: RESOURCE,
-      expiresAt: "2026-07-29T12:02:00.000Z"
+      // Relative, NOT an absolute timestamp. The token route reads the real
+      // clock, so a hardcoded expiry makes this test pass only until that
+      // wall-clock moment and fail every run afterwards.
+      expiresAt: new Date(Date.now() + 120_000).toISOString()
     })
 
     const response = await TOKEN_POST(
-      new Request("http://localhost/token", {
+      new Request("http://localhost/api/oauth/token", {
         method: "POST",
         headers: {
           "content-type": "application/x-www-form-urlencoded"

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getCurrentUser } from "../../src/server/auth/session";
-import { hasAuthorizedGoogleWorkspaceEmail } from "../../src/server/auth/google-sign-in-policy";
-import { authorizeMcpClient } from "../../src/server/mcp/oauth/core";
+import { getCurrentUser } from "../../../../src/server/auth/session";
+import { hasAuthorizedGoogleWorkspaceEmail } from "../../../../src/server/auth/google-sign-in-policy";
+import { authorizeMcpClient } from "../../../../src/server/mcp/oauth/core";
 import {
   getMcpOAuthMetadataConfigFromEnv,
-} from "../../src/server/mcp/oauth/runtime";
-import { getMcpOAuthRepository } from "../../src/server/stage1-runtime";
+} from "../../../../src/server/mcp/oauth/runtime";
+import { getMcpOAuthRepository } from "../../../../src/server/stage1-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -36,11 +36,14 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const currentUser = await getCurrentUser();
 
-  if (
-    currentUser === null ||
-    currentUser.deactivatedAt !== null ||
-    !hasAuthorizedGoogleWorkspaceEmail(currentUser.email)
-  ) {
+  // `currentUser?.deactivatedAt === null` is false when there is no user at
+  // all (undefined !== null), so this single check covers "not signed in" and
+  // "deactivated" together, and narrows `currentUser` for the email check.
+  const isActiveOperator =
+    currentUser?.deactivatedAt === null &&
+    hasAuthorizedGoogleWorkspaceEmail(currentUser.email);
+
+  if (!isActiveOperator) {
     const signInUrl = new URL("/auth/sign-in", requestUrl.origin);
     signInUrl.searchParams.set(
       "callbackUrl",

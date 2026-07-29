@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint app src tests next.config.ts tailwind.config.ts --max-warnings=0",
+    "lint": "eslint app \"app/.well-known/**/*.ts\" src tests next.config.ts tailwind.config.ts --max-warnings=0",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
     "test:unit": "vitest run --config ../../vitest.config.ts --passWithNoTests"
   },

@@ -1,3 +1,7 @@
+/* eslint-disable @typescript-eslint/require-await --
+   `InMemoryMcpOAuthStore` below fakes the async `McpOAuthStore` interface with
+   synchronous maps. The methods must stay `async` to satisfy the interface, but
+   have nothing to await. */
 import { createHash } from "node:crypto"
 
 import { describe, expect, it } from "vitest"
@@ -132,8 +136,11 @@ class InMemoryMcpOAuthStore implements McpOAuthStore {
 
   async consumeAuthorizationCode(authorizationCodeHash: string, consumedAt: Date) {
     const record = this.authorizationCodes.get(authorizationCodeHash)
+    if (record === undefined) {
+      return null
+    }
+
     if (
-      !record ||
       record.consumedAt !== null ||
       new Date(record.expiresAt).getTime() <= consumedAt.getTime()
     ) {
@@ -210,8 +217,11 @@ class InMemoryMcpOAuthStore implements McpOAuthStore {
     rotatedAt: Date
   }) {
     const current = this.tokensByRefreshHash.get(input.rotatedFromRefreshTokenHash)
+    if (current === undefined) {
+      return null
+    }
+
     if (
-      !current ||
       current.rotatedAt !== null ||
       current.revokedAt !== null ||
       new Date(current.refreshExpiresAt).getTime() <= input.rotatedAt.getTime()
@@ -784,8 +794,8 @@ describe("mcp oauth core", () => {
     })
     expect(authorizationServerMetadata).toMatchObject({
       issuer: metadata.issuer,
-      authorization_endpoint: `${metadata.issuer}/authorize`,
-      token_endpoint: `${metadata.issuer}/token`,
+      authorization_endpoint: `${metadata.issuer}/api/oauth/authorize`,
+      token_endpoint: `${metadata.issuer}/api/oauth/token`,
       code_challenge_methods_supported: [PKCE_CHALLENGE_METHOD],
       scopes_supported: [MCP_READ_SCOPE, OFFLINE_ACCESS_SCOPE]
     })

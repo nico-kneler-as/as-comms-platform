@@ -21,17 +21,17 @@ Do not reconstruct this URL from request headers.
 - MCP resource: `/api/mcp`
 - Protected resource metadata: `/.well-known/oauth-protected-resource`
 - Authorization server metadata: `/.well-known/oauth-authorization-server`
-- Authorization endpoint: `/authorize`
-- Token endpoint: `/token`
+- Authorization endpoint: `/api/oauth/authorize`
+- Token endpoint: `/api/oauth/token`
 
 ## Flow
 
 1. Claude discovers the MCP resource and receives `401` with:
    `WWW-Authenticate: Bearer resource_metadata="<absolute metadata URL>", scope="mcp:read"`
 2. Claude reads the protected resource metadata and the authorization server metadata.
-3. Claude sends the operator to `/authorize` with `response_type=code`, PKCE `S256`, `mcp:read`, and `resource=<MCP_PUBLIC_URL>`.
-4. `/authorize` reuses the existing Auth.js session. If there is no session, it redirects to `/auth/sign-in` and returns to the original authorize URL after Google sign-in.
-5. `/token` accepts `application/x-www-form-urlencoded` exchanges for `authorization_code` and `refresh_token`.
+3. Claude sends the operator to `/api/oauth/authorize` with `response_type=code`, PKCE `S256`, `mcp:read`, and `resource=<MCP_PUBLIC_URL>`.
+4. `/api/oauth/authorize` reuses the existing Auth.js session. If there is no session, it redirects to `/auth/sign-in` and returns to the original authorize URL after Google sign-in.
+5. `/api/oauth/token` accepts `application/x-www-form-urlencoded` exchanges for `authorization_code` and `refresh_token`.
 6. `/api/mcp` accepts bearer access tokens only. `MCP_DEV_TOKEN` is gone; there is no fallback path.
 
 ## Client provisioning

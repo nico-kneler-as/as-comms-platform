@@ -101,9 +101,9 @@ function readAuthenticatedUser(
     return null
   }
 
-  const userId = extra["userId"]
-  const userEmail = extra["userEmail"]
-  const userRole = extra["userRole"]
+  const userId = extra.userId
+  const userEmail = extra.userEmail
+  const userRole = extra.userRole
   if (
     typeof userId !== "string" ||
     typeof userEmail !== "string" ||

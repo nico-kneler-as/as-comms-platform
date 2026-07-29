@@ -21,6 +21,10 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    // `**` does not match dot-directories, so the OAuth discovery routes under
+    // `app/.well-known/` need an explicit entry or they fall outside the type
+    // and lint gates entirely (only `next build`'s internal ESLint sees them).
+    "app/.well-known/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts"
   ],

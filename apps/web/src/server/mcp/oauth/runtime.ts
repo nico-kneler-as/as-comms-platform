@@ -44,11 +44,14 @@ export async function findAuthorizedMcpUserById(
   const { users } = await getSettingsRepositories();
   const user = await users.findById(userId);
 
-  if (
-    user === null ||
-    user.deactivatedAt !== null ||
-    !hasAuthorizedGoogleWorkspaceEmail(user.email)
-  ) {
+  // `user?.deactivatedAt === null` is false when the row is missing entirely
+  // (undefined !== null), so this covers "no such user" and "deactivated" in
+  // one check while narrowing `user` for the email check below.
+  const isActiveOperator =
+    user?.deactivatedAt === null &&
+    hasAuthorizedGoogleWorkspaceEmail(user.email);
+
+  if (!isActiveOperator) {
     return null;
   }
 

@@ -236,7 +236,7 @@ describe("mcp tool registry", () => {
     expect(handlerSpy).toHaveBeenCalledWith({
       authInfo: expect.objectContaining({
         clientId: "client-1"
-      }),
+      }) as unknown,
       authenticatedUser: {
         userEmail: "operator@adventurescientists.org",
         userId: "user-1",

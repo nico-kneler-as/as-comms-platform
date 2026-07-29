@@ -3,12 +3,12 @@ import {
   exchangeMcpAuthorizationCode,
   parseTokenEndpointClientCredentials,
   refreshMcpAccessToken,
-} from "../../src/server/mcp/oauth/core";
+} from "../../../../src/server/mcp/oauth/core";
 import {
   findAuthorizedMcpUserById,
   getMcpOAuthMetadataConfigFromEnv,
-} from "../../src/server/mcp/oauth/runtime";
-import { getMcpOAuthRepository } from "../../src/server/stage1-runtime";
+} from "../../../../src/server/mcp/oauth/runtime";
+import { getMcpOAuthRepository } from "../../../../src/server/stage1-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     bodyClientSecret: form.get("client_secret"),
   });
 
-  if ("kind" in clientCredentials && clientCredentials.kind === "error") {
+  if ("kind" in clientCredentials) {
     return tokenErrorResponse({
       error: clientCredentials.error,
       errorDescription: clientCredentials.errorDescription,
