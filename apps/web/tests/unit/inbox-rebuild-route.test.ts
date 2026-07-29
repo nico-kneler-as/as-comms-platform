@@ -91,6 +91,31 @@ describe("internal inbox rebuild route", () => {
     });
   });
 
+  it("returns 401 instead of throwing for a multi-byte header of equal string length", async () => {
+    // Regression guard. "Bearer test-token" and "Bearer test-tokeñ" are both
+    // 17 JS characters, but the latter is 18 UTF-8 bytes. Gating on
+    // `String.length` lets it reach `timingSafeEqual`, which throws a
+    // RangeError on a byte-length mismatch — surfacing as a 500 rather than
+    // a clean 401. The guard must compare byte lengths.
+    const response = await POST(
+      new Request("http://localhost/api/internal/inbox-rebuild", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer test-tokeñ",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ contactIds: [] }),
+      })
+    );
+
+    expect(getStage1WebRuntime).not.toHaveBeenCalled();
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      code: "unauthorized",
+    });
+  });
+
   it("accepts requests with the correct bearer token", async () => {
     const response = await POST(
       new Request("http://localhost/api/internal/inbox-rebuild", {
