@@ -8,6 +8,16 @@ const createMcpHandler = vi.hoisted(() => vi.fn(() => mcpHandler))
 const validateMcpAccessToken = vi.hoisted(() => vi.fn())
 const getMcpOAuthRepository = vi.hoisted(() => vi.fn())
 const findAuthorizedMcpUserById = vi.hoisted(() => vi.fn())
+const getCurrentUser = vi.hoisted(() => vi.fn())
+
+vi.mock("next/cache", () => ({
+  unstable_cache: (loader: () => unknown) => loader,
+  revalidateTag: vi.fn()
+}))
+
+vi.mock("@/src/server/auth/session", () => ({
+  getCurrentUser
+}))
 
 vi.mock("mcp-handler", () => ({
   createMcpHandler
@@ -48,6 +58,8 @@ describe("mcp route", () => {
     validateMcpAccessToken.mockReset()
     getMcpOAuthRepository.mockReset()
     findAuthorizedMcpUserById.mockReset()
+    getCurrentUser.mockReset()
+    getCurrentUser.mockResolvedValue(null)
 
     mcpHandler.mockImplementation((request: Request) =>
       Response.json({
