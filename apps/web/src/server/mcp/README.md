@@ -64,3 +64,20 @@ For Claude Code loopback testing:
 5. Confirm the token exchange succeeds and `/api/mcp` answers authenticated `initialize`, `tools/list`, and `tools/call`.
 
 Claude Code uses loopback redirect URIs of the form `http://localhost:<ephemeral-port>/callback` and `http://127.0.0.1:<ephemeral-port>/callback`; the auth server accepts those port-agnostically.
+
+## Tools
+
+- `get_connector_info`
+  Static connector metadata for transport smoke testing.
+- `search_contacts`
+  Search contacts by name, primary email, or primary phone before following up with a contact-specific tool.
+- `get_contact_summary`
+  Return one contact's profile context, memberships, and inbox rail summary.
+- `get_contact_timeline`
+  Return one contact's chronological inbox history without changing unread or read-audit state.
+- `get_inbox_queue`
+  Return the current folder-filtered inbox queue with optional project filtering and pagination.
+- `get_workload_summary`
+  Return the at-a-glance inbox workload summary with per-project totals and the follow-up rail.
+- `get_sync_freshness`
+  Return inbox freshness timestamps with stale-or-fresh classifications.

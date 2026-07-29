@@ -13,7 +13,19 @@ export type ContactPiiAllowlistMap = Readonly<
 >
 
 export const MCP_TOOL_CONTACT_PII_ALLOWLISTS: ContactPiiAllowlistMap = {
-  get_connector_info: []
+  get_connector_info: [],
+  search_contacts: ["id", "displayName", "primaryEmail", "primaryPhone"],
+  get_contact_summary: [
+    "id",
+    "displayName",
+    "primaryEmail",
+    "primaryPhone",
+    "salesforceContactId"
+  ],
+  get_contact_timeline: [],
+  get_inbox_queue: ["id", "displayName"],
+  get_workload_summary: ["id", "displayName"],
+  get_sync_freshness: []
 }
 
 export function applyContactPiiPolicy<T extends ContactPiiRecord>(

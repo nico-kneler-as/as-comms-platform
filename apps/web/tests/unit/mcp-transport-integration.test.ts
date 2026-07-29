@@ -4,12 +4,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { UserRecord } from "@as-comms/domain"
 
+const getCurrentUser = vi.hoisted(() => vi.fn())
+
+vi.mock("next/cache", () => ({
+  unstable_cache: (loader: () => unknown) => loader,
+  revalidateTag: vi.fn()
+}))
+
+vi.mock("@/src/server/auth/session", () => ({
+  getCurrentUser
+}))
+
 import { POST as MCP_POST } from "../../app/api/mcp/route"
 import { POST as TOKEN_POST } from "../../app/api/oauth/token/route"
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime
 } from "../../src/server/stage1-runtime.test-support"
+import {
+  seedInboxContact,
+  seedInboxEmailEvent,
+  seedInboxProjection
+} from "./inbox-stage1-helpers"
 
 const MCP_ACCEPT = "application/json, text/event-stream"
 const CLIENT_ID = "client_test"
@@ -43,6 +59,44 @@ function buildUserRecord(
     updatedAt: now,
     ...overrides
   }
+}
+
+async function seedTransportInboxFixture(
+  runtime: Stage1WebTestRuntime
+): Promise<void> {
+  await seedInboxContact(runtime.context, {
+    contactId: "contact:sarah-martinez",
+    salesforceContactId: "003-sarah",
+    displayName: "Sarah Martinez",
+    primaryEmail: "sarah@example.org",
+    primaryPhone: "+15550000001",
+    projectId: "project:amazon-basin",
+    projectName: "Amazon Basin Research",
+    membershipId: "membership:sarah",
+    membershipStatus: "active"
+  })
+  const latest = await seedInboxEmailEvent(runtime.context, {
+    id: "sarah-inbound-1",
+    contactId: "contact:sarah-martinez",
+    occurredAt: "2026-04-14T13:00:00.000Z",
+    direction: "inbound",
+    subject: "Re: Amazon Basin equipment list",
+    snippet:
+      "Following up on the field study logistics for the Amazon basin project."
+  })
+  await seedInboxProjection(runtime.context, {
+    contactId: "contact:sarah-martinez",
+    bucket: "New",
+    needsFollowUp: true,
+    hasUnresolved: false,
+    lastInboundAt: "2026-04-14T13:00:00.000Z",
+    lastOutboundAt: null,
+    lastActivityAt: "2026-04-14T13:00:00.000Z",
+    snippet:
+      "Following up on the field study logistics for the Amazon basin project.",
+    lastCanonicalEventId: latest.canonicalEventId,
+    lastEventType: "communication.email.inbound"
+  })
 }
 
 async function readMcpBody(response: Response): Promise<unknown> {
@@ -100,6 +154,8 @@ describe("mcp transport (real mcp-handler)", () => {
   let runtime: Stage1WebTestRuntime | null = null
 
   beforeEach(async () => {
+    getCurrentUser.mockReset()
+    getCurrentUser.mockResolvedValue(null)
     runtime = await createStage1WebTestRuntime()
     await runtime.context.settings.users.upsert(buildUserRecord())
     await runtime.runtime.oauth.createClient({
@@ -194,7 +250,7 @@ describe("mcp transport (real mcp-handler)", () => {
     expect(payload.result?.protocolVersion).toBeTruthy()
   })
 
-  it("advertises get_connector_info via tools/list", async () => {
+  it("advertises the full inbox tool set via tools/list", async () => {
     const accessToken = await issueAccessToken()
     const initializeResponse = await MCP_POST(
       mcpRequest(initializeBody, accessToken)
@@ -217,7 +273,17 @@ describe("mcp transport (real mcp-handler)", () => {
     }
 
     const toolNames = (payload.result?.tools ?? []).map((tool) => tool.name)
-    expect(toolNames).toContain("get_connector_info")
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        "get_connector_info",
+        "search_contacts",
+        "get_contact_summary",
+        "get_contact_timeline",
+        "get_inbox_queue",
+        "get_workload_summary",
+        "get_sync_freshness"
+      ])
+    )
   })
 
   it("executes get_connector_info through tools/call", async () => {
@@ -255,6 +321,107 @@ describe("mcp transport (real mcp-handler)", () => {
 
     expect(payload.result?.isError).not.toBe(true)
     expect(payload.result?.structuredContent?.connectorVersion).toBe("0.1.0")
-    expect(payload.result?.structuredContent?.registeredToolCount).toBe(1)
+    expect(payload.result?.structuredContent?.registeredToolCount).toBe(7)
+  })
+
+  it("executes search_contacts through tools/call with a real token", async () => {
+    if (runtime === null) {
+      throw new Error("Missing test runtime.")
+    }
+
+    await seedTransportInboxFixture(runtime)
+
+    const accessToken = await issueAccessToken()
+    const initializeResponse = await MCP_POST(
+      mcpRequest(initializeBody, accessToken)
+    )
+    const sessionId =
+      initializeResponse.headers.get("mcp-session-id") ?? undefined
+
+    const response = await MCP_POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "search_contacts", arguments: { query: "Sar" } }
+        },
+        accessToken,
+        sessionId
+      )
+    )
+
+    expect(response.status).toBe(200)
+
+    const payload = (await readMcpBody(response)) as {
+      result?: {
+        isError?: boolean
+        structuredContent?: {
+          volunteers?: {
+            rows?: {
+              contact?: {
+                displayName?: string
+              }
+            }[]
+          }
+        }
+      }
+    }
+
+    expect(payload.result?.isError).not.toBe(true)
+    expect(
+      payload.result?.structuredContent?.volunteers?.rows?.[0]?.contact
+        ?.displayName
+    ).toBe("Sarah Martinez")
+  })
+
+  it("executes get_inbox_queue through tools/call with a real token", async () => {
+    if (runtime === null) {
+      throw new Error("Missing test runtime.")
+    }
+
+    await seedTransportInboxFixture(runtime)
+
+    const accessToken = await issueAccessToken()
+    const initializeResponse = await MCP_POST(
+      mcpRequest(initializeBody, accessToken)
+    )
+    const sessionId =
+      initializeResponse.headers.get("mcp-session-id") ?? undefined
+
+    const response = await MCP_POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 5,
+          method: "tools/call",
+          params: { name: "get_inbox_queue", arguments: { folder: "inbox" } }
+        },
+        accessToken,
+        sessionId
+      )
+    )
+
+    expect(response.status).toBe(200)
+
+    const payload = (await readMcpBody(response)) as {
+      result?: {
+        isError?: boolean
+        structuredContent?: {
+          items?: {
+            rows?: {
+              contact?: {
+                displayName?: string
+              }
+            }[]
+          }
+        }
+      }
+    }
+
+    expect(payload.result?.isError).not.toBe(true)
+    expect(
+      payload.result?.structuredContent?.items?.rows?.[0]?.contact?.displayName
+    ).toBe("Sarah Martinez")
   })
 })

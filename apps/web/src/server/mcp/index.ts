@@ -1,4 +1,10 @@
 import { createGetConnectorInfoTool } from "./tools/get-connector-info"
+import { createGetContactSummaryTool } from "./tools/get-contact-summary"
+import { createGetContactTimelineTool } from "./tools/get-contact-timeline"
+import { createGetInboxQueueTool } from "./tools/get-inbox-queue"
+import { createGetSyncFreshnessTool } from "./tools/get-sync-freshness"
+import { createGetWorkloadSummaryTool } from "./tools/get-workload-summary"
+import { createSearchContactsTool } from "./tools/search-contacts"
 import type { McpToolEntry, McpToolRegistrar } from "./tool-registry"
 import { createMcpToolRegistry } from "./tool-registry"
 
@@ -45,6 +51,12 @@ function createConnectorTools(
       getRegisteredToolCount: () => tools.length
     })
   )
+  tools.push(createSearchContactsTool())
+  tools.push(createGetContactSummaryTool())
+  tools.push(createGetContactTimelineTool())
+  tools.push(createGetInboxQueueTool())
+  tools.push(createGetWorkloadSummaryTool())
+  tools.push(createGetSyncFreshnessTool())
 
   return tools
 }
