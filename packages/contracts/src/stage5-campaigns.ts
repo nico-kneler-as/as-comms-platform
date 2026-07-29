@@ -571,7 +571,34 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
   });
 export type CreateDraftInput = z.input<typeof createDraftInputSchema>;
 
+export const campaignWizardDraftSaveInputSchema =
+  campaignRunEditableFieldsSchema
+    .pick({
+      kind: true,
+      launchType: true,
+      name: true,
+      fromEmail: true,
+      replyToEmail: true,
+      subjectTemplate: true,
+      subjectTemplateB: true,
+      abTestEnabled: true,
+      bodyDesignJson: true,
+      bodyHtmlTemplate: true,
+      bodyTextTemplate: true,
+      preheader: true,
+      audienceCriteria: true,
+      audienceSize: true,
+    })
+    .extend({
+      runId: idSchema,
+      observedUpdatedAt: timestampSchema,
+    });
+export type CampaignWizardDraftSaveInput = z.input<
+  typeof campaignWizardDraftSaveInputSchema
+>;
+
 export const updateDraftInputSchema = z.object({
+  observedUpdatedAt: timestampSchema,
   kind: campaignKindSchema.optional(),
   launchType: launchTypeSchema.optional(),
   projectId: nullableStringSchema.optional(),

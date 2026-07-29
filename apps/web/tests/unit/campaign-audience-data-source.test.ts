@@ -10,6 +10,7 @@ vi.mock("@/src/server/auth/session", () => ({
 }));
 
 import {
+  saveCampaignWizardDraftAction,
   getAudienceBuilderBootstrap,
   loadSmsCsvAudienceSummaryAction,
   loadMemberStatusCountsForProjects,
@@ -295,6 +296,62 @@ describe("campaign audience data source", () => {
   afterEach(async () => {
     await runtime?.dispose();
     runtime = null;
+  });
+
+  it("returns a typed stale error and preserves stored body text when a stale save sends null", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-1",
+      projectName: "Beech Leaf Disease",
+      email: "forests@example.org",
+    });
+    const created = await createProjectBroadcastDraft(runtime, {
+      runId: "run-stale-save",
+      projectId: "project-1",
+      fromEmail: "forests@example.org",
+    });
+    const freshened = await runtime.runtime.campaigns.campaignRuns.update(
+      created.id,
+      {
+        bodyTextTemplate: "Fresh copy from another tab",
+      },
+    );
+
+    const result = await saveCampaignWizardDraftAction({
+      runId: created.id,
+      observedUpdatedAt: created.updatedAt,
+      launchType: created.launchType,
+      kind: created.kind,
+      name: created.name,
+      fromEmail: created.fromEmail,
+      replyToEmail: created.replyToEmail,
+      subjectTemplate: created.subjectTemplate,
+      subjectTemplateB: created.subjectTemplateB,
+      abTestEnabled: created.abTestEnabled,
+      bodyDesignJson: created.bodyDesignJson,
+      bodyHtmlTemplate: created.bodyHtmlTemplate,
+      bodyTextTemplate: null,
+      preheader: created.preheader,
+      audienceCriteria: created.audienceCriteria,
+      audienceSize: created.audienceSize,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "campaign_draft_stale",
+      message:
+        "This broadcast draft was changed in another tab. Reload to continue.",
+    });
+
+    await expect(
+      runtime.runtime.campaigns.campaignRuns.findById(created.id),
+    ).resolves.toMatchObject({
+      bodyTextTemplate: "Fresh copy from another tab",
+      updatedAt: freshened.updatedAt,
+    });
   });
 
   it("includes enabled org senders alongside project aliases and excludes disabled org senders", async () => {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { React });
 
 const saveCampaignWizardDraftActionMock = vi.hoisted(() => vi.fn());
+const confirmCampaignWizardDraftCurrentActionMock = vi.hoisted(() => vi.fn());
 const resolveAudienceCountActionMock = vi.hoisted(() => vi.fn());
 const previewAudienceActionMock = vi.hoisted(() => vi.fn());
 const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
@@ -23,6 +24,8 @@ const sendSmsBroadcastNowMock = vi.hoisted(() => vi.fn());
 const sendSmsBroadcastTestMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
+  confirmCampaignWizardDraftCurrentAction:
+    confirmCampaignWizardDraftCurrentActionMock,
   loadComposePreviewAction: loadComposePreviewActionMock,
   loadMemberStatusCountsForProjects: loadMemberStatusCountsForProjectsMock,
   loadSelectedAliasSignatureAction: loadSelectedAliasSignatureActionMock,
@@ -668,6 +671,7 @@ interface SaveActionInput {
   readonly kind: CampaignKind;
   readonly launchType: LaunchType;
   readonly name: string | null;
+  readonly observedUpdatedAt: string;
   readonly preheader: string | null;
   readonly replyToEmail: string | null;
   readonly runId: string;
@@ -848,6 +852,7 @@ async function goToComposeStep() {
 
 beforeEach(() => {
   setupDom();
+  vi.resetAllMocks();
 
   resolveAudienceCountActionMock.mockResolvedValue({
     ok: true,
@@ -922,6 +927,12 @@ beforeEach(() => {
   saveCampaignWizardDraftActionMock.mockImplementation(
     (input: SaveActionInput) => Promise.resolve(buildSaveResult(input)),
   );
+  confirmCampaignWizardDraftCurrentActionMock.mockResolvedValue({
+    ok: true,
+    data: {
+      updatedAt: "2026-05-21T12:00:00.000Z",
+    },
+  });
   scheduleMock.mockResolvedValue({
     ok: true,
     data: { scheduledAt: "2026-05-22T18:00:00.000Z" },
@@ -1168,6 +1179,71 @@ describe("NewCampaignWizard", () => {
     expect(getByTestId("status-label").textContent).toBe("All changes saved");
   });
 
+  it("refreshes the saved updatedAt baseline after each successful save", async () => {
+    vi.useFakeTimers();
+    saveCampaignWizardDraftActionMock
+      .mockImplementationOnce((input: SaveActionInput) =>
+        Promise.resolve(
+          buildSaveResult(input, { updatedAt: "2026-05-21T12:05:00.000Z" }),
+        ),
+      )
+      .mockImplementationOnce((input: SaveActionInput) =>
+        Promise.resolve(
+          buildSaveResult(input, { updatedAt: "2026-05-21T12:10:00.000Z" }),
+        ),
+      );
+
+    await renderWizard({
+      draft: buildFreshDraft(),
+    });
+
+    await click("set-launch-html");
+    await click("launch-continue");
+    await advanceTimersBy(2000);
+    await goToComposeStep();
+    await click("set-subject-updated");
+    expect(getByTestId("status-label").textContent).toBe("Unsaved changes");
+    await click("compose-continue");
+
+    expect(saveCampaignWizardDraftActionMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        observedUpdatedAt: "2026-05-21T12:00:00.000Z",
+      }),
+    );
+    expect(saveCampaignWizardDraftActionMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        observedUpdatedAt: "2026-05-21T12:05:00.000Z",
+      }),
+    );
+  });
+
+  it("shows a persistent reload error and stays on the current step when a save is rejected as stale", async () => {
+    vi.useFakeTimers();
+    await renderWizard({
+      draft: buildFreshDraft(),
+    });
+
+    await click("set-launch-html");
+    await click("launch-continue");
+    await advanceTimersBy(2000);
+    await goToComposeStep();
+    saveCampaignWizardDraftActionMock.mockResolvedValueOnce({
+      ok: false,
+      code: "campaign_draft_stale",
+      message: "This broadcast draft was changed in another tab. Reload to continue.",
+      requestId: "req-stale-save",
+    });
+    await click("set-subject-updated");
+    await click("compose-continue");
+
+    expect(getByTestId("current-step").textContent).toBe("3");
+    expect(getByTestId("status-label").textContent).toBe(
+      "This broadcast draft was changed in another tab. Reload to continue.",
+    );
+  });
+
   it("clears volunteer search state when the launch type changes", async () => {
     vi.useFakeTimers();
 
@@ -1352,6 +1428,46 @@ describe("NewCampaignWizard", () => {
       toPhoneE164: "+14065550123",
     });
     expect(testSendMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks test send and submit when the clean-tab baseline is stale", async () => {
+    confirmCampaignWizardDraftCurrentActionMock.mockResolvedValue({
+      ok: false,
+      code: "campaign_draft_stale",
+      message: "This broadcast draft was changed in another tab. Reload to continue.",
+      requestId: "req-stale-current",
+    });
+
+    await renderWizard({
+      draft: buildDraft(),
+    });
+
+    await click("preview-send-test");
+
+    expect(testSendMock).not.toHaveBeenCalled();
+    expect(getByTestId("status-label").textContent).toBe(
+      "This broadcast draft was changed in another tab. Reload to continue.",
+    );
+
+    await click("preview-continue");
+    await click("review-submit");
+
+    expect(sendNowMock).not.toHaveBeenCalled();
+    expect(scheduleMock).not.toHaveBeenCalled();
+    expect(confirmCampaignWizardDraftCurrentActionMock).toHaveBeenNthCalledWith(
+      1,
+      {
+        runId: "run-1",
+        observedUpdatedAt: "2026-05-21T12:00:00.000Z",
+      },
+    );
+    expect(confirmCampaignWizardDraftCurrentActionMock).toHaveBeenNthCalledWith(
+      2,
+      {
+        runId: "run-1",
+        observedUpdatedAt: "2026-05-21T12:00:00.000Z",
+      },
+    );
   });
 
   it("calls sendSmsBroadcastNow on SMS review submit without hitting email send actions", async () => {
