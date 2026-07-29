@@ -76,7 +76,7 @@ export function WizardFooter({
   const sharedLeftSlot = useContext(wizardFooterLeftSlotContext);
 
   return (
-    <footer className="mt-auto flex items-center justify-between gap-3 border-t border-slate-200 pt-5">
+    <footer className="mt-auto flex items-center justify-between gap-3 pt-5">
       <div className="flex items-center gap-3">
         {onBack ? (
           <Button
