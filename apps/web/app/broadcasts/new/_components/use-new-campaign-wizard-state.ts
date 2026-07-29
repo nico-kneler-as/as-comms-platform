@@ -192,6 +192,41 @@ function buildDraftFingerprint(input: {
   });
 }
 
+function buildSavedDraftFingerprint(input: {
+  readonly draft: CampaignWizardDraftData;
+  readonly senderOptions: readonly CampaignSenderOption[];
+  readonly initialAudienceMode: AudienceInitialFilter | undefined;
+}): string {
+  const initialSenderType =
+    input.senderOptions.find(
+      (option) => option.email === input.draft.fromEmail,
+    )?.senderType ?? null;
+  const initialCriteriaForDraft = buildInitialCriteria(
+    input.draft,
+    input.initialAudienceMode,
+  );
+
+  return buildDraftFingerprint({
+    launchType: input.draft.launchType,
+    kind:
+      input.draft.launchType === "sms"
+        ? "project"
+        : kindForSenderType(initialSenderType, input.draft.kind),
+    name: input.draft.name,
+    fromEmail: input.draft.fromEmail,
+    replyToEmail: input.draft.replyToEmail,
+    subject: input.draft.subjectTemplate ?? "",
+    subjectB: input.draft.subjectTemplateB ?? "",
+    abTestEnabled: input.draft.abTestEnabled ?? false,
+    preheader: input.draft.preheader ?? "",
+    bodyPlaintext: input.draft.bodyTextTemplate ?? "",
+    bodyHtml: input.draft.bodyHtmlTemplate ?? "",
+    bodyDesignJsonFingerprint: JSON.stringify(input.draft.bodyDesignJson ?? null),
+    criteria: initialCriteriaForDraft,
+    audienceSize: input.draft.audienceSize,
+  });
+}
+
 function readTimeZoneParts(
   date: Date,
   timeZone: string,
@@ -551,6 +586,11 @@ export function useNewCampaignWizardState({
   const initialSchedule = buildDenverInputDefaults(new Date());
   const initialAudienceMode = deriveInitialFilter(draft);
   const initialCriteria = buildInitialCriteria(draft, initialAudienceMode);
+  const initialSavedFingerprint = buildSavedDraftFingerprint({
+    draft,
+    senderOptions: bootstrap.senderOptions,
+    initialAudienceMode,
+  });
   const [currentStep, setCurrentStep] = useState(
     deriveInitialCurrentStep({
       bootstrap,
@@ -663,7 +703,8 @@ export function useNewCampaignWizardState({
   const composePreviewRequestRef = useRef(0);
   const signatureRequestRef = useRef(0);
   const smsCsvAudienceSummaryRequestRef = useRef(0);
-  const savedFingerprintRef = useRef("");
+  const savedFingerprintRef = useRef(initialSavedFingerprint);
+  const savedUpdatedAtRef = useRef(draft.updatedAt);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLaunchTypeRef = useRef(draft.launchType);
   const previousFromEmailRef = useRef(draft.fromEmail);
@@ -778,35 +819,6 @@ export function useNewCampaignWizardState({
   const warningDismissed =
     warningDismissFingerprint !== null &&
     warningDismissFingerprint === previewFingerprint;
-
-  useEffect(() => {
-    const initialSenderType =
-      bootstrap.senderOptions.find((option) => option.email === draft.fromEmail)
-        ?.senderType ?? null;
-    const initialCriteriaForDraft = buildInitialCriteria(
-      draft,
-      initialAudienceMode,
-    );
-    savedFingerprintRef.current = buildDraftFingerprint({
-      launchType: draft.launchType,
-      kind:
-        draft.launchType === "sms"
-          ? "project"
-          : kindForSenderType(initialSenderType, draft.kind),
-      name: draft.name,
-      fromEmail: draft.fromEmail,
-      replyToEmail: draft.replyToEmail,
-      subject: draft.subjectTemplate ?? "",
-      subjectB: draft.subjectTemplateB ?? "",
-      abTestEnabled: draft.abTestEnabled ?? false,
-      preheader: draft.preheader ?? "",
-      bodyPlaintext: draft.bodyTextTemplate ?? "",
-      bodyHtml: draft.bodyHtmlTemplate ?? "",
-      bodyDesignJsonFingerprint: JSON.stringify(draft.bodyDesignJson ?? null),
-      criteria: initialCriteriaForDraft,
-      audienceSize: draft.audienceSize,
-    });
-  }, [bootstrap.senderOptions, draft, initialAudienceMode]);
 
   useEffect(() => {
     if (
@@ -1452,6 +1464,7 @@ export function useNewCampaignWizardState({
     testSendPending,
     startTestSendTransition,
     savedFingerprintRef,
+    savedUpdatedAtRef,
     saveTimeoutRef,
     autosavePersistDraftRef,
     frozen,

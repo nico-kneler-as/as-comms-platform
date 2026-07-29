@@ -294,6 +294,24 @@ export class InvalidCampaignRunStateTransitionError extends Error {
   }
 }
 
+export class StaleCampaignRunDraftError extends Error {
+  readonly runId: string;
+  readonly observedUpdatedAt: string;
+  readonly currentUpdatedAt: string;
+
+  constructor(input: {
+    readonly runId: string;
+    readonly observedUpdatedAt: string;
+    readonly currentUpdatedAt: string;
+  }) {
+    super(`Campaign run ${input.runId} was updated concurrently.`);
+    this.name = "StaleCampaignRunDraftError";
+    this.runId = input.runId;
+    this.observedUpdatedAt = input.observedUpdatedAt;
+    this.currentUpdatedAt = input.currentUpdatedAt;
+  }
+}
+
 export interface Stage5RepositoryBundle {
   readonly campaignRuns: {
     create(input: CreateDraftInput): Promise<CampaignRunRecord>;
@@ -7633,8 +7651,47 @@ export function createStage5RepositoryBundle(
             ...mapCampaignRunMutationFields(parsed),
             updatedAt: new Date(),
           })
-          .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, "draft")))
+          .where(
+            and(
+              eq(campaignRuns.id, id),
+              eq(campaignRuns.state, "draft"),
+              // updated_at is timestamptz(6) with a now() default, but the
+              // baseline round-trips through an ISO string and so carries only
+              // millisecond precision. Compare at millisecond resolution or a
+              // row ever written with microseconds (a raw-SQL now(), an insert
+              // that lets the default fire) could never be saved again.
+              sql`date_trunc('milliseconds', ${campaignRuns.updatedAt}) = ${new Date(
+                parsed.observedUpdatedAt,
+              )}`,
+            ),
+          )
           .returning();
+
+        if (row === undefined) {
+          const current = await loadCampaignRunById(id);
+          if (current === null) {
+            throw new Error(`Campaign run ${id} was not found.`);
+          }
+          if (current.state !== "draft") {
+            throw new Error(
+              `Campaign run ${id} is not editable outside draft.`,
+            );
+          }
+          if (
+            new Date(current.updatedAt).getTime() >
+            new Date(parsed.observedUpdatedAt).getTime()
+          ) {
+            throw new StaleCampaignRunDraftError({
+              runId: id,
+              observedUpdatedAt: parsed.observedUpdatedAt,
+              currentUpdatedAt: current.updatedAt,
+            });
+          }
+
+          throw new Error(
+            `Expected draft campaign run row to be returned from updateDraft.`,
+          );
+        }
 
         return mapCampaignRunRow(
           requireRow(

@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type {
   CreateDraftInput,
 } from "@as-comms/contracts";
 
 import {
+  StaleCampaignRunDraftError,
   createStage5RepositoryBundle,
   type Stage5RepositoryBundle,
 } from "../src/index.js";
 import {
   audienceSnapshots,
+  campaignRuns,
   contactConsent,
   mailchimpCampaignActivityDetails,
   newsletterSubscribers,
@@ -811,6 +813,7 @@ describe("Stage 5 campaigns repositories", () => {
     );
 
     const updated = await campaigns.campaignRuns.updateDraft(created.id, {
+      observedUpdatedAt: created.updatedAt,
       subjectTemplate: "After",
       fromEmail: "forest@adventurescientists.org",
       lastEditedByUserId: "user-99",
@@ -821,6 +824,45 @@ describe("Stage 5 campaigns repositories", () => {
     expect(updated.lastEditedByUserId).toBe("user-99");
     expect(new Date(updated.updatedAt).getTime()).toBeGreaterThanOrEqual(
       new Date(created.updatedAt).getTime(),
+    );
+  });
+
+  it("rejects stale draft updates and leaves the stored row unchanged", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-update-stale",
+        subjectTemplate: "Before",
+      }),
+    );
+    const concurrentUpdatedAt = new Date(
+      new Date(created.updatedAt).getTime() + 1_000,
+    );
+    await context.db
+      .update(campaignRuns)
+      .set({
+        subjectTemplate: "From another tab",
+        updatedAt: concurrentUpdatedAt,
+      })
+      .where(eq(campaignRuns.id, created.id));
+
+    await expect(
+      campaigns.campaignRuns.updateDraft(created.id, {
+        observedUpdatedAt: created.updatedAt,
+        subjectTemplate: "After",
+      }),
+    ).rejects.toBeInstanceOf(StaleCampaignRunDraftError);
+
+    await expect(campaigns.campaignRuns.findById(created.id)).resolves.toMatchObject(
+      {
+        subjectTemplate: "From another tab",
+        updatedAt: concurrentUpdatedAt.toISOString(),
+      },
     );
   });
 

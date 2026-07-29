@@ -15,6 +15,7 @@ import type {
 } from "../../_lib/audience-data-source";
 import { cn } from "@/lib/utils";
 import {
+  confirmCampaignWizardDraftCurrentAction,
   saveCampaignWizardDraftAction,
   uploadBroadcastAudienceCsvAction,
 } from "../../_lib/audience-data-source";
@@ -540,6 +541,7 @@ export function NewCampaignWizard({
     testSendPending,
     startTestSendTransition,
     savedFingerprintRef,
+    savedUpdatedAtRef,
     saveTimeoutRef,
     autosavePersistDraftRef,
     frozen,
@@ -556,9 +558,43 @@ export function NewCampaignWizard({
   } = useNewCampaignWizardState({ bootstrap, draft });
   const singleSelectProjects = projectSelectionMode === "single";
 
-  async function persistDraft(successMessage: string): Promise<boolean> {
-    if (frozen || !dirty) {
+  function showPersistentSaveError(message: string) {
+    if (saveTimeoutRef.current !== null) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    setSaveState("error");
+    setSaveMessage(message);
+  }
+
+  async function confirmDraftCurrent(): Promise<boolean> {
+    const result = await confirmCampaignWizardDraftCurrentAction({
+      runId: draft.runId,
+      observedUpdatedAt: savedUpdatedAtRef.current,
+    });
+
+    if (!result.ok) {
+      showPersistentSaveError(result.message);
+      return false;
+    }
+
+    savedUpdatedAtRef.current = result.data.updatedAt;
+    return true;
+  }
+
+  async function persistDraft(
+    successMessage: string,
+    options?: { readonly requireCurrentWhenClean?: boolean },
+  ): Promise<boolean> {
+    if (frozen) {
       return true;
+    }
+
+    if (!dirty) {
+      return options?.requireCurrentWhenClean === true
+        ? await confirmDraftCurrent()
+        : true;
     }
 
     return await new Promise<boolean>((resolve) => {
@@ -567,6 +603,7 @@ export function NewCampaignWizard({
         const isSmsLaunch = launchType === "sms";
         const result = await saveCampaignWizardDraftAction({
           runId: draft.runId,
+          observedUpdatedAt: savedUpdatedAtRef.current,
           launchType,
           kind: isSmsLaunch ? "project" : kind,
           name: name.trim().length === 0 ? null : name.trim(),
@@ -589,12 +626,12 @@ export function NewCampaignWizard({
         });
 
         if (!result.ok) {
-          setSaveState("error");
-          setSaveMessage(result.message);
+          showPersistentSaveError(result.message);
           resolve(false);
           return;
         }
 
+        savedUpdatedAtRef.current = result.data.updatedAt;
         savedFingerprintRef.current = JSON.stringify({
           launchType: result.data.launchType,
           kind: result.data.launchType === "sms" ? "project" : result.data.kind,
@@ -804,7 +841,9 @@ export function NewCampaignWizard({
   }
 
   async function handleTestSend() {
-    const saved = await persistDraft("Saved");
+    const saved = await persistDraft("Saved", {
+      requireCurrentWhenClean: true,
+    });
     if (!saved) {
       return;
     }
@@ -849,7 +888,9 @@ export function NewCampaignWizard({
   }
 
   async function handleSubmit() {
-    const saved = await persistDraft("Saved");
+    const saved = await persistDraft("Saved", {
+      requireCurrentWhenClean: true,
+    });
     if (!saved) {
       return;
     }

@@ -6,8 +6,10 @@ import { headers } from "next/headers";
 
 import {
   audienceCriteriaSchema,
+  campaignWizardDraftSaveInputSchema,
   expeditionMemberStatusValues,
   normalizeExpeditionMemberStatus,
+  type CampaignWizardDraftSaveInput,
   type BroadcastUploadedRecipientInput,
   type AudienceCriteria,
   type CampaignKind,
@@ -52,6 +54,13 @@ import { deriveInitials } from "./campaign-preview";
 const EMPTY_AUDIENCE_CRITERIA = audienceCriteriaSchema.parse({});
 const RECENT_EXPEDITION_WINDOW_DAYS = 365;
 const PREVIEW_LIMIT = 50;
+const CAMPAIGN_DRAFT_STALE_MESSAGE =
+  "This broadcast draft was changed in another tab. Reload to continue.";
+const campaignWizardDraftBaselineSchema =
+  campaignWizardDraftSaveInputSchema.pick({
+    runId: true,
+    observedUpdatedAt: true,
+  });
 
 export interface CampaignProjectOption {
   readonly id: string;
@@ -2136,65 +2145,93 @@ export async function loadSmsCsvAudienceSummaryAction(input: {
   }
 }
 
-export async function saveCampaignWizardDraftAction(input: {
-  readonly runId: string;
-  readonly launchType: LaunchType;
-  readonly kind: CampaignKind;
-  readonly name: string | null;
-  readonly fromEmail: string | null;
-  readonly replyToEmail: string | null;
-  readonly subjectTemplate: string | null;
-  readonly subjectTemplateB?: string | null;
-  readonly abTestEnabled?: boolean;
-  readonly bodyDesignJson: unknown;
-  readonly bodyHtmlTemplate: string | null;
-  readonly bodyTextTemplate: string | null;
-  readonly preheader: string | null;
-  readonly audienceCriteria: AudienceCriteria;
-  readonly audienceSize: number | null;
-}): Promise<UiResult<CampaignWizardDraftData>> {
+export async function saveCampaignWizardDraftAction(
+  input: CampaignWizardDraftSaveInput,
+): Promise<UiResult<CampaignWizardDraftData>> {
   const session = await requireSession();
 
   try {
+    const parsed = campaignWizardDraftSaveInputSchema.parse(input);
     const runtime = await getStage1WebRuntime();
-    const audienceCriteria = audienceCriteriaSchema.parse(
-      input.audienceCriteria,
-    );
+    const audienceCriteria = parsed.audienceCriteria;
     const updated = await runtime.campaigns.campaignRuns.updateDraft(
-      input.runId,
+      parsed.runId,
       {
-        launchType: input.launchType,
-        kind: input.kind,
+        observedUpdatedAt: parsed.observedUpdatedAt,
+        launchType: parsed.launchType,
+        kind: parsed.kind,
         projectId: await deriveRunProjectId(runtime, {
-          kind: input.kind,
+          kind: parsed.kind,
           criteria: audienceCriteria,
-          fromEmail: input.fromEmail,
+          fromEmail: parsed.fromEmail,
         }),
-        name: input.name,
-        fromEmail: input.fromEmail,
-        replyToEmail: input.replyToEmail,
-        subjectTemplate: input.subjectTemplate,
-        subjectTemplateB: input.subjectTemplateB ?? null,
-        abTestEnabled: input.abTestEnabled ?? false,
-        bodyDesignJson: input.bodyDesignJson,
-        bodyHtmlTemplate: input.bodyHtmlTemplate,
-        bodyTextTemplate: input.bodyTextTemplate,
-        preheader: input.preheader,
+        name: parsed.name,
+        fromEmail: parsed.fromEmail,
+        replyToEmail: parsed.replyToEmail,
+        subjectTemplate: parsed.subjectTemplate,
+        subjectTemplateB: parsed.subjectTemplateB,
+        abTestEnabled: parsed.abTestEnabled,
+        bodyDesignJson: parsed.bodyDesignJson,
+        bodyHtmlTemplate: parsed.bodyHtmlTemplate,
+        bodyTextTemplate: parsed.bodyTextTemplate,
+        preheader: parsed.preheader,
         audienceCriteria: toStoredAudienceCriteria(
           audienceCriteria,
         ) as CampaignRunRecord["audienceCriteria"],
-        audienceSize: input.audienceSize,
+        audienceSize: parsed.audienceSize,
         lastEditedByUserId: session.id,
       },
     );
 
     return successResult(mapDraftRecord(updated, session.email));
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "StaleCampaignRunDraftError"
+    ) {
+      return errorResult("campaign_draft_stale", CAMPAIGN_DRAFT_STALE_MESSAGE);
+    }
+
     return errorResult(
       "campaign_draft_save_failed",
       error instanceof Error
         ? error.message
         : "Unable to save the broadcast draft.",
+      true,
+    );
+  }
+}
+
+export async function confirmCampaignWizardDraftCurrentAction(
+  input: Pick<CampaignWizardDraftSaveInput, "runId" | "observedUpdatedAt">,
+): Promise<UiResult<{ readonly updatedAt: string }>> {
+  await requireSession();
+
+  try {
+    const parsed = campaignWizardDraftBaselineSchema.parse(input);
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+
+    if (
+      new Date(run.updatedAt).getTime() >
+      new Date(parsed.observedUpdatedAt).getTime()
+    ) {
+      return errorResult("campaign_draft_stale", CAMPAIGN_DRAFT_STALE_MESSAGE);
+    }
+
+    return successResult({
+      updatedAt: run.updatedAt,
+    });
+  } catch (error) {
+    return errorResult(
+      "campaign_draft_freshness_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to confirm the broadcast draft state.",
       true,
     );
   }
