@@ -827,6 +827,40 @@ describe("Stage 5 campaigns repositories", () => {
     );
   });
 
+  it("saves a draft whose stored updated_at carries sub-millisecond precision", async () => {
+    // Regression: the concurrency guard compares the client's baseline (an
+    // ISO string, millisecond precision) against updated_at, which is
+    // timestamptz(6). An exact `date_trunc(col) = ${date}` compare bound the
+    // Date as text in production Postgres ("operator does not exist:
+    // timestamp with time zone = text") and broke every draft save; the
+    // millisecond-window range must still match a microsecond-precision row.
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-update-micros",
+        subjectTemplate: "Before",
+      }),
+    );
+
+    // Force a microsecond-precision updated_at that a JS Date cannot express.
+    await context.db.execute(
+      sql`update campaign_runs set updated_at = '2026-07-30T15:27:05.984567+00'::timestamptz where id = ${created.id}`,
+    );
+
+    // The client only ever observed the millisecond-truncated value.
+    const updated = await campaigns.campaignRuns.updateDraft(created.id, {
+      observedUpdatedAt: "2026-07-30T15:27:05.984Z",
+      subjectTemplate: "After",
+    });
+
+    expect(updated.subjectTemplate).toBe("After");
+  });
+
   it("rejects stale draft updates and leaves the stored row unchanged", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);

@@ -6,6 +6,7 @@ import {
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNotNull,
   isNull,
@@ -7645,6 +7646,12 @@ export function createStage5RepositoryBundle(
           ...parsed,
         });
 
+        // Truncate the observed baseline to whole milliseconds so the window
+        // below lines up with the client's ISO-string precision.
+        const observedUpdatedAtMs = new Date(
+          Math.floor(new Date(parsed.observedUpdatedAt).getTime()),
+        );
+
         const [row] = await db
           .update(campaignRuns)
           .set({
@@ -7657,12 +7664,22 @@ export function createStage5RepositoryBundle(
               eq(campaignRuns.state, "draft"),
               // updated_at is timestamptz(6) with a now() default, but the
               // baseline round-trips through an ISO string and so carries only
-              // millisecond precision. Compare at millisecond resolution or a
-              // row ever written with microseconds (a raw-SQL now(), an insert
-              // that lets the default fire) could never be saved again.
-              sql`date_trunc('milliseconds', ${campaignRuns.updatedAt}) = ${new Date(
-                parsed.observedUpdatedAt,
-              )}`,
+              // millisecond precision. Match any stored value within the same
+              // millisecond window [baseline, baseline + 1ms) rather than an
+              // exact compare, so a row ever written with microseconds (a
+              // raw-SQL now(), a default-fired insert) can still be saved.
+              //
+              // Use drizzle's typed gte/lt on the column — NOT a raw-sql
+              // `date_trunc(col) = ${date}` compare. In a raw-sql fragment the
+              // bound Date binds as text, and `timestamptz = text` has no
+              // operator in production Postgres, failing the whole update
+              // ("operator does not exist"). PGlite binds it as a timestamp
+              // and coerces, so that shape passes tests but breaks in prod.
+              gte(campaignRuns.updatedAt, observedUpdatedAtMs),
+              lt(
+                campaignRuns.updatedAt,
+                new Date(observedUpdatedAtMs.getTime() + 1),
+              ),
             ),
           )
           .returning();
