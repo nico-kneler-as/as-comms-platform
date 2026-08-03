@@ -150,6 +150,25 @@ export type SendSmsActionResult =
       readonly retryable?: boolean;
     };
 
+interface SmsConsentStatusData {
+  readonly phoneE164: string | null;
+  readonly status: "opted_in" | "revoked" | "none";
+  readonly changedAtIso: string | null;
+}
+
+type SmsConsentStatusActionResult =
+  | {
+      readonly ok: true;
+      readonly data: SmsConsentStatusData;
+    }
+  | {
+      readonly ok: false;
+      readonly error:
+        | "unauthorized"
+        | "no_phone"
+        | "opt_in_requires_prior_revocation";
+    };
+
 // eslint-disable-next-line @typescript-eslint/consistent-type-definitions
 export type NoteCreateActionData = {
   readonly noteId: string;
@@ -1153,29 +1172,101 @@ async function resolveContactPhone(input: {
   );
 }
 
-async function resolveSmsConsentDecision(input: {
+function mergeLatestSmsConsentRecord(input: {
+  readonly contactConsent: Awaited<
+    ReturnType<
+      Awaited<
+        ReturnType<typeof getStage1WebRuntime>
+      >["repositories"]["consentRecords"]["findLatestByContact"]
+    >
+  >;
+  readonly phoneConsent: Awaited<
+    ReturnType<
+      Awaited<
+        ReturnType<typeof getStage1WebRuntime>
+      >["repositories"]["consentRecords"]["findLatestByPhone"]
+    >
+  >;
+}) {
+  if (input.contactConsent === null) {
+    return input.phoneConsent;
+  }
+
+  if (input.phoneConsent === null) {
+    return input.contactConsent;
+  }
+
+  return input.contactConsent.createdAt >= input.phoneConsent.createdAt
+    ? input.contactConsent
+    : input.phoneConsent;
+}
+
+async function findLatestSmsConsentRecord(input: {
   readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
   readonly contactId: string | null;
   readonly phoneE164: string;
 }) {
-  const [phoneConsent, contactConsent, hasPriorInbound] = await Promise.all([
+  const [phoneConsent, contactConsent] = await Promise.all([
     input.runtime.repositories.consentRecords.findLatestByPhone(input.phoneE164),
     input.contactId === null
       ? Promise.resolve(null)
       : input.runtime.repositories.consentRecords.findLatestByContact(
           input.contactId,
         ),
-    input.runtime.repositories.smsMessages.hasInboundForPhone(input.phoneE164),
   ]);
 
-  const latestConsent =
-    contactConsent === null
-      ? phoneConsent
-      : phoneConsent === null
-        ? contactConsent
-        : contactConsent.createdAt >= phoneConsent.createdAt
-          ? contactConsent
-          : phoneConsent;
+  return mergeLatestSmsConsentRecord({
+    contactConsent,
+    phoneConsent,
+  });
+}
+
+function buildSmsConsentStatusData(input: {
+  readonly phoneE164: string | null;
+  readonly latestConsent: Awaited<
+    ReturnType<
+      Awaited<
+        ReturnType<typeof getStage1WebRuntime>
+      >["repositories"]["consentRecords"]["findLatestByContact"]
+    >
+  >;
+}): SmsConsentStatusData {
+  if (input.phoneE164 === null) {
+    return {
+      phoneE164: null,
+      status: "none",
+      changedAtIso: null,
+    };
+  }
+
+  if (input.latestConsent === null) {
+    return {
+      phoneE164: input.phoneE164,
+      status: "none",
+      changedAtIso: null,
+    };
+  }
+
+  return {
+    phoneE164: input.phoneE164,
+    status: input.latestConsent.status,
+    changedAtIso: input.latestConsent.createdAt.toISOString(),
+  };
+}
+
+async function resolveSmsConsentDecision(input: {
+  readonly runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  readonly contactId: string | null;
+  readonly phoneE164: string;
+}) {
+  const [latestConsent, hasPriorInbound] = await Promise.all([
+    findLatestSmsConsentRecord({
+      runtime: input.runtime,
+      contactId: input.contactId,
+      phoneE164: input.phoneE164,
+    }),
+    input.runtime.repositories.smsMessages.hasInboundForPhone(input.phoneE164),
+  ]);
 
   return canSendTo({
     latestConsent,
@@ -1289,6 +1380,124 @@ export async function resolveSmsConsentAction(rawInput: {
     data: {
       canSend: decision.canSend,
       reason: decision.canSend ? null : decision.reason,
+    },
+  };
+}
+
+export async function getSmsConsentStatusAction(input: {
+  readonly contactId: string;
+}): Promise<SmsConsentStatusActionResult> {
+  try {
+    await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return {
+        ok: false,
+        error: "unauthorized",
+      };
+    }
+    throw error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const phoneE164 = await resolveContactPhone({
+    runtime,
+    contactId: input.contactId,
+  });
+
+  if (phoneE164 === null) {
+    return {
+      ok: true,
+      data: buildSmsConsentStatusData({
+        phoneE164: null,
+        latestConsent: null,
+      }),
+    };
+  }
+
+  const latestConsent = await findLatestSmsConsentRecord({
+    runtime,
+    contactId: input.contactId,
+    phoneE164,
+  });
+
+  return {
+    ok: true,
+    data: buildSmsConsentStatusData({
+      phoneE164,
+      latestConsent,
+    }),
+  };
+}
+
+export async function setSmsConsentAction(input: {
+  readonly contactId: string;
+  readonly direction: "opt_out" | "opt_in";
+}): Promise<SmsConsentStatusActionResult> {
+  let currentUser;
+  try {
+    currentUser = await requireSession();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return {
+        ok: false,
+        error: "unauthorized",
+      };
+    }
+    throw error;
+  }
+
+  const runtime = await getStage1WebRuntime();
+  const phoneE164 = await resolveContactPhone({
+    runtime,
+    contactId: input.contactId,
+  });
+
+  if (phoneE164 === null) {
+    return {
+      ok: false,
+      error: "no_phone",
+    };
+  }
+
+  const latestConsent = await findLatestSmsConsentRecord({
+    runtime,
+    contactId: input.contactId,
+    phoneE164,
+  });
+
+  if (input.direction === "opt_in" && latestConsent?.status !== "revoked") {
+    return {
+      ok: false,
+      error: "opt_in_requires_prior_revocation",
+    };
+  }
+
+  const now = new Date();
+  const nextStatus = input.direction === "opt_out" ? "revoked" : "opted_in";
+  await runtime.repositories.consentRecords.insert({
+    id: randomUUID(),
+    contactId: input.contactId,
+    phoneE164,
+    status: nextStatus,
+    source: "operator_attestation",
+    sourceDetail: "inbox_contact_rail",
+    consentedAt: nextStatus === "opted_in" ? now : null,
+    revokedAt: nextStatus === "revoked" ? now : null,
+    recordedByUserId: currentUser.id,
+    notes: "Recorded via inbox contact rail",
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  revalidateInboxContact(input.contactId);
+
+  return {
+    ok: true,
+    data: {
+      phoneE164,
+      status: nextStatus,
+      changedAtIso: now.toISOString(),
     },
   };
 }

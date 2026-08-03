@@ -1,9 +1,12 @@
 import { createRequire } from "node:module";
 import React, { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InboxContactSummaryViewModel } from "../../app/inbox/_lib/view-models";
+
+const getSmsConsentStatusAction = vi.hoisted(() => vi.fn());
+const setSmsConsentAction = vi.hoisted(() => vi.fn());
 
 Object.assign(globalThis, { React });
 
@@ -70,6 +73,11 @@ vi.mock("../../app/inbox/_components/icons", () => ({
 
 vi.mock("lucide-react", () => ({
   ExternalLink: () => createElement("svg"),
+}));
+
+vi.mock("../../app/inbox/actions", () => ({
+  getSmsConsentStatusAction,
+  setSmsConsentAction,
 }));
 
 import { InboxContactRail } from "../../app/inbox/_components/inbox-contact-rail";
@@ -166,6 +174,7 @@ async function renderRail(
   await act(async () => {
     root.render(createElement(InboxContactRail, { contact }));
     await Promise.resolve();
+    await Promise.resolve();
   });
 
   return {
@@ -192,6 +201,19 @@ async function click(element: Element | null) {
     await Promise.resolve();
   });
 }
+
+beforeEach(() => {
+  getSmsConsentStatusAction.mockReset();
+  getSmsConsentStatusAction.mockResolvedValue({
+    ok: true,
+    data: {
+      phoneE164: null,
+      status: "none",
+      changedAtIso: null,
+    },
+  });
+  setSmsConsentAction.mockReset();
+});
 
 afterEach(async () => {
   await activeSession?.cleanup();
@@ -342,5 +364,114 @@ describe("InboxContactRail", () => {
 
     expect(activeSession.container.textContent).toContain("Whitebark Pines");
     expect(activeSession.container.textContent).not.toContain("via ");
+  });
+
+  it("renders opted-in consent state with an opt-out button", async () => {
+    getSmsConsentStatusAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: "+15550000001",
+        status: "opted_in",
+        changedAtIso: "2026-08-03T14:00:00.000Z",
+      },
+    });
+
+    activeSession = await renderRail(buildContact(0));
+
+    expect(activeSession.container.textContent).toContain("SMS: opted in");
+    expect(activeSession.container.textContent).toContain("Opt out");
+  });
+
+  it("confirms opt-out inline and flips the label to opted out after a successful mutation", async () => {
+    getSmsConsentStatusAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: "+15550000001",
+        status: "opted_in",
+        changedAtIso: "2026-08-03T14:00:00.000Z",
+      },
+    });
+    setSmsConsentAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: "+15550000001",
+        status: "revoked",
+        changedAtIso: "2026-08-03T14:05:00.000Z",
+      },
+    });
+
+    activeSession = await renderRail(buildContact(0));
+
+    await click(
+      Array.from(activeSession.container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Opt out",
+      ) ?? null,
+    );
+
+    expect(activeSession.container.textContent).toContain("Confirm opt-out");
+    expect(setSmsConsentAction).not.toHaveBeenCalled();
+
+    await click(
+      Array.from(activeSession.container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Confirm opt-out",
+      ) ?? null,
+    );
+
+    expect(setSmsConsentAction).toHaveBeenCalledWith({
+      contactId: "contact:sarah-martinez",
+      direction: "opt_out",
+    });
+    expect(activeSession.container.textContent).toContain("SMS: opted out");
+  });
+
+  it("renders nothing consent-related when the resolved phone is missing", async () => {
+    getSmsConsentStatusAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: null,
+        status: "none",
+        changedAtIso: null,
+      },
+    });
+
+    activeSession = await renderRail(buildContact(0));
+
+    expect(activeSession.container.textContent).not.toContain("SMS:");
+    expect(activeSession.container.textContent).not.toContain("Opt out");
+    expect(activeSession.container.textContent).not.toContain("Opt back in");
+  });
+
+  it("renders opted-out consent state with an opt-back-in button", async () => {
+    getSmsConsentStatusAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: "+15550000001",
+        status: "revoked",
+        changedAtIso: "2026-08-03T14:00:00.000Z",
+      },
+    });
+    setSmsConsentAction.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        phoneE164: "+15550000001",
+        status: "opted_in",
+        changedAtIso: "2026-08-03T14:10:00.000Z",
+      },
+    });
+
+    activeSession = await renderRail(buildContact(0));
+
+    expect(activeSession.container.textContent).toContain("SMS: opted out");
+
+    await click(
+      Array.from(activeSession.container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Opt back in",
+      ) ?? null,
+    );
+
+    expect(setSmsConsentAction).toHaveBeenCalledWith({
+      contactId: "contact:sarah-martinez",
+      direction: "opt_in",
+    });
   });
 });
