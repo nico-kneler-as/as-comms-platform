@@ -5,7 +5,7 @@ import type {
   InboxProjectMembershipViewModel,
   InboxProjectStatus,
 } from "../_lib/view-models";
-import { useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -17,12 +17,16 @@ import {
   TONE_CLASSES,
   TYPE,
 } from "@/app/_lib/design-tokens-v2";
+import {
+  getSmsConsentStatusAction,
+  setSmsConsentAction,
+} from "../actions";
 
 import {
   CalendarIcon,
   MailIcon,
   PanelRightCloseIcon,
-  PhoneIcon
+  PhoneIcon,
 } from "./icons";
 
 interface RailProps {
@@ -31,6 +35,148 @@ interface RailProps {
 }
 
 const ACTIVITY_COLLAPSED_LIMIT = 5;
+
+interface SmsConsentStatus {
+  readonly phoneE164: string | null;
+  readonly status: "opted_in" | "revoked" | "none";
+  readonly changedAtIso: string | null;
+}
+
+function SmsConsentRow({ contactId }: { readonly contactId: string }) {
+  const [status, setStatus] = useState<SmsConsentStatus | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isConfirmingOptOut, setIsConfirmingOptOut] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+
+    setStatus(null);
+    setIsLoaded(false);
+    setIsConfirmingOptOut(false);
+    setErrorMessage(null);
+
+    void (async () => {
+      const result = await getSmsConsentStatusAction({ contactId });
+
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
+      if (result.ok) {
+        setStatus(result.data);
+      }
+
+      setIsLoaded(true);
+    })();
+  }, [contactId]);
+
+  if (!isLoaded || status === null) {
+    return null;
+  }
+
+  if (status.phoneE164 === null) {
+    return null;
+  }
+
+  const isRevoked = status.status === "revoked";
+  const labelClassName = isRevoked ? "text-amber-700" : "text-slate-500";
+  const label =
+    status.status === "opted_in"
+      ? "SMS: opted in"
+      : status.status === "revoked"
+        ? "SMS: opted out"
+        : "SMS: no consent on file";
+
+  const runMutation = (direction: "opt_out" | "opt_in") => {
+    setErrorMessage(null);
+    startTransition(() => {
+      void (async () => {
+        const result = await setSmsConsentAction({
+          contactId,
+          direction,
+        });
+
+        if (!result.ok) {
+          setErrorMessage("Couldn't update — try again");
+          return;
+        }
+
+        setStatus(result.data);
+        setIsConfirmingOptOut(false);
+      })();
+    });
+  };
+
+  return (
+    <div className="mt-1">
+      <div className="ml-[22px] flex items-center justify-between gap-2">
+        <span className={`min-w-0 text-[13px] ${labelClassName}`}>{label}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          {isRevoked ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() => {
+                runMutation("opt_in");
+              }}
+            >
+              Opt back in
+            </Button>
+          ) : isConfirmingOptOut ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isPending}
+                onClick={() => {
+                  runMutation("opt_out");
+                }}
+              >
+                Confirm opt-out
+              </Button>
+              <button
+                type="button"
+                className="text-[12px] font-medium text-slate-500 transition-colors duration-150 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isPending}
+                onClick={() => {
+                  setIsConfirmingOptOut(false);
+                  setErrorMessage(null);
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isPending}
+              onClick={() => {
+                setIsConfirmingOptOut(true);
+                setErrorMessage(null);
+              }}
+            >
+              Opt out
+            </Button>
+          )}
+        </div>
+      </div>
+      {errorMessage === null ? null : (
+        <p className="ml-[22px] mt-1 text-[11px] text-rose-600">
+          {errorMessage}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Renders contact reference data for the detail workspace.
@@ -98,6 +244,7 @@ export function InboxContactRail({ contact, onClose }: RailProps) {
               No phone on file
             </ContactLine>
           )}
+          <SmsConsentRow contactId={contact.contactId} />
           <ContactLine icon={<CalendarIcon className="size-3.5" />}>
             {contact.joinedAtLabel}
           </ContactLine>
