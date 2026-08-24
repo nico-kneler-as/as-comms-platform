@@ -704,7 +704,12 @@ describe("Campaign send orchestrator", () => {
   it("freezes csv uploads through project exclusions and keeps newsletter-only opt-outs", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
-    const freezeAt = new Date("2026-08-15T12:00:00.000Z");
+    // recordOptOut stamps optedOutAt with wall-clock now, and the freeze only
+    // counts consent recorded at or before freezeAt (isOptedOut filters on
+    // lte(optedOutAt, at)). freezeAt must therefore sit after those writes —
+    // a hardcoded date silently stops excluding opt-outs once real time
+    // passes it, which is how this test began failing on 2026-08-15.
+    const freezeAt = new Date(Date.now() + 60_000);
     await seedProject(context);
     await seedProjectContact(context, {
       id: "contact-all-opt-out",
