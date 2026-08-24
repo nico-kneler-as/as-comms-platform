@@ -163,3 +163,18 @@ deliberate exceptions; each one needs a reason here.
 
 Before adding an entry: confirm the vulnerable copy is dev-only or otherwise
 unreachable at runtime, try an override first, and record the attempt.
+
+**Exceptions go stale — re-check them, don't just inherit them.** When the digest
+surfaces an ignored advisory, confirm the exception is still earned: a patched
+release inside our existing semver range may have shipped since it was added, and
+an advisory may have been withdrawn outright. Two entries were removed on
+2026-08-24 for exactly those reasons:
+
+| GHSA | Package | Why removed |
+| --- | --- | --- |
+| GHSA-5xrq-8626-4rwp | vitest | **Critical** (CVE-2026-47429) — arbitrary file read/execute while the Vitest UI server is listening. We only ever run `vitest run` (no UI server), so exposure was limited, but vitest 3.2.6 patches the v3 line and our declared `^3.1.1` already permitted it — the lockfile was simply pinned to 3.2.4. Bumped to `^3.2.6` (resolves 3.2.7, full suite green) and the exception dropped. No override and no major-version jump were needed. |
+| GHSA-gv7w-rqvm-qjhr | esbuild | Withdrawn by GitHub on 2026-06-17, and it only ever described esbuild's Deno distribution, which we do not use. Nothing left to ignore. |
+
+The lesson worth keeping: an `ignoreGhsas` entry is a snapshot of what was true the
+day it was written. A critical advisory sat suppressed here while a one-line
+in-range bump would have cleared it.

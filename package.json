@@ -65,8 +65,6 @@
     },
     "auditConfig": {
       "ignoreGhsas": [
-        "GHSA-5xrq-8626-4rwp",
-        "GHSA-gv7w-rqvm-qjhr",
         "GHSA-mh99-v99m-4gvg"
       ]
     }
@@ -94,6 +92,6 @@
     "turbo": "^2.5.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.27.0",
-    "vitest": "^3.1.1"
+    "vitest": "^3.2.6"
   }
 }
