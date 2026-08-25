@@ -16,7 +16,7 @@
 | Notion | AI instructions and approved knowledge source | AI knowledge sync/cache |
 | OpenAI | request-time draft generation | AI assistant |
 | Postmark | Broadcasts Email delivery provider (Stage 5A) | Email Broadcasts transport, Broadcast Message Streams, Events Webhook |
-| Supabase/Postgres | durable persistence | canonical state, projections, replay, audit |
+| Railway Postgres | durable persistence | canonical state, projections, replay, audit |
 
 ## Frequent Reminders
 
