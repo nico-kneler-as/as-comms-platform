@@ -153,6 +153,16 @@ the CI gate and posts a compact summary to
 - GitHub Actions secrets: `DEPENDENCY_AUDIT_FEED_URL` (full route URL) and `DEPENDENCY_AUDIT_FEED_SECRET` (must match `web`)
 - When the digest reports a new advisory, fix or override the dependency first. Add an `ignoreGhsas` exception only after confirming the vulnerable copy is genuinely out of runtime scope and updating this doc.
 
+**`--json` breaks `--audit-level`.** The feed script asks for JSON, and with `--json`
+pnpm ignores `--audit-level` when it sets its exit code: it exits 1 whenever the tree
+carries *any* advisory, even low or moderate. The blocking gate omits `--json` and so
+exits 0 correctly. `scripts/dependency-audit-feed.mjs` therefore derives its verdict
+from `metadata.vulnerabilities` in the report, never from the process exit code, and the
+`exitStatus` it posts is the blocking-audit verdict rather than pnpm's raw exit. Before
+2026-08-25 it treated that exit code as authoritative and crashed on every clean-of-highs
+run — the feed only worked while high advisories existed, so #688 and #690 clearing them
+took it down.
+
 The CI-only gate (`pnpm audit --audit-level high`, `scripts/security-check.mjs`)
 blocks merges on high/critical advisories. Entries in `ignoreGhsas` are
 deliberate exceptions; each one needs a reason here.

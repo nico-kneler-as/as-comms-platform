@@ -249,6 +249,42 @@ function extractAuditReport(rawOutput) {
   throw new Error("Unable to parse pnpm audit JSON output.");
 }
 
+function readReportableVulnerabilityCount(report) {
+  const counts = report?.metadata?.vulnerabilities;
+
+  if (!counts || typeof counts !== "object") {
+    return null;
+  }
+
+  let total = 0;
+
+  for (const severity of reportableSeverities) {
+    const count = counts[severity];
+
+    if (typeof count !== "number" || !Number.isFinite(count)) {
+      return null;
+    }
+
+    total += count;
+  }
+
+  return total;
+}
+
+function describeSeverityCounts(report) {
+  const counts = report?.metadata?.vulnerabilities;
+
+  if (!counts || typeof counts !== "object") {
+    return "severity counts unavailable";
+  }
+
+  const described = ["critical", "high", "moderate", "low", "info"]
+    .filter((severity) => typeof counts[severity] === "number" && counts[severity] > 0)
+    .map((severity) => `${String(counts[severity])} ${severity}`);
+
+  return described.length > 0 ? described.join(", ") : "no advisories";
+}
+
 function collectAdvisories(report) {
   const deduped = new Map();
 
@@ -275,11 +311,25 @@ async function main() {
 
   const report = extractAuditReport([auditResult.stdout, auditResult.stderr]);
   const advisories = collectAdvisories(report);
-  const exitStatus = auditResult.status ?? 1;
 
-  if (exitStatus !== 0 && advisories.length === 0) {
+  // `pnpm audit --json` ignores `--audit-level` when it picks its exit code: with `--json`
+  // it exits 1 whenever the tree carries any advisory, at any severity. The blocking gate
+  // in scripts/security-check.mjs runs the same audit without `--json`, so the verdict we
+  // publish is derived from the report's own severity counts, never from this exit code.
+  const reportableCount = readReportableVulnerabilityCount(report);
+  const mutedCount = Array.isArray(report.muted) ? report.muted.length : 0;
+  const exitStatus = advisories.length > 0 ? 1 : 0;
+
+  // Backstop for an output-shape change that hides high/critical advisories from both
+  // extractors. `muted` entries are deliberate `ignoreGhsas` exceptions, so they are slack
+  // rather than evidence.
+  if (
+    advisories.length === 0 &&
+    reportableCount !== null &&
+    reportableCount > mutedCount
+  ) {
     throw new Error(
-      `pnpm audit exited with status ${String(exitStatus)} without any reportable advisories.`,
+      `pnpm audit counted ${String(reportableCount)} high/critical vulnerabilities but none could be normalized into advisories.`,
     );
   }
 
@@ -304,7 +354,7 @@ async function main() {
   }
 
   console.log(
-    `Posted dependency audit summary (${String(advisories.length)} advisories, exit status ${String(exitStatus)}).`,
+    `Posted dependency audit summary (${String(advisories.length)} high/critical advisories, exit status ${String(exitStatus)}). pnpm audit exited ${String(auditResult.status ?? "unknown")}; ${describeSeverityCounts(report)}.`,
   );
 }
 
