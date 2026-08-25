@@ -22,7 +22,7 @@
 | `ENG-02` | `pnpm` workspaces + `turbo` |
 | `ENG-03` | `Next.js App Router` + `React 19` |
 | `ENG-04` | `TypeScript` strict |
-| `ENG-05` | `Supabase Postgres` + `Drizzle` |
+| `ENG-05` | `Railway Postgres` + `Drizzle` |
 | `ENG-06` | `Graphile Worker` |
 | `ENG-07` | `Zod`, `Tailwind CSS`, `Vitest`, `Playwright` |
 
