@@ -11,6 +11,8 @@ import {
 
 import {
   aiKnowledgeEntries,
+  automatedEmailSends,
+  automatedEmailTemplates,
   audienceSnapshots,
   broadcastLinkClicks,
   broadcastOpens,
@@ -49,6 +51,8 @@ describe("Stage 1 DB schema", () => {
       "aiKnowledgeEntries",
       "audienceSnapshots",
       "auditPolicyEvidence",
+      "automatedEmailSends",
+      "automatedEmailTemplates",
       "broadcastLinkClicks",
       "broadcastMediaAssets",
       "broadcastOpens",
@@ -108,6 +112,10 @@ describe("Stage 1 DB schema", () => {
 
   it("keeps canonical table names stable", () => {
     expect(getTableName(aiKnowledgeEntries)).toBe("ai_knowledge_entries");
+    expect(getTableName(automatedEmailTemplates)).toBe(
+      "automated_email_templates"
+    );
+    expect(getTableName(automatedEmailSends)).toBe("automated_email_sends");
     expect(getTableName(projectKnowledgeEntries)).toBe(
       "project_knowledge_entries"
     );

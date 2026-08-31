@@ -1,6 +1,9 @@
 import {
   aiKnowledgeSourcesSchema,
   aiKnowledgeEntrySchema,
+  automatedEmailRenderedPreviewSchema,
+  automatedEmailSendRecordSchema,
+  automatedEmailTemplateRecordSchema,
   auditEvidenceSchema,
   broadcastOpenRecordSchema,
   broadcastLinkClickRecordSchema,
@@ -57,6 +60,8 @@ import {
   timelineProjectionSchema,
   type AuditEvidenceRecord,
   type AiKnowledgeEntryRecord,
+  type AutomatedEmailSendRecord as AutomatedEmailSendContractRecord,
+  type AutomatedEmailTemplateRecord as AutomatedEmailTemplateContractRecord,
   type CanonicalEventRecord,
   type CanonicalEventAudienceRecord,
   type ComposerDraftChannel,
@@ -111,6 +116,8 @@ import { z } from "zod";
 import type {
   aiKnowledgeEntries,
   auditPolicyEvidence,
+  automatedEmailSends,
+  automatedEmailTemplates,
   broadcastLinkClicks,
   broadcastOpens,
   broadcastUploadedRecipients,
@@ -203,6 +210,9 @@ type BroadcastOpenDbRowInsert = typeof broadcastOpens.$inferInsert;
 type BroadcastUploadedRecipientDbRowInsert =
   typeof broadcastUploadedRecipients.$inferInsert;
 type BroadcastMediaAssetRowInsert = typeof broadcastMediaAssets.$inferInsert;
+type AutomatedEmailTemplateTableRowInsert =
+  typeof automatedEmailTemplates.$inferInsert;
+type AutomatedEmailSendTableRowInsert = typeof automatedEmailSends.$inferInsert;
 type McpOAuthClientTableRowInsert = typeof mcpOAuthClients.$inferInsert;
 type McpOAuthAuthorizationCodeTableRowInsert =
   typeof mcpOAuthAuthorizationCodes.$inferInsert;
@@ -339,6 +349,60 @@ export type MediaAssetRowInsert = BroadcastMediaAssetRowInsert;
 export type MediaAssetInsert = z.input<typeof createMediaAssetInputSchema>;
 
 export type MediaAssetRecord = MediaAssetContractRecord;
+
+export type AutomatedEmailTemplateRow = Readonly<{
+  id: string;
+  project_id: string;
+  kind: AutomatedEmailTemplateContractRecord["kind"];
+  name: string;
+  draft_subject: string;
+  draft_doc: unknown;
+  published_subject: string | null;
+  published_doc: unknown;
+  published_at: Date | null;
+  published_by: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+}>;
+
+export type AutomatedEmailSendRow = Readonly<{
+  id: string;
+  template_id: string;
+  project_id: string;
+  expedition_member_id: string;
+  contact_id: string | null;
+  status: AutomatedEmailSendContractRecord["status"];
+  status_reason: string | null;
+  payload: unknown;
+  rendered_preview: unknown;
+  ledger_event_id: string | null;
+  provider_message_id: string | null;
+  received_at: Date;
+  processed_at: Date | null;
+}>;
+
+export type AutomatedEmailTemplateInsert = Readonly<{
+  projectId: string;
+  kind?: AutomatedEmailTemplateContractRecord["kind"];
+  name: string;
+  draftSubject?: string;
+  draftDoc?: unknown;
+  createdBy: string | null;
+}>;
+
+export type AutomatedEmailSendInsert = Readonly<{
+  templateId: string;
+  projectId: string;
+  expeditionMemberId: string;
+  contactId: string | null;
+  payload: unknown;
+}>;
+
+export type AutomatedEmailTemplateRowInsert =
+  AutomatedEmailTemplateTableRowInsert;
+export type AutomatedEmailSendRowInsert = AutomatedEmailSendTableRowInsert;
 
 export type McpOAuthClientRow = Readonly<{
   id: string;
@@ -624,6 +688,76 @@ export function mapMediaAssetInsert(record: MediaAssetInsert): MediaAssetRowInse
     filename: parsed.filename,
     contentType: parsed.contentType,
     sizeBytes: parsed.sizeBytes,
+  };
+}
+
+export function mapAutomatedEmailTemplateRow(
+  row: AutomatedEmailTemplateRow,
+): AutomatedEmailTemplateContractRecord {
+  return automatedEmailTemplateRecordSchema.parse({
+    id: row.id,
+    projectId: row.project_id,
+    kind: row.kind,
+    name: row.name,
+    draftSubject: row.draft_subject,
+    draftDoc: row.draft_doc,
+    publishedSubject: row.published_subject,
+    publishedDoc: row.published_doc,
+    publishedAt: fromDate(row.published_at),
+    publishedBy: row.published_by,
+    isActive: row.is_active,
+    createdBy: row.created_by,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export function mapAutomatedEmailTemplateInsert(
+  record: AutomatedEmailTemplateInsert,
+): AutomatedEmailTemplateRowInsert {
+  return {
+    projectId: record.projectId,
+    kind: record.kind ?? "custom",
+    name: record.name,
+    draftSubject: record.draftSubject ?? "",
+    draftDoc: record.draftDoc ?? {},
+    createdBy: record.createdBy,
+  };
+}
+
+export function mapAutomatedEmailSendRow(
+  row: AutomatedEmailSendRow,
+): AutomatedEmailSendContractRecord {
+  return automatedEmailSendRecordSchema.parse({
+    id: row.id,
+    templateId: row.template_id,
+    projectId: row.project_id,
+    expeditionMemberId: row.expedition_member_id,
+    contactId: row.contact_id,
+    status: row.status,
+    statusReason: row.status_reason,
+    payload: row.payload,
+    renderedPreview:
+      row.rendered_preview === null
+        ? null
+        : automatedEmailRenderedPreviewSchema.parse(row.rendered_preview),
+    ledgerEventId: row.ledger_event_id,
+    providerMessageId: row.provider_message_id,
+    receivedAt: row.received_at.toISOString(),
+    processedAt: fromDate(row.processed_at),
+  });
+}
+
+export function mapAutomatedEmailSendInsert(
+  record: AutomatedEmailSendInsert,
+): AutomatedEmailSendRowInsert {
+  return {
+    templateId: record.templateId,
+    projectId: record.projectId,
+    expeditionMemberId: record.expeditionMemberId,
+    contactId: record.contactId,
+    status: "received",
+    payload: record.payload,
   };
 }
 

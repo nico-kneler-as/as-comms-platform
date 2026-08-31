@@ -1,6 +1,8 @@
 import { isNotNull, sql } from "drizzle-orm";
 import type {
   AiKnowledgeSource,
+  AutomatedEmailKind,
+  AutomatedEmailSendStatus,
   BroadcastActivityBotReason,
   BroadcastLinkClickClient,
   BroadcastLinkClickGeo,
@@ -1257,6 +1259,78 @@ export const broadcastMediaAssets = pgTable(
     }),
   },
   (table) => [index("broadcast_media_assets_created_at_idx").on(table.createdAt.desc())],
+);
+
+export const automatedEmailTemplates = pgTable(
+  "automated_email_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projectDimensions.projectId, { onDelete: "restrict" }),
+    kind: text("kind").$type<AutomatedEmailKind>().notNull().default("custom"),
+    name: text("name").notNull(),
+    draftSubject: text("draft_subject").notNull().default(""),
+    draftDoc: jsonb("draft_doc").$type<unknown>().notNull().default({}),
+    publishedSubject: text("published_subject"),
+    publishedDoc: jsonb("published_doc").$type<unknown>(),
+    publishedAt: timestamp("published_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    publishedBy: text("published_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    isActive: boolean("is_active").notNull().default(false),
+    createdBy: text("created_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [index("automated_email_templates_project_idx").on(table.projectId)],
+);
+
+export const automatedEmailSends = pgTable(
+  "automated_email_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    templateId: uuid("template_id")
+      .notNull()
+      .references(() => automatedEmailTemplates.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull(),
+    expeditionMemberId: text("expedition_member_id").notNull(),
+    contactId: text("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    status: text("status").$type<AutomatedEmailSendStatus>().notNull(),
+    statusReason: text("status_reason"),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+    renderedPreview: jsonb("rendered_preview").$type<unknown>(),
+    ledgerEventId: text("ledger_event_id"),
+    providerMessageId: text("provider_message_id"),
+    receivedAt: timestamp("received_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    processedAt: timestamp("processed_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+  },
+  (table) => [
+    index("automated_email_sends_template_received_idx").on(
+      table.templateId,
+      table.receivedAt.desc(),
+    ),
+    index("automated_email_sends_template_member_received_idx").on(
+      table.templateId,
+      table.expeditionMemberId,
+      table.receivedAt.desc(),
+    ),
+  ],
 );
 
 export const accounts = pgTable(
