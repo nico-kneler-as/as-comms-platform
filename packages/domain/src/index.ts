@@ -1,5 +1,6 @@
 export * from "./audience-resolver.js";
 export * from "./automated-email-merge.js";
+export * from "./automated-email-render.js";
 export * from "./broadcast-activity-classifier.js";
 export * from "./broadcast-email-render.js";
 export * from "./canonical-event-audience.js";
