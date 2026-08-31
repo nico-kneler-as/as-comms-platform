@@ -1,4 +1,5 @@
 export * from "./dependency-audit.js";
+export * from "./automated-emails.js";
 export * from "./health.js";
 export * from "./jobs.js";
 export * from "./mcp-oauth.js";

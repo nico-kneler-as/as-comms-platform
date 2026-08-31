@@ -1,4 +1,6 @@
 export * from "./ai-knowledge-sources.js";
+export * from "./automated-email-sends-repository.js";
+export * from "./automated-email-templates-repository.js";
 export * from "./broadcast-link-clicks-repository.js";
 export * from "./broadcast-opens-repository.js";
 export * from "./broadcast-uploaded-recipients-repository.js";
