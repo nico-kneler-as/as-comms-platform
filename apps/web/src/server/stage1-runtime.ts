@@ -17,8 +17,12 @@ import {
   searchNewsletterSubscribers as searchNewsletterSubscribersFromDb,
   getOrgSenderByEmail,
   getSendLogRow,
+  getLastReceivedAtByTemplateIds,
+  getSendStatusCountsByTemplateId,
   getTemplateById,
+  findLatestPublishedByKind,
   listMediaAssets,
+  listTemplatesByProject,
   listOrgSenders,
   listSendsByTemplate,
   createStage1RepositoryBundle,
@@ -28,8 +32,12 @@ import {
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   setOrgSenderEnabled,
+  setTemplateActive,
   sessions,
   softDeleteMediaAsset,
+  updateDraft,
+  publishTemplate,
+  renameTemplate,
   users,
   verificationTokens,
   type BroadcastUploadedRecipientInsert,
@@ -154,13 +162,30 @@ export function createAutomatedEmailWebRepository(
 ) {
   return {
     getTemplateById: (id: string) => getTemplateById(db, id),
+    listTemplatesByProject: (projectId: string) =>
+      listTemplatesByProject(db, projectId),
     createTemplate: (input: Parameters<typeof createTemplate>[1]) =>
       createTemplate(db, input),
+    renameTemplate: (id: string, name: string) => renameTemplate(db, id, name),
+    updateDraft: (id: string, input: Parameters<typeof updateDraft>[2]) =>
+      updateDraft(db, id, input),
+    publishTemplate: (id: string, publishedBy: string | null) =>
+      publishTemplate(db, id, publishedBy),
+    setTemplateActive: (id: string, isActive: boolean) =>
+      setTemplateActive(db, id, isActive),
+    findLatestPublishedByKind: (
+      kind: Parameters<typeof findLatestPublishedByKind>[1],
+      options?: Parameters<typeof findLatestPublishedByKind>[2],
+    ) => findLatestPublishedByKind(db, kind, options),
     createSendLogRow: (input: Parameters<typeof createSendLogRow>[1]) =>
       createSendLogRow(db, input),
     getSendLogRow: (id: string) => getSendLogRow(db, id),
     listSendsByTemplate: (input: Parameters<typeof listSendsByTemplate>[1]) =>
       listSendsByTemplate(db, input),
+    getLastReceivedAtByTemplateIds: (templateIds: readonly string[]) =>
+      getLastReceivedAtByTemplateIds(db, templateIds),
+    getSendStatusCountsByTemplateId: (templateId: string) =>
+      getSendStatusCountsByTemplateId(db, templateId),
   };
 }
 

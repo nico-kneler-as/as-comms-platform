@@ -26,37 +26,44 @@ export const PROJECT_EMAIL_DOMAIN = "adventurescientists.org";
 export const ACTIVATION_WIZARD_STEPS = [
   {
     title: "Pick project",
-    subtitle: "Choose from Salesforce and set its internal alias."
+    subtitle: "Choose from Salesforce and set its internal alias.",
   },
   {
     title: "Inbox aliases",
-    subtitle: "Where volunteers write to reach this project."
+    subtitle: "Where volunteers write to reach this project.",
   },
   {
     title: "Email signature",
-    subtitle: "Appended to every outbound email from this project."
+    subtitle: "Appended to every outbound email from this project.",
+  },
+  {
+    title: "Automated emails",
+    subtitle: "Choose inactive email shells for the lifecycle moments you use.",
   },
   {
     title: "AI knowledge",
-    subtitle: "Add the sources the AI should learn from, or skip for now."
+    subtitle: "Add the sources the AI should learn from, or skip for now.",
   },
   {
     title: "Connected projects",
     subtitle:
-      "Optionally roll inactive Salesforce projects into this one's inbox."
+      "Optionally roll inactive Salesforce projects into this one's inbox.",
   },
   {
     title: "Review & activate",
-    subtitle: "Confirm the project is ready to route mail."
-  }
+    subtitle: "Confirm the project is ready to route mail.",
+  },
 ] as const satisfies readonly ActivationWizardStep[];
 
 export function buildDefaultSignature(aliasDraft: string): string {
-  const normalizedAlias = aliasDraft.trim().length > 0 ? aliasDraft.trim() : "Project";
+  const normalizedAlias =
+    aliasDraft.trim().length > 0 ? aliasDraft.trim() : "Project";
   return `Warmly,\nThe ${normalizedAlias} Team\nAdventure Scientists`;
 }
 
-export function buildInitialAliasDraft(project: ProjectRowViewModel | null): string {
+export function buildInitialAliasDraft(
+  project: ProjectRowViewModel | null,
+): string {
   if (project === null) {
     return "";
   }
@@ -64,7 +71,9 @@ export function buildInitialAliasDraft(project: ProjectRowViewModel | null): str
   return project.projectAlias ?? project.suggestedAlias;
 }
 
-export function buildInitialAliases(project: ProjectRowViewModel | null): readonly AliasDraft[] {
+export function buildInitialAliases(
+  project: ProjectRowViewModel | null,
+): readonly AliasDraft[] {
   if (project === null) {
     return [];
   }
@@ -73,7 +82,7 @@ export function buildInitialAliases(project: ProjectRowViewModel | null): readon
     address,
     isPrimary:
       project.primaryEmail !== null &&
-      project.primaryEmail.toLowerCase() === address.toLowerCase()
+      project.primaryEmail.toLowerCase() === address.toLowerCase(),
   }));
 }
 
@@ -84,7 +93,7 @@ export function buildProjectEmailPreview(aliasDraft: string): string {
 
 export function buildSuggestedAliasAddresses(
   aliasDraft: string,
-  aliases: readonly AliasDraft[]
+  aliases: readonly AliasDraft[],
 ): readonly string[] {
   const slug = slugifyProjectAlias(aliasDraft);
   if (slug.length === 0) {
@@ -92,22 +101,21 @@ export function buildSuggestedAliasAddresses(
   }
 
   const existing = new Set(
-    aliases.map((alias) => alias.address.trim().toLowerCase())
+    aliases.map((alias) => alias.address.trim().toLowerCase()),
   );
 
   return [
     `${slug}@${PROJECT_EMAIL_DOMAIN}`,
-    `${slug.replace(/-/g, "")}@${PROJECT_EMAIL_DOMAIN}`
+    `${slug.replace(/-/g, "")}@${PROJECT_EMAIL_DOMAIN}`,
   ].filter((address, index, values) => {
     return (
-      values.indexOf(address) === index &&
-      !existing.has(address.toLowerCase())
+      values.indexOf(address) === index && !existing.has(address.toLowerCase())
     );
   });
 }
 
 export function getPrimaryAlias(
-  aliases: readonly AliasDraft[]
+  aliases: readonly AliasDraft[],
 ): AliasDraft | null {
   return aliases.find((alias) => alias.isPrimary) ?? null;
 }
@@ -128,7 +136,7 @@ export function getStepThreeValid(signatureDraft: string): boolean {
 }
 
 export function getAliasValidationError(
-  aliases: readonly AliasDraft[]
+  aliases: readonly AliasDraft[],
 ): string | null {
   if (aliases.length === 0) {
     return "Add at least one inbox alias.";
@@ -145,7 +153,9 @@ export function getAliasValidationError(
   return null;
 }
 
-export function getSignatureValidationError(signatureDraft: string): string | null {
+export function getSignatureValidationError(
+  signatureDraft: string,
+): string | null {
   const normalizedSignature = normalizeProjectAliasSignature(signatureDraft);
   if (normalizedSignature.trim().length < 4) {
     return "Signature must be at least 4 characters.";
@@ -163,7 +173,7 @@ export function isBasicEmailAddress(value: string): boolean {
  * count "real" entered sources without manually filtering each time.
  */
 export function listEnteredDrafts(
-  drafts: readonly { readonly url: string; readonly label: string }[]
+  drafts: readonly { readonly url: string; readonly label: string }[],
 ): readonly { readonly url: string; readonly label: string }[] {
   return drafts.filter((draft) => draft.url.trim().length > 0);
 }
@@ -174,7 +184,7 @@ export function listEnteredDrafts(
  * placeholders, not errors.
  */
 export function getDraftLineErrors(
-  drafts: readonly { readonly url: string; readonly label: string }[]
+  drafts: readonly { readonly url: string; readonly label: string }[],
 ): Readonly<Record<number, string>> {
   const errors: Record<number, string> = {};
 

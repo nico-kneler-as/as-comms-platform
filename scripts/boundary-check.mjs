@@ -15,10 +15,11 @@ const workspaceRules = {
       "@as-comms/domain/phone",
       "@as-comms/domain/html-import",
       "@as-comms/domain/sms-segments",
+      "@as-comms/domain/automated-email-merge",
       "@as-comms/domain/signature-template",
       "@as-comms/db/parse-source-url",
-      "@as-comms/ui"
-    ])
+      "@as-comms/ui",
+    ]),
   },
   "apps/gmail-capture": {
     // gmail-capture is a separate Railway deployable that owns local
@@ -29,8 +30,8 @@ const workspaceRules = {
       "@as-comms/contracts",
       "@as-comms/integrations",
       "@as-comms/db",
-      "@as-comms/db/test-helpers"
-    ])
+      "@as-comms/db/test-helpers",
+    ]),
   },
   "apps/sms-capture": {
     allowedWorkspaceImports: new Set([
@@ -39,25 +40,25 @@ const workspaceRules = {
       "@as-comms/db",
       "@as-comms/db/test-helpers",
       "@as-comms/domain",
-      "@as-comms/domain/phone"
-    ])
+      "@as-comms/domain/phone",
+    ]),
   },
   "apps/salesforce-capture": {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
-      "@as-comms/integrations"
-    ])
+      "@as-comms/integrations",
+    ]),
   },
   "apps/worker": {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
       "@as-comms/domain",
       "@as-comms/integrations",
-      "@as-comms/db"
-    ])
+      "@as-comms/db",
+    ]),
   },
   "packages/contracts": {
-    allowedWorkspaceImports: new Set()
+    allowedWorkspaceImports: new Set(),
   },
   "packages/db": {
     // db consumes contracts (table types) and domain (record shapes
@@ -66,11 +67,11 @@ const workspaceRules = {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
       "@as-comms/domain",
-      "@as-comms/domain/phone"
-    ])
+      "@as-comms/domain/phone",
+    ]),
   },
   "packages/domain": {
-    allowedWorkspaceImports: new Set(["@as-comms/contracts"])
+    allowedWorkspaceImports: new Set(["@as-comms/contracts"]),
   },
   "packages/integrations": {
     // integrations consumes contracts (provider record schemas) and
@@ -79,12 +80,12 @@ const workspaceRules = {
     allowedWorkspaceImports: new Set([
       "@as-comms/contracts",
       "@as-comms/domain",
-      "@as-comms/domain/phone"
-    ])
+      "@as-comms/domain/phone",
+    ]),
   },
   "packages/ui": {
-    allowedWorkspaceImports: new Set()
-  }
+    allowedWorkspaceImports: new Set(),
+  },
 };
 
 function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
@@ -146,7 +147,10 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   if (
     (relativeFile === "apps/web/src/server/composer/gmail-send.ts" ||
       relativeFile === "apps/web/src/server/composer/twilio-send.ts" ||
-      relativeFile === "apps/web/src/server/broadcasts/object-store-runtime.ts") &&
+      relativeFile ===
+        "apps/web/src/server/broadcasts/object-store-runtime.ts" ||
+      relativeFile ===
+        "apps/web/src/server/automated-email/postmark-test-send.ts") &&
     specifier === "@as-comms/integrations"
   ) {
     // Composition roots for provider-backed server sends/uploads. They read
@@ -169,7 +173,8 @@ function isAllowedWorkspaceImport(scope, relativeFile, specifier) {
   if (
     (relativeFile === "apps/web/src/server/composer/drafts.ts" ||
       relativeFile === "apps/web/app/inbox/_lib/composer-draft-storage.ts" ||
-      relativeFile === "apps/web/app/inbox/_hooks/use-composer-draft-state.ts") &&
+      relativeFile ===
+        "apps/web/app/inbox/_hooks/use-composer-draft-state.ts") &&
     specifier === "@as-comms/db"
   ) {
     // PRD #553 Brick B:
@@ -308,8 +313,8 @@ async function main() {
         const resolved = path.normalize(
           path.relative(
             repoRoot,
-            path.resolve(path.dirname(file), specifier.replace(/\.js$/, ""))
-          )
+            path.resolve(path.dirname(file), specifier.replace(/\.js$/, "")),
+          ),
         );
         const resolvedWorkspaceRoot = findWorkspaceRoot(resolved);
 
@@ -322,8 +327,8 @@ async function main() {
             formatViolation(
               relativeFile,
               specifier,
-              "cross-package relative imports are not allowed"
-            )
+              "cross-package relative imports are not allowed",
+            ),
           );
         }
 
@@ -339,8 +344,8 @@ async function main() {
           formatViolation(
             relativeFile,
             specifier,
-            `workspace import is outside the allowed ${scope} boundary`
-          )
+            `workspace import is outside the allowed ${scope} boundary`,
+          ),
         );
       }
     }

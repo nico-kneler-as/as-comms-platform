@@ -147,6 +147,24 @@ export async function updateDraft(
   return row === undefined ? { conflict: true } : mapTemplate(row);
 }
 
+export async function renameTemplate(
+  db: AutomatedEmailTemplatesDatabase,
+  id: string,
+  name: string,
+): Promise<AutomatedEmailTemplateRecord> {
+  const [row] = await db
+    .update(automatedEmailTemplates)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(automatedEmailTemplates.id, id))
+    .returning();
+
+  if (row === undefined) {
+    throw new Error(`Automated email template ${id} was not found.`);
+  }
+
+  return mapTemplate(row);
+}
+
 export async function publishTemplate(
   db: AutomatedEmailTemplatesDatabase,
   id: string,

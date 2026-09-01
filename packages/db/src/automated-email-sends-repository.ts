@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, max, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lt, max, or } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
@@ -52,6 +52,10 @@ export interface ListAutomatedEmailSendsResult {
   readonly items: readonly AutomatedEmailSendRecord[];
   readonly nextCursor: string | null;
 }
+
+export type AutomatedEmailSendStatusCounts = Readonly<
+  Record<AutomatedEmailSendStatus, number>
+>;
 
 function encodeCursor(key: AutomatedEmailSendCursorKey): string {
   return Buffer.from(JSON.stringify(key), "utf8").toString("base64url");
@@ -261,4 +265,36 @@ export async function getLastReceivedAtByTemplateIds(
   }
 
   return receivedAtByTemplateId;
+}
+
+/**
+ * Compact status summary for the template editor. The full send-log reader is
+ * intentionally separate so the next UI brick can replace its content without
+ * changing the editor shell's data contract.
+ */
+export async function getSendStatusCountsByTemplateId(
+  db: AutomatedEmailSendsDatabase,
+  templateId: string,
+): Promise<AutomatedEmailSendStatusCounts> {
+  const counts: Record<AutomatedEmailSendStatus, number> = {
+    received: 0,
+    sent: 0,
+    duplicate: 0,
+    held: 0,
+    failed: 0,
+  };
+  const rows = await db
+    .select({
+      status: automatedEmailSends.status,
+      count: count(),
+    })
+    .from(automatedEmailSends)
+    .where(eq(automatedEmailSends.templateId, templateId))
+    .groupBy(automatedEmailSends.status);
+
+  for (const row of rows) {
+    counts[row.status] = row.count;
+  }
+
+  return counts;
 }

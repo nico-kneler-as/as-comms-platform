@@ -1,13 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
-import {
-  automatedEmailSends,
-  automatedEmailTemplates,
-} from "../src/index.js";
+import { automatedEmailSends, automatedEmailTemplates } from "../src/index.js";
 import {
   findRecentSendForDedupe,
   getLastReceivedAtByTemplateIds,
+  getSendStatusCountsByTemplateId,
   listSendsByTemplate,
   createSendLogRow,
   updateSendStatus,
@@ -18,6 +16,7 @@ import {
   getTemplateById,
   listTemplatesByProject,
   publishTemplate,
+  renameTemplate,
   updateDraft,
 } from "../src/automated-email-templates-repository.js";
 import { createTestStage1Context, type TestStage1Context } from "./helpers.js";
@@ -108,8 +107,9 @@ describe("automated email repositories", () => {
       id: newer.id,
       name: "Newer",
     });
-    await expect(listTemplatesByProject(context.db, "project:one")).resolves
-      .toMatchObject([{ id: newer.id }, { id: older.id }]);
+    await expect(
+      listTemplatesByProject(context.db, "project:one"),
+    ).resolves.toMatchObject([{ id: newer.id }, { id: older.id }]);
   });
 
   it("guards draft updates and reports a stale baseline without clobbering the draft", async () => {
@@ -137,9 +137,33 @@ describe("automated email repositories", () => {
       baselineUpdatedAt: baseline.toISOString(),
     });
     expect(stale).toEqual({ conflict: true });
-    await expect(getTemplateById(context.db, created.id)).resolves.toMatchObject({
+    await expect(
+      getTemplateById(context.db, created.id),
+    ).resolves.toMatchObject({
       draftSubject: "Thank you",
       draftDoc: { body: "first draft" },
+    });
+  });
+
+  it("renames a template without changing its draft snapshot", async () => {
+    const created = await createTemplate(context.db, {
+      projectId: "project:one",
+      name: "Application received",
+      draftSubject: "Thank you",
+      draftDoc: { type: "doc", content: [] },
+      createdBy: "user:one",
+    });
+
+    const renamed = await renameTemplate(
+      context.db,
+      created.id,
+      "Application received — v2",
+    );
+
+    expect(renamed).toMatchObject({
+      name: "Application received — v2",
+      draftSubject: "Thank you",
+      draftDoc: { type: "doc", content: [] },
     });
   });
 
@@ -167,7 +191,11 @@ describe("automated email repositories", () => {
       createdBy: "user:two",
     });
 
-    const firstPublished = await publishTemplate(context.db, first.id, "user:one");
+    const firstPublished = await publishTemplate(
+      context.db,
+      first.id,
+      "user:one",
+    );
     expect(firstPublished).toMatchObject({
       publishedSubject: "First published",
       publishedDoc: { revision: 1 },
@@ -198,14 +226,17 @@ describe("automated email repositories", () => {
       .set({ publishedAt: new Date("2026-08-01T16:00:00.000Z") })
       .where(eq(automatedEmailTemplates.id, second.id));
 
-    await expect(findLatestPublishedByKind(context.db, "accepted")).resolves
-      .toMatchObject({ id: second.id });
+    await expect(
+      findLatestPublishedByKind(context.db, "accepted"),
+    ).resolves.toMatchObject({ id: second.id });
     await expect(
       findLatestPublishedByKind(context.db, "accepted", {
         excludeProjectId: "project:two",
       }),
     ).resolves.toMatchObject({ id: first.id });
-    await expect(getTemplateById(context.db, unpublished.id)).resolves.toMatchObject({
+    await expect(
+      getTemplateById(context.db, unpublished.id),
+    ).resolves.toMatchObject({
       publishedAt: null,
     });
   });
@@ -301,7 +332,10 @@ describe("automated email repositories", () => {
       templateId: template.id,
       limit: 2,
     });
-    expect(firstPage.items.map((row) => row.id)).toEqual([duplicate.id, sent.id]);
+    expect(firstPage.items.map((row) => row.id)).toEqual([
+      duplicate.id,
+      sent.id,
+    ]);
     expect(firstPage.nextCursor).not.toBeNull();
     const secondPage = await listSendsByTemplate(context.db, {
       templateId: template.id,
@@ -354,5 +388,47 @@ describe("automated email repositories", () => {
       "2026-08-01T18:00:00.000Z",
     );
     expect(receivedAtByTemplateId.get(withoutSends.id)).toBeNull();
+  });
+
+  it("returns every send status count for a template", async () => {
+    const template = await createTemplate(context.db, {
+      projectId: "project:one",
+      name: "Status counts",
+      createdBy: "user:one",
+    });
+    const received = await createSendLogRow(context.db, {
+      templateId: template.id,
+      projectId: template.projectId,
+      expeditionMemberId: "a0B000000000011",
+      contactId: null,
+      payload: {},
+    });
+    const sent = await createSendLogRow(context.db, {
+      templateId: template.id,
+      projectId: template.projectId,
+      expeditionMemberId: "a0B000000000012",
+      contactId: null,
+      payload: {},
+    });
+    const held = await createSendLogRow(context.db, {
+      templateId: template.id,
+      projectId: template.projectId,
+      expeditionMemberId: "a0B000000000013",
+      contactId: null,
+      payload: {},
+    });
+    await updateSendStatus(context.db, sent.id, { status: "sent" });
+    await updateSendStatus(context.db, held.id, { status: "held" });
+
+    await expect(
+      getSendStatusCountsByTemplateId(context.db, template.id),
+    ).resolves.toEqual({
+      received: 1,
+      sent: 1,
+      duplicate: 0,
+      held: 1,
+      failed: 0,
+    });
+    expect(received.status).toBe("received");
   });
 });

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/link", () => ({
   default: ({
     children,
-    href
+    href,
   }: {
     readonly children: unknown;
     readonly href?: string;
@@ -13,8 +13,8 @@ vi.mock("next/link", () => ({
     createElement(
       "a",
       { href: typeof href === "string" ? href : undefined },
-      children as never
-    )
+      children as never,
+    ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -24,8 +24,8 @@ vi.mock("next/navigation", () => ({
     replace: vi.fn(),
     back: vi.fn(),
     forward: vi.fn(),
-    prefetch: vi.fn()
-  })
+    prefetch: vi.fn(),
+  }),
 }));
 
 vi.mock("lucide-react", () => ({
@@ -54,16 +54,16 @@ vi.mock("lucide-react", () => ({
   Sparkles: () => null,
   Trash2: () => null,
   UserPlus: () => null,
-  X: () => null
+  X: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children }: { readonly children: unknown }) => children as never
+  Button: ({ children }: { readonly children: unknown }) => children as never,
 }));
 
 vi.mock("@/components/ui/input", () => ({
   Input: ({ value }: { readonly value?: string }) =>
-    createElement("input", { defaultValue: value })
+    createElement("input", { defaultValue: value }),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -79,16 +79,16 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: ({ children }: { readonly children: unknown }) =>
     children as never,
   DialogTrigger: ({ children }: { readonly children: unknown }) =>
-    children as never
+    children as never,
 }));
 
 vi.mock("@/components/ui/status-badge", () => ({
-  StatusBadge: ({ label }: { readonly label: string }) => label
+  StatusBadge: ({ label }: { readonly label: string }) => label,
 }));
 
 vi.mock("../../app/settings/_components/project-ai-knowledge-section", () => ({
   ProjectAiKnowledgeSection: () =>
-    createElement("section", null, "AI Knowledge section")
+    createElement("section", null, "AI Knowledge section"),
 }));
 
 vi.mock("../../app/settings/actions", () => ({
@@ -106,14 +106,14 @@ vi.mock("../../app/settings/actions", () => ({
   updateProjectAliasSignatureAction: vi.fn(),
   updateAiKnowledgeSourceAction: vi.fn(),
   updateProjectEmailsAction: vi.fn(),
-  updateOperatingContextAction: vi.fn()
+  updateOperatingContextAction: vi.fn(),
 }));
 
 import { ProjectDetail } from "../../app/settings/_components/project-detail";
 import type { ProjectSettingsDetailViewModel } from "../../src/server/settings/selectors";
 
 function makeProject(
-  overrides: Partial<ProjectSettingsDetailViewModel> = {}
+  overrides: Partial<ProjectSettingsDetailViewModel> = {},
 ): ProjectSettingsDetailViewModel {
   const base: ProjectSettingsDetailViewModel = {
     projectId: "host:forests",
@@ -139,18 +139,22 @@ function makeProject(
     memberCount: 5,
     activationRequirementsMet: true,
     isAdmin: true,
+    automatedEmailSummary: {
+      templateCount: 0,
+      activeCount: 0,
+    },
     emails: [
       {
         id: "alias:forests",
         address: "forests@adventurescientists.org",
         isPrimary: true,
-        signature: "Warmly,\nForests Team\nAdventure Scientists"
-      }
+        signature: "Warmly,\nForests Team\nAdventure Scientists",
+      },
     ],
     salesforceProjectId: "host:forests",
     connectedProjects: [],
     connectedToHost: null,
-    availableConnectionCandidates: []
+    availableConnectionCandidates: [],
   };
 
   return { ...base, ...overrides };
@@ -163,10 +167,10 @@ describe("ProjectDetail — host with connected sub-projects", () => {
         project: makeProject({
           connectedProjects: [
             { projectId: "sub:beech", projectName: "Beech" },
-            { projectId: "sub:butternut", projectName: "Butternut" }
-          ]
-        })
-      })
+            { projectId: "sub:butternut", projectName: "Butternut" },
+          ],
+        }),
+      }),
     );
 
     expect(html).toContain("Connected projects");
@@ -182,9 +186,9 @@ describe("ProjectDetail — host with connected sub-projects", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectDetail, {
         project: makeProject({
-          connectedProjects: []
-        })
-      })
+          connectedProjects: [],
+        }),
+      }),
     );
 
     expect(html).toContain("No connected projects.");
@@ -205,10 +209,10 @@ describe("ProjectDetail — connected sub-project", () => {
             projectId: "host:forests",
             projectName: "Forests",
             projectAlias: "Forests",
-            aiKnowledgeUrl: null
-          }
-        })
-      })
+            aiKnowledgeUrl: null,
+          },
+        }),
+      }),
     );
 
     expect(html).toContain("Connected to Forests");
@@ -227,10 +231,10 @@ describe("ProjectDetail — connected sub-project", () => {
             projectId: "host:forests",
             projectName: "Forests",
             projectAlias: "Forests",
-            aiKnowledgeUrl: "https://www.notion.so/forests"
-          }
-        })
-      })
+            aiKnowledgeUrl: "https://www.notion.so/forests",
+          },
+        }),
+      }),
     );
 
     // Alias section now reads "Inherited from Forests" instead of an editable
@@ -252,10 +256,10 @@ describe("ProjectDetail — connected sub-project", () => {
             projectId: "host:forests",
             projectName: "Forests",
             projectAlias: "Forests",
-            aiKnowledgeUrl: null
-          }
-        })
-      })
+            aiKnowledgeUrl: null,
+          },
+        }),
+      }),
     );
 
     expect(html).toContain("Disconnect from Forests");
@@ -269,10 +273,10 @@ describe("ProjectDetail — cascade-deactivation dialog", () => {
         project: makeProject({
           connectedProjects: [
             { projectId: "sub:beech", projectName: "Beech" },
-            { projectId: "sub:butternut", projectName: "Butternut" }
-          ]
-        })
-      })
+            { projectId: "sub:butternut", projectName: "Butternut" },
+          ],
+        }),
+      }),
     );
 
     // The dialog body lists each cascading sub-project by name.
@@ -287,14 +291,12 @@ describe("ProjectDetail — cascade-deactivation dialog", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectDetail, {
         project: makeProject({
-          connectedProjects: []
-        })
-      })
+          connectedProjects: [],
+        }),
+      }),
     );
 
-    expect(html).toContain(
-      "This will hide the project from the active list."
-    );
+    expect(html).toContain("This will hide the project from the active list.");
     expect(html).not.toContain("connected sub-project");
   });
 });

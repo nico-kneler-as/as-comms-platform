@@ -74,7 +74,10 @@ function readNodeChildren(node: TipTapNode): readonly unknown[] {
 
 function readMergeValue(values: Record<string, string>, key: string): string {
   const value = values[key];
-  if (!Object.prototype.hasOwnProperty.call(values, key) || value === undefined) {
+  if (
+    !Object.prototype.hasOwnProperty.call(values, key) ||
+    value === undefined
+  ) {
     throw new AutomatedEmailRenderError("missing_value", key);
   }
 
@@ -91,7 +94,10 @@ function renderSubject(
 
   return subjectTemplate.replace(tokenPattern, (_match, key: string) => {
     const value = values[key];
-    if (!Object.prototype.hasOwnProperty.call(values, key) || value === undefined) {
+    if (
+      !Object.prototype.hasOwnProperty.call(values, key) ||
+      value === undefined
+    ) {
       throw new AutomatedEmailRenderError("unknown_token", key);
     }
 
@@ -120,9 +126,7 @@ function readSafeLinkHref(mark: Record<string, unknown>): string {
   return href;
 }
 
-function renderTextNode(
-  node: TipTapNode,
-): RenderedNode {
+function renderTextNode(node: TipTapNode): RenderedNode {
   if (typeof node.text !== "string") {
     throw new AutomatedEmailRenderError("unsupported_node", "text");
   }
@@ -138,7 +142,8 @@ function renderTextNode(
       throw new AutomatedEmailRenderError("unsupported_mark", "(missing type)");
     }
 
-    const markType = typeof rawMark.type === "string" ? rawMark.type : "(missing type)";
+    const markType =
+      typeof rawMark.type === "string" ? rawMark.type : "(missing type)";
     switch (markType) {
       case "bold":
         html = `<strong style="font-weight:700;">${html}</strong>`;
@@ -164,14 +169,20 @@ function renderInlineChildren(
   node: TipTapNode,
   values: Record<string, string>,
 ): RenderedNode {
-  const rendered = readNodeChildren(node).map((child) => renderNode(child, values));
+  const rendered = readNodeChildren(node).map((child) =>
+    renderNode(child, values),
+  );
   return {
     html: rendered.map((child) => child.html).join(""),
     text: rendered.map((child) => child.text).join(""),
   };
 }
 
-function prefixListItem(text: string, prefix: string, indentation: string): string {
+function prefixListItem(
+  text: string,
+  prefix: string,
+  indentation: string,
+): string {
   const continuation = `${indentation}${" ".repeat(prefix.length)}`;
   return text
     .split("\n")
@@ -196,14 +207,20 @@ function renderList(
 
     const itemChildren = readNodeChildren(rawItem);
     const contentChildren = itemChildren.filter(
-      (child) => !isRecord(child) || (readNodeType(child) !== "bulletList" && readNodeType(child) !== "orderedList"),
+      (child) =>
+        !isRecord(child) ||
+        (readNodeType(child) !== "bulletList" &&
+          readNodeType(child) !== "orderedList"),
     );
     const nestedLists = itemChildren.filter(
       (child): child is TipTapNode =>
         isRecord(child) &&
-        (readNodeType(child) === "bulletList" || readNodeType(child) === "orderedList"),
+        (readNodeType(child) === "bulletList" ||
+          readNodeType(child) === "orderedList"),
     );
-    const renderedContent = contentChildren.map((child) => renderNode(child, values));
+    const renderedContent = contentChildren.map((child) =>
+      renderNode(child, values),
+    );
     const renderedNested = nestedLists.map((child) =>
       renderList(
         child,
@@ -223,7 +240,10 @@ function renderList(
 
     return {
       html: `<li style="margin:0 0 8px;">${itemHtml}</li>`,
-      text: nestedText.length === 0 ? listItemText : `${listItemText}\n${nestedText}`,
+      text:
+        nestedText.length === 0
+          ? listItemText
+          : `${listItemText}\n${nestedText}`,
     };
   });
   const tag = ordered ? "ol" : "ul";
@@ -234,7 +254,10 @@ function renderList(
   };
 }
 
-function renderNode(rawNode: unknown, values: Record<string, string>): RenderedNode {
+function renderNode(
+  rawNode: unknown,
+  values: Record<string, string>,
+): RenderedNode {
   if (!isRecord(rawNode)) {
     throw new AutomatedEmailRenderError("unsupported_node", "(missing type)");
   }
@@ -243,7 +266,9 @@ function renderNode(rawNode: unknown, values: Record<string, string>): RenderedN
   const type = readNodeType(node);
   switch (type) {
     case "doc": {
-      const children = readNodeChildren(node).map((child) => renderNode(child, values));
+      const children = readNodeChildren(node).map((child) =>
+        renderNode(child, values),
+      );
       return {
         html: children.map((child) => child.html).join(""),
         text: children.map((child) => child.text).join("\n\n"),
@@ -254,6 +279,16 @@ function renderNode(rawNode: unknown, values: Record<string, string>): RenderedN
       return {
         html: `<p style="margin:0 0 16px;">${content.html}</p>`,
         text: content.text,
+      };
+    }
+    case "blockquote": {
+      const content = renderInlineChildren(node, values);
+      return {
+        html: `<blockquote style="margin:0 0 16px;padding:0 0 0 16px;border-left:3px solid #DDE1DA;color:#5F625E;">${content.html}</blockquote>`,
+        text: content.text
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n"),
       };
     }
     case "text":
@@ -304,7 +339,7 @@ function renderTransactionalFrame(input: {
     '<tr><td style="height:4px;background-color:#213515;font-size:0;line-height:0;">&nbsp;</td></tr>',
     `<tr><td style="padding:28px 32px 18px;border-bottom:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"><div style="font-size:13px;font-weight:600;letter-spacing:3px;color:#20211F;">ADVENTURE&nbsp;SCIENTISTS</div><div style="padding-top:4px;font-size:11px;letter-spacing:1.5px;color:#939393;">${projectDisplay}</div></td></tr>`,
     `<tr><td style="padding:26px 32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:16px;line-height:1.55;color:#20211F;">${input.bodyHtml}</td></tr>`,
-    '<tr><td style="padding:18px 32px 32px;border-top:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;font-size:12px;line-height:1.5;color:#939393;">',
+    "<tr><td style=\"padding:18px 32px 32px;border-top:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:12px;line-height:1.5;color:#939393;\">",
     `<div>Adventure Scientists</div><div>${escapeHtml(input.frame.reasonLine)}</div>`,
     "</td></tr></table></td></tr></table>",
   ].join("");

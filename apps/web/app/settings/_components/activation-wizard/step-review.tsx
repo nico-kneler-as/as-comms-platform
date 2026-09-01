@@ -1,14 +1,16 @@
 import type { ReactNode } from "react";
 import { Check, Mail } from "lucide-react";
+import type { AutomatedEmailKind } from "@as-comms/contracts";
 
 import { StatusBadge } from "@/components/ui/status-badge";
+import { AUTOMATED_EMAIL_KIND_DEFINITIONS } from "@/src/lib/automated-email-kinds";
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
 
 import {
   type AliasDraft,
   getPrimaryAlias,
   listEnteredDrafts,
-  truncateSignatureSummary
+  truncateSignatureSummary,
 } from "./shared";
 import type { KnowledgeSourceDraft } from "./state";
 
@@ -21,7 +23,9 @@ export function StepReview({
   signatureDraft,
   connectedProjectIds,
   connectedProjectCandidates,
-  activationError
+  automatedEmailKinds,
+  includeCustomAutomatedEmail,
+  activationError,
 }: {
   readonly selectedProject: ProjectRowViewModel | null;
   readonly aliasDraft: string;
@@ -31,6 +35,11 @@ export function StepReview({
   readonly signatureDraft: string;
   readonly connectedProjectIds: readonly string[];
   readonly connectedProjectCandidates: readonly ProjectRowViewModel[];
+  readonly automatedEmailKinds: readonly Exclude<
+    AutomatedEmailKind,
+    "custom"
+  >[];
+  readonly includeCustomAutomatedEmail: boolean;
   readonly activationError: string | null;
 }) {
   const primaryAlias = getPrimaryAlias(aliases);
@@ -41,8 +50,15 @@ export function StepReview({
   }
 
   const selectedConnectedProjects = connectedProjectCandidates.filter(
-    (candidate) => connectedProjectIds.includes(candidate.projectId)
+    (candidate) => connectedProjectIds.includes(candidate.projectId),
   );
+  const automatedEmailLabels: string[] =
+    AUTOMATED_EMAIL_KIND_DEFINITIONS.filter((definition) =>
+      automatedEmailKinds.includes(definition.kind),
+    ).map((definition) => definition.label);
+  if (includeCustomAutomatedEmail) {
+    automatedEmailLabels.push("Custom");
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -55,6 +71,16 @@ export function StepReview({
         <ReviewRow
           label="Inbox aliases"
           value={`${String(aliases.length)} (primary: ${primaryAlias?.address ?? "none"})`}
+        />
+        <ReviewRow
+          label="Automated emails"
+          value={
+            automatedEmailLabels.length === 0 ? (
+              <span className="text-slate-500">None for now</span>
+            ) : (
+              <span>{automatedEmailLabels.join(", ")}</span>
+            )
+          }
         />
         <ReviewRow
           label="AI knowledge"
@@ -105,15 +131,24 @@ export function StepReview({
         <p className="font-medium text-slate-900">What happens on activate</p>
         <ul className="mt-2 space-y-1.5">
           <li className="flex gap-2">
-            <Check className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
+            <Check
+              className="mt-0.5 size-3 text-emerald-600"
+              aria-hidden="true"
+            />
             Project becomes active and starts routing inbound mail.
           </li>
           <li className="flex gap-2">
-            <Mail className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
+            <Mail
+              className="mt-0.5 size-3 text-emerald-600"
+              aria-hidden="true"
+            />
             All inbox aliases route to this project.
           </li>
           <li className="flex gap-2">
-            <Check className="mt-0.5 size-3 text-emerald-600" aria-hidden="true" />
+            <Check
+              className="mt-0.5 size-3 text-emerald-600"
+              aria-hidden="true"
+            />
             AI Knowledge can be managed later from the project detail page.
           </li>
         </ul>
@@ -131,7 +166,7 @@ export function StepReview({
 function ReviewRow({
   label,
   value,
-  isLast = false
+  isLast = false,
 }: {
   readonly label: string;
   readonly value: ReactNode;
@@ -145,7 +180,9 @@ function ReviewRow({
           : "grid gap-2 border-b border-slate-100 px-4 py-3 md:grid-cols-[160px_minmax(0,1fr)]"
       }
     >
-      <p className="text-[11px] font-semibold uppercase text-slate-500">{label}</p>
+      <p className="text-[11px] font-semibold uppercase text-slate-500">
+        {label}
+      </p>
       <div className="min-w-0 text-[12.5px] text-slate-800">{value}</div>
     </div>
   );

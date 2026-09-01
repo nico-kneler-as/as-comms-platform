@@ -9,12 +9,13 @@ interface SidebarChecklistState {
   readonly 1: boolean;
   readonly 2: boolean;
   readonly 3: boolean;
+  readonly 4: boolean;
 }
 
 export function SidebarChecklist({
   currentStep,
   stepValid,
-  activated
+  activated,
 }: {
   readonly currentStep: number;
   readonly stepValid: SidebarChecklistState;
@@ -32,8 +33,11 @@ export function SidebarChecklist({
               Activate project
             </p>
             <p className="text-[11.5px] text-slate-500">
-              Step {String(Math.min(currentStep + 1, ACTIVATION_WIZARD_STEPS.length))} of{" "}
-              {String(ACTIVATION_WIZARD_STEPS.length)}
+              Step{" "}
+              {String(
+                Math.min(currentStep + 1, ACTIVATION_WIZARD_STEPS.length),
+              )}{" "}
+              of {String(ACTIVATION_WIZARD_STEPS.length)}
             </p>
           </div>
         </div>
@@ -56,7 +60,7 @@ export function SidebarChecklist({
                 <span
                   className={cn(
                     "absolute left-[21px] top-8 h-[calc(100%-14px)] w-px",
-                    lineDone ? "bg-emerald-300" : "bg-slate-200"
+                    lineDone ? "bg-emerald-300" : "bg-slate-200",
                   )}
                   aria-hidden="true"
                 />
@@ -67,7 +71,7 @@ export function SidebarChecklist({
                   "relative z-10 flex items-start gap-3 rounded-xl px-3 py-3",
                   state === "current"
                     ? "bg-white shadow-sm ring-1 ring-slate-200"
-                    : ""
+                    : "",
                 )}
               >
                 <span
@@ -77,7 +81,7 @@ export function SidebarChecklist({
                       ? "bg-emerald-500 text-white"
                       : state === "current"
                         ? "bg-[#253746] text-white"
-                        : "bg-white text-slate-400 ring-1 ring-slate-200"
+                        : "bg-white text-slate-400 ring-1 ring-slate-200",
                   )}
                 >
                   {state === "done" ? (
@@ -92,7 +96,7 @@ export function SidebarChecklist({
                       "text-[12.5px]",
                       state === "upcoming"
                         ? "text-slate-500"
-                        : "font-medium text-slate-900"
+                        : "font-medium text-slate-900",
                     )}
                   >
                     {step.title}
@@ -116,7 +120,8 @@ export function SidebarChecklist({
           <ChecklistRow label="Alias set" ok={stepValid[0]} />
           <ChecklistRow label="Primary inbox alias" ok={stepValid[1]} />
           <ChecklistRow label="Email signature" ok={stepValid[2]} />
-          <ChecklistRow label="Notion knowledge synced" ok={stepValid[3]} />
+          <ChecklistRow label="Automated email shells" ok={stepValid[3]} />
+          <ChecklistRow label="Notion knowledge synced" ok={stepValid[4]} />
         </ul>
       </div>
     </aside>
@@ -125,7 +130,7 @@ export function SidebarChecklist({
 
 function ChecklistRow({
   label,
-  ok
+  ok,
 }: {
   readonly label: string;
   readonly ok: boolean;

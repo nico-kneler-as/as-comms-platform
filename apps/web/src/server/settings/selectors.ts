@@ -7,7 +7,7 @@ import type {
   IntegrationHealthStatus,
   OrgSenderRecord,
   PostmarkSenderStatus,
-  Provider
+  Provider,
 } from "@as-comms/contracts";
 import { inputHashFromSources } from "@as-comms/db";
 
@@ -79,6 +79,10 @@ export interface ProjectsSettingsViewModel {
 
 export interface ProjectSettingsDetailViewModel extends ProjectRowViewModel {
   readonly isAdmin: boolean;
+  readonly automatedEmailSummary: {
+    readonly templateCount: number;
+    readonly activeCount: number;
+  };
   readonly aiKnowledgeSources: readonly AiKnowledgeSource[];
   readonly aiOperatingContext: string;
   readonly aiAutoSyncSchedule: "never" | "daily" | "weekly";
@@ -142,15 +146,13 @@ export interface IntegrationHealthViewModel {
   readonly lastCheckedAt: string | null;
   readonly detail: string | null;
   readonly supportsRefresh: boolean;
-  readonly mailchimp:
-    | {
-        readonly status: "connected" | "stale" | "unconfigured";
-        readonly lastSuccessfulSyncAt: string | null;
-        readonly lastCampaignName: string | null;
-        readonly lastCampaignSentAt: string | null;
-        readonly lastBatchRecipientCount: number | null;
-      }
-    | null;
+  readonly mailchimp: {
+    readonly status: "connected" | "stale" | "unconfigured";
+    readonly lastSuccessfulSyncAt: string | null;
+    readonly lastCampaignName: string | null;
+    readonly lastCampaignSentAt: string | null;
+    readonly lastBatchRecipientCount: number | null;
+  } | null;
 }
 
 type MailchimpTileStatus = NonNullable<
@@ -180,8 +182,9 @@ export interface LogStreamDescriptorViewModel {
   readonly description: string;
 }
 
-export interface SourceEvidenceCollisionDetailViewModel
-  extends Readonly<Record<string, unknown>> {
+export interface SourceEvidenceCollisionDetailViewModel extends Readonly<
+  Record<string, unknown>
+> {
   readonly provider: Provider;
   readonly idempotencyKey: string;
   readonly winning: {
@@ -217,40 +220,40 @@ const INTEGRATION_ORDER = [
   "mailchimp",
   "postmark",
   "notion",
-  "openai"
+  "openai",
 ] as const;
 
 const INTEGRATION_META = {
   salesforce: {
     displayName: "Salesforce",
     description: "Contacts and project records",
-    supportsRefresh: true
+    supportsRefresh: true,
   },
   gmail: {
     displayName: "Gmail",
     description: "Inbound and outbound email",
-    supportsRefresh: true
+    supportsRefresh: true,
   },
   mailchimp: {
     displayName: "Mailchimp",
     description: "Transition-period campaign ingest",
-    supportsRefresh: false
+    supportsRefresh: false,
   },
   postmark: {
     displayName: "Postmark",
     description: "Campaign delivery and sender verification",
-    supportsRefresh: false
+    supportsRefresh: false,
   },
   notion: {
     displayName: "Notion",
     description: "Knowledge sync source",
-    supportsRefresh: false
+    supportsRefresh: false,
   },
   openai: {
     displayName: "Anthropic",
     description: "AI draft provider",
-    supportsRefresh: false
-  }
+    supportsRefresh: false,
+  },
 } as const satisfies Record<
   (typeof INTEGRATION_ORDER)[number],
   {
@@ -266,8 +269,8 @@ const LOG_STREAMS: readonly LogStreamDescriptorViewModel[] = [
   {
     id: DEFAULT_LOG_STREAM_ID,
     label: "Source-evidence duplicates",
-    description: "Provider replay collisions kept out of canonical history."
-  }
+    description: "Provider replay collisions kept out of canonical history.",
+  },
 ];
 const PROVIDER_LABEL: Record<Provider, string> = {
   manual: "Manual",
@@ -276,13 +279,13 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   twilio: "Twilio",
   simpletexting: "SimpleTexting",
   mailchimp: "Mailchimp",
-  postmark: "Postmark"
+  postmark: "Postmark",
 };
 const PROBE_STALENESS_THRESHOLD_MS = 30 * 60 * 1000;
 const PROBE_FRESHNESS_REQUIRED_SERVICES = new Set<string>([
   "salesforce",
   "gmail",
-  "postmark"
+  "postmark",
 ]);
 // Mailchimp is in transition-period scaling (D-046 Stage 5C, target mid-June 2026
 // decommission). Newsletter cadence is irregular, and multi-hour quiet periods are
@@ -314,7 +317,9 @@ function normalizeSqlResultRows(result: unknown): readonly unknown[] {
   return (result as { readonly rows?: readonly unknown[] }).rows ?? [];
 }
 
-function coerceIsoTimestamp(value: Date | string | null | undefined): string | null {
+function coerceIsoTimestamp(
+  value: Date | string | null | undefined,
+): string | null {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value.toISOString();
   }
@@ -332,7 +337,9 @@ function readMailchimpCaptureBaseUrl(): string | null {
   return baseUrl && baseUrl.length > 0 ? baseUrl : null;
 }
 
-function getTimestampMs(value: Date | string | null | undefined): number | null {
+function getTimestampMs(
+  value: Date | string | null | undefined,
+): number | null {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value.getTime();
   }
@@ -348,7 +355,7 @@ function getTimestampMs(value: Date | string | null | undefined): number | null 
 function isProbeStale(
   serviceName: string,
   lastCheckedAt: Date | string | null,
-  now: Date
+  now: Date,
 ): boolean {
   if (!PROBE_FRESHNESS_REQUIRED_SERVICES.has(serviceName)) {
     return false;
@@ -389,34 +396,41 @@ function getLatestSuccessfulMailchimpTransitionSync(
     readonly lastSuccessfulAt: string | null;
     readonly windowStart: string | null;
     readonly windowEnd: string | null;
-  }[]
+  }[],
 ) {
-  return syncStates
-    .filter(
-      (row) =>
-        row.scope === "provider" &&
-        row.provider === "mailchimp" &&
-        row.jobType === "live_ingest" &&
-        row.status === "succeeded"
-    )
-    .sort((left, right) => {
-      const leftTimestamp =
-        Date.parse(
-          left.lastSuccessfulAt ?? left.windowEnd ?? left.windowStart ?? "1970-01-01T00:00:00.000Z"
-        ) || 0;
-      const rightTimestamp =
-        Date.parse(
-          right.lastSuccessfulAt ??
-            right.windowEnd ??
-            right.windowStart ??
-            "1970-01-01T00:00:00.000Z"
-        ) || 0;
-      return rightTimestamp - leftTimestamp;
-    })
-    .at(0) ?? null;
+  return (
+    syncStates
+      .filter(
+        (row) =>
+          row.scope === "provider" &&
+          row.provider === "mailchimp" &&
+          row.jobType === "live_ingest" &&
+          row.status === "succeeded",
+      )
+      .sort((left, right) => {
+        const leftTimestamp =
+          Date.parse(
+            left.lastSuccessfulAt ??
+              left.windowEnd ??
+              left.windowStart ??
+              "1970-01-01T00:00:00.000Z",
+          ) || 0;
+        const rightTimestamp =
+          Date.parse(
+            right.lastSuccessfulAt ??
+              right.windowEnd ??
+              right.windowStart ??
+              "1970-01-01T00:00:00.000Z",
+          ) || 0;
+        return rightTimestamp - leftTimestamp;
+      })
+      .at(0) ?? null
+  );
 }
 
-async function readMailchimpSnapshot(runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>) {
+async function readMailchimpSnapshot(
+  runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
+) {
   if (runtime.connection === null) {
     return {
       latestActivityAt: null,
@@ -457,10 +471,12 @@ async function readMailchimpSnapshot(runtime: Awaited<ReturnType<typeof getStage
           order by cel.occurred_at desc, cel.created_at desc
           limit 1
         ) as "lastCampaignSentAt"
-    `
+    `,
   );
 
-  const [row] = normalizeSqlResultRows(snapshotResult) as readonly MailchimpSnapshotRow[];
+  const [row] = normalizeSqlResultRows(
+    snapshotResult,
+  ) as readonly MailchimpSnapshotRow[];
   return {
     latestActivityAt: coerceIsoTimestamp(row?.latestActivityAt ?? null),
     lastCampaignName: row?.lastCampaignName ?? null,
@@ -473,7 +489,7 @@ async function readMailchimpLastBatchRecipientCount(
   input: {
     readonly windowStart: string | null;
     readonly windowEnd: string | null;
-  }
+  },
 ): Promise<number | null> {
   if (
     runtime.connection === null ||
@@ -492,10 +508,12 @@ async function readMailchimpLastBatchRecipientCount(
       where sel.provider = 'mailchimp'
         and cel.occurred_at > ${input.windowStart}
         and cel.occurred_at <= ${input.windowEnd}
-    `
+    `,
   );
 
-  const [row] = normalizeSqlResultRows(countResult) as readonly MailchimpBatchCountRow[];
+  const [row] = normalizeSqlResultRows(
+    countResult,
+  ) as readonly MailchimpBatchCountRow[];
   if (row === undefined) {
     return 0;
   }
@@ -524,7 +542,7 @@ function parseBeforeTimestamp(value: string | null | undefined): Date | null {
 }
 
 function buildSourceEvidenceCollisionSummary(
-  detail: SourceEvidenceCollisionDetailViewModel
+  detail: SourceEvidenceCollisionDetailViewModel,
 ): string {
   const checksumCount = detail.losing.length + 1;
   return `${PROVIDER_LABEL[detail.provider]} • ${String(checksumCount)} payload versions for one idempotency key; canonical winner preserved`;
@@ -544,7 +562,7 @@ function deriveSuggestedAlias(projectName: string): string {
     : collapsedName;
   const withoutCommonPrefix = afterColon.replace(
     /^(WPEF|Searching For|Restoring)\s+/i,
-    ""
+    "",
   );
   const meaningfulWords = withoutCommonPrefix
     .split(" ")
@@ -601,8 +619,8 @@ function toProjectRowViewModel(input: {
     memberCount: input.memberCount,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: input.projectAlias,
-      emailCount: input.emails.length
-    })
+      emailCount: input.emails.length,
+    }),
   };
 }
 
@@ -621,9 +639,10 @@ async function readProjectsSettings(input: {
 
     return (
       project.projectName.toLowerCase().includes(normalizedSearch) ||
-      (project.projectAlias?.toLowerCase().includes(normalizedSearch) ?? false) ||
+      (project.projectAlias?.toLowerCase().includes(normalizedSearch) ??
+        false) ||
       project.emails.some((email) =>
-        email.address.toLowerCase().includes(normalizedSearch)
+        email.address.toLowerCase().includes(normalizedSearch),
       )
     );
   });
@@ -641,7 +660,7 @@ async function readProjectsSettings(input: {
     .sort(
       (left, right) =>
         right.updatedAt.getTime() - left.updatedAt.getTime() ||
-        left.projectName.localeCompare(right.projectName)
+        left.projectName.localeCompare(right.projectName),
     )
     .map(toProjectRowViewModel);
   const inactiveRows = filteredProjects
@@ -649,7 +668,7 @@ async function readProjectsSettings(input: {
     .sort(
       (left, right) =>
         right.createdAt.getTime() - left.createdAt.getTime() ||
-        left.projectName.localeCompare(right.projectName)
+        left.projectName.localeCompare(right.projectName),
     )
     .map(toProjectRowViewModel);
 
@@ -662,8 +681,8 @@ async function readProjectsSettings(input: {
     counts: {
       active: activeRows.length,
       inactive: inactiveRows.length,
-      total: activeRows.length + inactiveRows.length
-    }
+      total: activeRows.length + inactiveRows.length,
+    },
   };
 }
 
@@ -677,7 +696,7 @@ async function readProjectsSettings(input: {
  * are sorted by project name.
  */
 function nestConnectedSubProjects(
-  rows: readonly ProjectRowViewModel[]
+  rows: readonly ProjectRowViewModel[],
 ): readonly ProjectListEntryViewModel[] {
   const subsByHostId = new Map<string, ProjectRowViewModel[]>();
   const hostIds = new Set(rows.map((row) => row.projectId));
@@ -697,7 +716,7 @@ function nestConnectedSubProjects(
     .filter(
       (row) =>
         row.connectedToProjectId === null ||
-        !hostIds.has(row.connectedToProjectId)
+        !hostIds.has(row.connectedToProjectId),
     )
     .map((host) => {
       const subs = subsByHostId.get(host.projectId) ?? [];
@@ -706,19 +725,18 @@ function nestConnectedSubProjects(
         connectedSubProjects: subs
           .slice()
           .sort((left, right) =>
-            left.projectName.localeCompare(right.projectName)
-          )
+            left.projectName.localeCompare(right.projectName),
+          ),
       };
     });
 }
 
-async function readProjectSettingsDetail(
-  projectId: string
-) {
+async function readProjectSettingsDetail(projectId: string) {
   const runtime = await getStage1WebRuntime();
-  const [project, dimension] = await Promise.all([
+  const [project, dimension, automatedEmailTemplates] = await Promise.all([
     runtime.settings.projects.findById(projectId),
-    runtime.repositories.projectDimensions.findById(projectId)
+    runtime.repositories.projectDimensions.findById(projectId),
+    runtime.automatedEmails.listTemplatesByProject(projectId),
   ]);
 
   if (project === null) {
@@ -736,23 +754,33 @@ async function readProjectSettingsDetail(
   const [connectedSubs, candidates, host] = await Promise.all([
     isHost
       ? runtime.settings.projects.listConnectedProjects(projectId)
-      : Promise.resolve([] as readonly Awaited<
-          ReturnType<typeof runtime.settings.projects.listConnectedProjects>
-        >[number][]),
+      : Promise.resolve(
+          [] as readonly Awaited<
+            ReturnType<typeof runtime.settings.projects.listConnectedProjects>
+          >[number][],
+        ),
     isHost
       ? runtime.settings.projects.listAvailableConnectionCandidates()
-      : Promise.resolve([] as readonly Awaited<
-          ReturnType<
-            typeof runtime.settings.projects.listAvailableConnectionCandidates
-          >
-        >[number][]),
+      : Promise.resolve(
+          [] as readonly Awaited<
+            ReturnType<
+              typeof runtime.settings.projects.listAvailableConnectionCandidates
+            >
+          >[number][],
+        ),
     project.connectedToProjectId === null
       ? Promise.resolve(null)
-      : runtime.settings.projects.findById(project.connectedToProjectId)
+      : runtime.settings.projects.findById(project.connectedToProjectId),
   ]);
 
   return {
     ...toProjectRowViewModel(project),
+    automatedEmailSummary: {
+      templateCount: automatedEmailTemplates.length,
+      activeCount: automatedEmailTemplates.filter(
+        (template) => template.isActive,
+      ).length,
+    },
     aiKnowledgeSources,
     aiOperatingContext: dimension?.aiOperatingContext ?? "",
     aiAutoSyncSchedule: dimension?.aiAutoSyncSchedule ?? "never",
@@ -771,7 +799,7 @@ async function readProjectSettingsDetail(
     salesforceProjectId: project.salesforceProjectId,
     connectedProjects: connectedSubs.map((sub) => ({
       projectId: sub.projectId,
-      projectName: sub.projectName
+      projectName: sub.projectName,
     })),
     connectedToHost:
       host === null
@@ -780,12 +808,12 @@ async function readProjectSettingsDetail(
             projectId: host.projectId,
             projectName: host.projectName,
             projectAlias: host.projectAlias,
-            aiKnowledgeUrl: host.aiKnowledgeUrl
+            aiKnowledgeUrl: host.aiKnowledgeUrl,
           },
     availableConnectionCandidates: candidates.map((candidate) => ({
       projectId: candidate.projectId,
-      projectName: candidate.projectName
-    }))
+      projectName: candidate.projectName,
+    })),
   };
 }
 
@@ -814,18 +842,18 @@ function toUserViewModel(user: {
       status === "pending"
         ? null
         : (user.deactivatedAt ?? user.updatedAt).toISOString(),
-    status
+    status,
   };
 }
 
 function sortUsers(
   users: readonly UserRowViewModel[],
-  currentUserId: string | null
+  currentUserId: string | null,
 ): UserRowViewModel[] {
   const statusRank = {
     active: 0,
     pending: 1,
-    deactivated: 2
+    deactivated: 2,
   } as const;
 
   return users.slice().sort((left, right) => {
@@ -850,7 +878,7 @@ async function readAccessSettings() {
   const users = await runtime.settings.users.listAll();
   const rows = users.map(toUserViewModel);
   return {
-    rows
+    rows,
   };
 }
 
@@ -858,7 +886,7 @@ async function readOrgSendersSettings(): Promise<
   Pick<OrgSendersSettingsViewModel, "orgSenders">
 > {
   return {
-    orgSenders: await listAllOrgSenders()
+    orgSenders: await listAllOrgSenders(),
   };
 }
 
@@ -874,21 +902,29 @@ async function readIntegrationHealth(): Promise<
   monthStart.setUTCHours(0, 0, 0, 0);
 
   await runtime.settings.integrationHealth.seedDefaults();
-  const [rows, syncStates, mailchimpSnapshot, activeSmsSenders, latestCallback, latestDelivered, usageSnapshot] =
-    await Promise.all([
-      runtime.settings.integrationHealth.listAll(),
-      runtime.repositories.syncState.listAll(),
-      readMailchimpSnapshot(runtime),
-      runtime.settings.smsSenders.listActive(),
-      runtime.settings.smsMessages.findLatestByStatuses(["delivered", "failed"]),
-      runtime.settings.smsMessages.findLatestByStatuses(["delivered"]),
-      runtime.settings.smsSenders.getActiveUsageSnapshot({
-        monthStart,
-      }),
-    ]);
+  const [
+    rows,
+    syncStates,
+    mailchimpSnapshot,
+    activeSmsSenders,
+    latestCallback,
+    latestDelivered,
+    usageSnapshot,
+  ] = await Promise.all([
+    runtime.settings.integrationHealth.listAll(),
+    runtime.repositories.syncState.listAll(),
+    readMailchimpSnapshot(runtime),
+    runtime.settings.smsSenders.listActive(),
+    runtime.settings.smsMessages.findLatestByStatuses(["delivered", "failed"]),
+    runtime.settings.smsMessages.findLatestByStatuses(["delivered"]),
+    runtime.settings.smsSenders.getActiveUsageSnapshot({
+      monthStart,
+    }),
+  ]);
 
   const integrationById = new Map(rows.map((row) => [row.id, row] as const));
-  const latestMailchimpSync = getLatestSuccessfulMailchimpTransitionSync(syncStates);
+  const latestMailchimpSync =
+    getLatestSuccessfulMailchimpTransitionSync(syncStates);
   const latestMailchimpSyncAt = latestMailchimpSync?.lastSuccessfulAt ?? null;
   const mailchimpBaseUrl = readMailchimpCaptureBaseUrl();
   const latestMailchimpSyncAgeMs =
@@ -904,36 +940,37 @@ async function readIntegrationHealth(): Promise<
     Number.isFinite(latestMailchimpSyncAgeMs) &&
     latestMailchimpSyncAgeMs <= MAILCHIMP_HEALTHY_WINDOW_MS;
   const hasMailchimpEvidence =
-    latestMailchimpSyncAt !== null || mailchimpSnapshot.latestActivityAt !== null;
+    latestMailchimpSyncAt !== null ||
+    mailchimpSnapshot.latestActivityAt !== null;
   const shouldHideMailchimp =
     mailchimpBaseUrl === null &&
     mailchimpSnapshot.latestActivityAt !== null &&
     mailchimpActivityAgeMs !== null &&
     Number.isFinite(mailchimpActivityAgeMs) &&
     mailchimpActivityAgeMs > MAILCHIMP_AUTO_HIDE_WINDOW_MS;
-  const mailchimpBatchRecipientCount = await readMailchimpLastBatchRecipientCount(
-    runtime,
-    {
+  const mailchimpBatchRecipientCount =
+    await readMailchimpLastBatchRecipientCount(runtime, {
       windowStart: latestMailchimpSync?.windowStart ?? null,
       windowEnd: latestMailchimpSync?.windowEnd ?? null,
-    }
-  );
+    });
   const integrations: IntegrationHealthViewModel[] = [];
 
   for (const serviceName of INTEGRATION_ORDER) {
     const record = integrationById.get(serviceName);
-    if (record === undefined || (serviceName === "mailchimp" && shouldHideMailchimp)) {
+    if (
+      record === undefined ||
+      (serviceName === "mailchimp" && shouldHideMailchimp)
+    ) {
       continue;
     }
 
     const meta = INTEGRATION_META[serviceName];
     if (serviceName === "mailchimp") {
-      const mailchimpStatus: MailchimpTileStatus =
-        hasFreshMailchimpSync
-          ? "connected"
-          : mailchimpBaseUrl !== null || hasMailchimpEvidence
-            ? "stale"
-            : "unconfigured";
+      const mailchimpStatus: MailchimpTileStatus = hasFreshMailchimpSync
+        ? "connected"
+        : mailchimpBaseUrl !== null || hasMailchimpEvidence
+          ? "stale"
+          : "unconfigured";
 
       integrations.push({
         serviceName: record.serviceName,
@@ -1037,12 +1074,12 @@ async function readLogsSettings(input: {
     await runtime.repositories.sourceEvidence.listIdempotencyChecksumCollisions(
       input.beforeTimestamp === null
         ? {
-            limit: LOGS_PAGE_SIZE
+            limit: LOGS_PAGE_SIZE,
           }
         : {
             limit: LOGS_PAGE_SIZE,
-            beforeTimestamp: input.beforeTimestamp
-          }
+            beforeTimestamp: input.beforeTimestamp,
+          },
     );
 
   return {
@@ -1053,13 +1090,13 @@ async function readLogsSettings(input: {
         winning: {
           sourceEvidenceId: entry.winning.sourceEvidenceId,
           checksum: entry.winning.checksum,
-          receivedAt: entry.winning.receivedAt.toISOString()
+          receivedAt: entry.winning.receivedAt.toISOString(),
         },
         losing: entry.losing.map((losingEntry) => ({
           quarantineId: losingEntry.quarantineId,
           checksum: losingEntry.checksum,
-          attemptedAt: losingEntry.attemptedAt.toISOString()
-        }))
+          attemptedAt: losingEntry.attemptedAt.toISOString(),
+        })),
       };
 
       return {
@@ -1067,12 +1104,12 @@ async function readLogsSettings(input: {
         streamId: input.streamId,
         timestamp: entry.latestReceivedAt.toISOString(),
         summary: buildSourceEvidenceCollisionSummary(detail),
-        detail
+        detail,
       };
     }),
     nextBeforeTimestamp: result.hasMore
       ? (result.entries.at(-1)?.latestReceivedAt.toISOString() ?? null)
-      : null
+      : null,
   };
 }
 
@@ -1087,11 +1124,11 @@ function loadProjectsSettingsCacheData(input: {
   return unstable_cache(
     () => readProjectsSettings(input),
     [
-      `settings:projects:${input.filter}:${normalizeSearch(input.search) ?? "none"}`
+      `settings:projects:${input.filter}:${normalizeSearch(input.search) ?? "none"}`,
     ],
     {
-      tags: ["settings:projects"]
-    }
+      tags: ["settings:projects"],
+    },
   )();
 }
 
@@ -1104,8 +1141,8 @@ function loadProjectSettingsDetailCacheData(projectId: string) {
     () => readProjectSettingsDetail(projectId),
     [`settings:project:${projectId}`],
     {
-      tags: ["settings:projects", `settings:projects:${projectId}`]
-    }
+      tags: ["settings:projects", `settings:projects:${projectId}`],
+    },
   )();
 }
 
@@ -1115,7 +1152,7 @@ function loadAccessSettingsCacheData() {
   }
 
   return unstable_cache(() => readAccessSettings(), ["settings:team"], {
-    tags: ["settings:team"]
+    tags: ["settings:team"],
   })();
 }
 
@@ -1128,8 +1165,8 @@ function loadOrgSendersSettingsCacheData() {
     () => readOrgSendersSettings(),
     ["settings:newsletter"],
     {
-      tags: ["settings:newsletter"]
-    }
+      tags: ["settings:newsletter"],
+    },
   )();
 }
 
@@ -1144,8 +1181,8 @@ function loadIntegrationHealthCacheData(): Promise<
     () => readIntegrationHealth(),
     ["settings:integrations"],
     {
-      tags: ["settings:integrations"]
-    }
+      tags: ["settings:integrations"],
+    },
   )();
 }
 
@@ -1161,7 +1198,7 @@ function loadLogsSettingsCacheData(input: {
   if (process.env.NODE_ENV !== "production") {
     return readLogsSettings({
       streamId: input.streamId,
-      beforeTimestamp
+      beforeTimestamp,
     });
   }
 
@@ -1169,12 +1206,12 @@ function loadLogsSettingsCacheData(input: {
     () =>
       readLogsSettings({
         streamId: input.streamId,
-        beforeTimestamp
+        beforeTimestamp,
       }),
     [`settings:logs:${input.streamId}:${input.beforeTimestampIso ?? "none"}`],
     {
-      tags: ["settings:logs"]
-    }
+      tags: ["settings:logs"],
+    },
   )();
 }
 
@@ -1184,7 +1221,7 @@ export async function loadProjectsSettings(input: {
 }): Promise<ProjectsSettingsViewModel> {
   const [currentUser, cachedData] = await Promise.all([
     getCurrentUser(),
-    loadProjectsSettingsCacheData(input)
+    loadProjectsSettingsCacheData(input),
   ]);
   const normalizedSearch = normalizeSearch(input.search);
 
@@ -1195,22 +1232,22 @@ export async function loadProjectsSettings(input: {
     metadataJson: {
       filter: input.filter,
       visibleProjectCount: cachedData.counts.total,
-      search: normalizedSearch
-    }
+      search: normalizedSearch,
+    },
   });
 
   return {
     isAdmin: currentUser?.role === "admin",
-    ...cachedData
+    ...cachedData,
   };
 }
 
 export async function loadProjectSettingsDetail(
-  projectId: string
+  projectId: string,
 ): Promise<ProjectSettingsDetailViewModel | null> {
   const [currentUser, cachedData] = await Promise.all([
     getCurrentUser(),
-    loadProjectSettingsDetailCacheData(projectId)
+    loadProjectSettingsDetailCacheData(projectId),
   ]);
 
   if (cachedData === null) {
@@ -1222,13 +1259,13 @@ export async function loadProjectSettingsDetail(
     entityType: "project",
     entityId: projectId,
     metadataJson: {
-      emailCount: cachedData.emails.length
-    }
+      emailCount: cachedData.emails.length,
+    },
   });
 
   return {
     ...cachedData,
-    isAdmin: currentUser?.role === "admin"
+    isAdmin: currentUser?.role === "admin",
   };
 }
 
@@ -1245,11 +1282,11 @@ export async function loadAccessSettings(): Promise<AccessSettingsViewModel> {
   const currentUserId = currentUser.id;
   const admins = sortUsers(
     cachedData.rows.filter((user) => user.role === "admin"),
-    currentUserId
+    currentUserId,
   );
   const internalUsers = sortUsers(
     cachedData.rows.filter((user) => user.role === "internal_user"),
-    currentUserId
+    currentUserId,
   );
 
   recordSensitiveReadForCurrentUserDetached({
@@ -1257,22 +1294,22 @@ export async function loadAccessSettings(): Promise<AccessSettingsViewModel> {
     entityType: "settings_page",
     entityId: "users",
     metadataJson: {
-      visibleUserCount: cachedData.rows.length
-    }
+      visibleUserCount: cachedData.rows.length,
+    },
   });
 
   return {
     isAdmin: true,
     currentUserId,
     admins,
-    internalUsers
+    internalUsers,
   };
 }
 
 export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewModel> {
   const [currentUser, cachedData] = await Promise.all([
     getCurrentUser(),
-    loadIntegrationHealthCacheData()
+    loadIntegrationHealthCacheData(),
   ]);
 
   recordSensitiveReadForCurrentUserDetached({
@@ -1280,8 +1317,8 @@ export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewM
     entityType: "settings_page",
     entityId: "integrations",
     metadataJson: {
-      visibleIntegrationCount: cachedData.integrations.length
-    }
+      visibleIntegrationCount: cachedData.integrations.length,
+    },
   });
 
   return {
@@ -1294,7 +1331,7 @@ export async function loadIntegrationHealth(): Promise<IntegrationsSettingsViewM
 export async function loadOrgSendersSettings(): Promise<OrgSendersSettingsViewModel> {
   const [currentUser, cachedData] = await Promise.all([
     getCurrentUser(),
-    loadOrgSendersSettingsCacheData()
+    loadOrgSendersSettingsCacheData(),
   ]);
 
   recordSensitiveReadForCurrentUserDetached({
@@ -1302,13 +1339,13 @@ export async function loadOrgSendersSettings(): Promise<OrgSendersSettingsViewMo
     entityType: "settings_page",
     entityId: "newsletter",
     metadataJson: {
-      visibleOrgSenderCount: cachedData.orgSenders.length
-    }
+      visibleOrgSenderCount: cachedData.orgSenders.length,
+    },
   });
 
   return {
     isAdmin: currentUser?.role === "admin",
-    orgSenders: cachedData.orgSenders
+    orgSenders: cachedData.orgSenders,
   };
 }
 
@@ -1328,7 +1365,7 @@ export async function loadLogsSettings(input: {
   const beforeTimestamp = parseBeforeTimestamp(input.beforeTimestamp);
   const cachedData = await loadLogsSettingsCacheData({
     streamId: activeStreamId,
-    beforeTimestampIso: beforeTimestamp?.toISOString() ?? null
+    beforeTimestampIso: beforeTimestamp?.toISOString() ?? null,
   });
 
   recordSensitiveReadForCurrentUserDetached({
@@ -1337,14 +1374,14 @@ export async function loadLogsSettings(input: {
     entityId: "logs",
     metadataJson: {
       streamId: activeStreamId,
-      visibleEntryCount: cachedData.entries.length
-    }
+      visibleEntryCount: cachedData.entries.length,
+    },
   });
 
   return {
     streams: LOG_STREAMS,
     activeStreamId,
     entries: cachedData.entries,
-    nextBeforeTimestamp: cachedData.nextBeforeTimestamp
+    nextBeforeTimestamp: cachedData.nextBeforeTimestamp,
   };
 }
