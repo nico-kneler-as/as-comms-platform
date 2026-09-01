@@ -148,7 +148,7 @@ function renderTextNode(
         break;
       case "link": {
         const href = readSafeLinkHref(rawMark);
-        html = `<a href="${escapeHtml(href)}" style="color:#0f766e;text-decoration:underline;">${html}</a>`;
+        html = `<a href="${escapeHtml(href)}" style="color:#213515;text-decoration:underline;">${html}</a>`;
         text = `${text} (${href})`;
         break;
       }
@@ -292,13 +292,19 @@ function renderTransactionalFrame(input: {
   readonly frame: AutomatedEmailRenderInput["frame"];
 }): Pick<AutomatedEmailRenderOutput, "html" | "text"> {
   const wordmark = `Adventure Scientists · ${input.frame.projectName}`;
+  // Frame styling follows the 2026-08 brand book (Pine green #213515, Snow white
+  // #FAFBF9, Charcoal #20211F, Stone gray #939393, thin line dividers). Zero
+  // images and zero external resources is a deliverability invariant, not a
+  // styling choice — do not add logos or webfonts here (PRD #693).
+  const projectDisplay = escapeHtml(input.frame.projectName.toUpperCase());
   const html = [
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;padding:0;background-color:#f5f5f5;">',
-    '<tr><td align="center" style="padding:24px 12px;">',
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;background-color:#ffffff;">',
-    `<tr><td style="padding:24px 32px;border-bottom:1px solid #e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:17px;font-weight:700;line-height:1.4;color:#1f2937;">${escapeHtml(wordmark)}</td></tr>`,
-    `<tr><td style="padding:28px 32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:16px;line-height:1.5;color:#1f2937;">${input.bodyHtml}</td></tr>`,
-    '<tr><td style="padding:20px 32px 24px;border-top:1px solid #e5e7eb;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;font-size:12px;line-height:1.5;color:#6b7280;">',
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;padding:0;background-color:#FAFBF9;">',
+    '<tr><td align="center" style="padding:0 12px 24px;">',
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;margin:0 auto;background-color:#FAFBF9;">',
+    '<tr><td style="height:4px;background-color:#213515;font-size:0;line-height:0;">&nbsp;</td></tr>',
+    `<tr><td style="padding:28px 32px 18px;border-bottom:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"><div style="font-size:13px;font-weight:600;letter-spacing:3px;color:#20211F;">ADVENTURE&nbsp;SCIENTISTS</div><div style="padding-top:4px;font-size:11px;letter-spacing:1.5px;color:#939393;">${projectDisplay}</div></td></tr>`,
+    `<tr><td style="padding:26px 32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:16px;line-height:1.55;color:#20211F;">${input.bodyHtml}</td></tr>`,
+    '<tr><td style="padding:18px 32px 32px;border-top:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;font-size:12px;line-height:1.5;color:#939393;">',
     `<div>Adventure Scientists</div><div>${escapeHtml(input.frame.reasonLine)}</div>`,
     "</td></tr></table></td></tr></table>",
   ].join("");
