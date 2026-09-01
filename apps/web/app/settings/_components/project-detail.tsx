@@ -11,7 +11,7 @@ import {
   RADIUS,
   SHADOW,
   TYPE,
-  TRANSITION
+  TRANSITION,
 } from "@/app/_lib/design-tokens-v2";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -37,7 +37,7 @@ import {
   type ProjectMutationData,
   updateProjectAliasAction,
   updateProjectAliasSignatureAction,
-  updateProjectEmailsAction
+  updateProjectEmailsAction,
 } from "../actions";
 import {
   getProjectAliasSignatureValidationError,
@@ -61,11 +61,13 @@ function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
   readonly emails: readonly ProjectEmailInput[];
 }): boolean {
-  return input.emails.length >= 1 && (input.projectAlias?.trim().length ?? 0) > 0;
+  return (
+    input.emails.length >= 1 && (input.projectAlias?.trim().length ?? 0) > 0
+  );
 }
 
 function buildProjectState(
-  project: ProjectSettingsDetailViewModel
+  project: ProjectSettingsDetailViewModel,
 ): ProjectMutationData {
   return {
     projectId: project.projectId,
@@ -82,39 +84,39 @@ function buildProjectState(
     aiOptimizedLastCheckedAt: project.aiOptimizedLastCheckedAt,
     aiOptimizedInputHash: project.aiOptimizedInputHash,
     activationRequirementsMet: project.activationRequirementsMet,
-    emails: project.emails
+    emails: project.emails,
   };
 }
 
 function buildSignatureDrafts(
-  emails: readonly ProjectEmailMutationData[]
+  emails: readonly ProjectEmailMutationData[],
 ): Record<string, string> {
   return Object.fromEntries(
-    emails.map((email) => [email.id, email.signature] as const)
+    emails.map((email) => [email.id, email.signature] as const),
   );
 }
 
 function mergeProjectState(
   current: ProjectMutationData,
-  patch: Partial<ProjectMutationData>
+  patch: Partial<ProjectMutationData>,
 ): ProjectMutationData {
   const next = {
     ...current,
-    ...patch
+    ...patch,
   };
 
   return {
     ...next,
     activationRequirementsMet: hasActivationRequirements({
       projectAlias: next.projectAlias,
-      emails: next.emails
-    })
+      emails: next.emails,
+    }),
   };
 }
 
 function promotePrimaryEmail(
   emails: readonly ProjectEmailMutationData[],
-  address: string
+  address: string,
 ): readonly ProjectEmailMutationData[] {
   const selected = emails.find((email) => email.address === address);
   if (!selected) {
@@ -126,7 +128,7 @@ function promotePrimaryEmail(
       id: selected.id,
       address: selected.address,
       isPrimary: true,
-      signature: selected.signature
+      signature: selected.signature,
     },
     ...emails
       .filter((email) => email.address !== address)
@@ -134,14 +136,14 @@ function promotePrimaryEmail(
         id: email.id,
         address: email.address,
         isPrimary: false,
-        signature: email.signature
-      }))
+        signature: email.signature,
+      })),
   ];
 }
 
 function removeEmail(
   emails: readonly ProjectEmailMutationData[],
-  address: string
+  address: string,
 ): readonly ProjectEmailMutationData[] {
   const remaining = emails.filter((email) => email.address !== address);
   if (remaining.length === 0) {
@@ -156,16 +158,16 @@ function removeEmail(
     id: email.id,
     address: email.address,
     isPrimary: index === 0,
-    signature: email.signature
+    signature: email.signature,
   }));
 }
 
 function toProjectEmailInputs(
-  emails: readonly ProjectEmailMutationData[]
+  emails: readonly ProjectEmailMutationData[],
 ): readonly ProjectEmailInput[] {
   return emails.map((email) => ({
     address: email.address,
-    isPrimary: email.isPrimary
+    isPrimary: email.isPrimary,
   }));
 }
 
@@ -175,7 +177,7 @@ function buildSubtitleParts({
   sourceCount,
   isActive,
   autoSyncSchedule,
-  hideAlias
+  hideAlias,
 }: {
   readonly alias: string | null;
   readonly salesforceProjectId: string | null;
@@ -202,33 +204,41 @@ function buildSubtitleParts({
 }
 
 export function ProjectDetail({
-  project
+  project,
 }: {
   readonly project: ProjectSettingsDetailViewModel;
 }) {
-  const signatureTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>(
-    {}
+  const signatureTextareaRefs = useRef<
+    Record<string, HTMLTextAreaElement | null>
+  >({});
+  const [projectState, setProjectState] = useState(() =>
+    buildProjectState(project),
   );
-  const [projectState, setProjectState] = useState(() => buildProjectState(project));
   const [optimisticProject, applyOptimisticProject] = useOptimistic(
     projectState,
-    mergeProjectState
+    mergeProjectState,
   );
-  const [projectAliasDraft, setProjectAliasDraft] = useState(project.projectAlias ?? "");
+  const [projectAliasDraft, setProjectAliasDraft] = useState(
+    project.projectAlias ?? "",
+  );
   const [signatureDrafts, setSignatureDrafts] = useState(() =>
-    buildSignatureDrafts(project.emails)
+    buildSignatureDrafts(project.emails),
   );
   const [signatureErrors, setSignatureErrors] = useState<
     Record<string, string | undefined>
   >({});
   const [editingSignatureId, setEditingSignatureId] = useState<string | null>(
-    null
+    null,
   );
   const [newEmail, setNewEmail] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
-  const [activationMessage, setActivationMessage] = useState<string | null>(null);
+  const [activationMessage, setActivationMessage] = useState<string | null>(
+    null,
+  );
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [pendingSignatureId, setPendingSignatureId] = useState<string | null>(null);
+  const [pendingSignatureId, setPendingSignatureId] = useState<string | null>(
+    null,
+  );
   const [projectAliasPending, startProjectAliasTransition] = useTransition();
   const [emailPending, startEmailTransition] = useTransition();
   const [signaturePending, startSignatureTransition] = useTransition();
@@ -250,16 +260,18 @@ export function ProjectDetail({
       Object.fromEntries(
         nextProject.emails.map((email) => [
           email.id,
-          current[email.id] ?? email.signature
-        ])
-      )
+          current[email.id] ?? email.signature,
+        ]),
+      ),
     );
     setSignatureErrors((current) =>
       Object.fromEntries(
         nextProject.emails.flatMap((email) =>
-          current[email.id] === undefined ? [] : [[email.id, current[email.id]]]
-        )
-      )
+          current[email.id] === undefined
+            ? []
+            : [[email.id, current[email.id]]],
+        ),
+      ),
     );
     setActivationMessage(null);
   }
@@ -272,7 +284,7 @@ export function ProjectDetail({
 
     if (
       optimisticProject.emails.some(
-        (email) => email.address.toLowerCase() === normalizedAddress
+        (email) => email.address.toLowerCase() === normalizedAddress,
       )
     ) {
       announce(`${normalizedAddress} is already connected.`, "error");
@@ -286,8 +298,8 @@ export function ProjectDetail({
               id: `temp:${normalizedAddress}`,
               address: normalizedAddress,
               isPrimary: true,
-              signature: ""
-            }
+              signature: "",
+            },
           ]
         : [
             ...optimisticProject.emails,
@@ -295,8 +307,8 @@ export function ProjectDetail({
               id: `temp:${normalizedAddress}`,
               address: normalizedAddress,
               isPrimary: false,
-              signature: ""
-            }
+              signature: "",
+            },
           ];
 
     setPendingEmail(normalizedAddress);
@@ -304,7 +316,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        toProjectEmailInputs(nextEmails)
+        toProjectEmailInputs(nextEmails),
       );
       setPendingEmail(null);
 
@@ -327,7 +339,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        toProjectEmailInputs(nextEmails)
+        toProjectEmailInputs(nextEmails),
       );
       setPendingEmail(null);
 
@@ -350,7 +362,7 @@ export function ProjectDetail({
       applyOptimisticProject({ emails: nextEmails });
       const result = await updateProjectEmailsAction(
         project.projectId,
-        toProjectEmailInputs(nextEmails)
+        toProjectEmailInputs(nextEmails),
       );
       setPendingEmail(null);
 
@@ -367,11 +379,11 @@ export function ProjectDetail({
   function handleSignatureDraftChange(aliasId: string, nextValue: string) {
     setSignatureDrafts((current) => ({
       ...current,
-      [aliasId]: nextValue
+      [aliasId]: nextValue,
     }));
     setSignatureErrors((current) => ({
       ...current,
-      [aliasId]: undefined
+      [aliasId]: undefined,
     }));
   }
 
@@ -379,12 +391,13 @@ export function ProjectDetail({
     const textarea = signatureTextareaRefs.current[aliasId] ?? null;
     const currentDraft =
       signatureDrafts[aliasId] ??
-      optimisticProject.emails.find((email) => email.id === aliasId)?.signature ??
+      optimisticProject.emails.find((email) => email.id === aliasId)
+        ?.signature ??
       "";
     const { nextValue, nextCaret } = insertProjectAliasSignatureToken({
       value: currentDraft,
       selectionStart: textarea?.selectionStart ?? currentDraft.length,
-      selectionEnd: textarea?.selectionEnd ?? currentDraft.length
+      selectionEnd: textarea?.selectionEnd ?? currentDraft.length,
     });
 
     handleSignatureDraftChange(aliasId, nextValue);
@@ -407,7 +420,7 @@ export function ProjectDetail({
     if (validationError !== null) {
       setSignatureErrors((current) => ({
         ...current,
-        [email.id]: validationError
+        [email.id]: validationError,
       }));
       return;
     }
@@ -416,14 +429,14 @@ export function ProjectDetail({
       setPendingSignatureId(email.id);
       const result = await updateProjectAliasSignatureAction(
         email.id,
-        currentDraft
+        currentDraft,
       );
       setPendingSignatureId(null);
 
       if (!result.ok) {
         setSignatureErrors((current) => ({
           ...current,
-          [email.id]: result.fieldErrors?.signature ?? result.message
+          [email.id]: result.fieldErrors?.signature ?? result.message,
         }));
         announce(result.message, "error");
         return;
@@ -435,18 +448,18 @@ export function ProjectDetail({
           currentEmail.id === result.data.id
             ? {
                 ...currentEmail,
-                signature: result.data.signature
+                signature: result.data.signature,
               }
-            : currentEmail
-        )
+            : currentEmail,
+        ),
       }));
       setSignatureDrafts((current) => ({
         ...current,
-        [result.data.id]: result.data.signature
+        [result.data.id]: result.data.signature,
       }));
       setSignatureErrors((current) => ({
         ...current,
-        [result.data.id]: undefined
+        [result.data.id]: undefined,
       }));
       setEditingSignatureId(null);
       announce(`Saved the signature for ${result.data.alias}.`);
@@ -456,11 +469,11 @@ export function ProjectDetail({
   function handleCancelSignatureEdit(email: ProjectEmailMutationData) {
     setSignatureDrafts((current) => ({
       ...current,
-      [email.id]: email.signature
+      [email.id]: email.signature,
     }));
     setSignatureErrors((current) => ({
       ...current,
-      [email.id]: undefined
+      [email.id]: undefined,
     }));
     setEditingSignatureId(null);
   }
@@ -475,7 +488,10 @@ export function ProjectDetail({
 
     startProjectAliasTransition(async () => {
       applyOptimisticProject({ projectAlias: nextAlias });
-      const result = await updateProjectAliasAction(project.projectId, nextAlias);
+      const result = await updateProjectAliasAction(
+        project.projectId,
+        nextAlias,
+      );
 
       if (!result.ok) {
         announce(result.message, "error");
@@ -486,7 +502,7 @@ export function ProjectDetail({
       announce(
         nextAlias === null
           ? "Cleared the project alias."
-          : "Updated the project alias."
+          : "Updated the project alias.",
       );
     });
   }
@@ -526,9 +542,7 @@ export function ProjectDetail({
           : ` (${String(cascadedCount)} connected sub-project${
               cascadedCount === 1 ? "" : "s"
             } also deactivated)`;
-      announce(
-        `${result.data.projectName} is now inactive.${cascadedNote}`
-      );
+      announce(`${result.data.projectName} is now inactive.${cascadedNote}`);
     });
   }
 
@@ -536,7 +550,7 @@ export function ProjectDetail({
     startActivationTransition(async () => {
       applyOptimisticProject({
         isActive: false,
-        connectedToProjectId: null
+        connectedToProjectId: null,
       });
       const result = await disconnectProjectAction(project.projectId);
 
@@ -547,7 +561,7 @@ export function ProjectDetail({
 
       commitProject(result.data);
       announce(
-        `Disconnected ${result.data.projectName} from its host. The project is now inactive.`
+        `Disconnected ${result.data.projectName} from its host. The project is now inactive.`,
       );
     });
   }
@@ -588,7 +602,7 @@ export function ProjectDetail({
     sourceCount: project.aiKnowledgeSources.length,
     isActive: optimisticProject.isActive,
     autoSyncSchedule: project.aiAutoSyncSchedule,
-    hideAlias: isConnectedSub
+    hideAlias: isConnectedSub,
   });
 
   // Danger zone tab is admin-only. For sub-projects it surfaces "Disconnect
@@ -596,15 +610,14 @@ export function ProjectDetail({
   // project". Inactive standalone projects without a host have no destructive
   // action available, so the tab is hidden in that case.
   const dangerZoneAvailable =
-    project.isAdmin &&
-    (isConnectedSub || optimisticProject.isActive);
+    project.isAdmin && (isConnectedSub || optimisticProject.isActive);
 
   const tabs: readonly { readonly id: TabId; readonly label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "ai-knowledge", label: "AI knowledge" },
     ...(dangerZoneAvailable
       ? ([{ id: "danger-zone", label: "Danger zone" }] as const)
-      : [])
+      : []),
   ];
 
   return (
@@ -616,7 +629,7 @@ export function ProjectDetail({
             "inline-flex items-center gap-1.5 self-start text-sm font-medium text-slate-600 hover:text-slate-900",
             TRANSITION.fast,
             FOCUS_RING,
-            RADIUS.sm
+            RADIUS.sm,
           )}
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
@@ -640,12 +653,12 @@ export function ProjectDetail({
             {isConnectedSub && connectedHost ? (
               <Link
                 href={`/settings/projects/${encodeURIComponent(
-                  connectedHost.projectId
+                  connectedHost.projectId,
                 )}`}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11.5px] font-medium text-sky-800 ring-1 ring-inset ring-sky-200 hover:bg-sky-100",
                   TRANSITION.fast,
-                  FOCUS_RING
+                  FOCUS_RING,
                 )}
               >
                 Connected to {connectedHost.projectName}
@@ -680,9 +693,7 @@ export function ProjectDetail({
           <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 px-4 py-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-col gap-1">
-                <p className="text-sm font-medium text-amber-900">
-                  Activation
-                </p>
+                <p className="text-sm font-medium text-amber-900">Activation</p>
                 {inactiveActivationMessage ? (
                   <p className={cn(TYPE.caption, "max-w-2xl text-amber-800")}>
                     {inactiveActivationMessage}
@@ -693,7 +704,8 @@ export function ProjectDetail({
                 type="button"
                 onClick={handleActivate}
                 disabled={
-                  activationPending || !optimisticProject.activationRequirementsMet
+                  activationPending ||
+                  !optimisticProject.activationRequirementsMet
                 }
               >
                 Activate project
@@ -711,7 +723,7 @@ export function ProjectDetail({
             "rounded-md px-3 py-2 text-sm",
             feedback.kind === "success"
               ? "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200"
-              : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200"
+              : "bg-rose-50 text-rose-800 ring-1 ring-inset ring-rose-200",
           )}
         >
           {feedback.message}
@@ -742,7 +754,7 @@ export function ProjectDetail({
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2",
                 isActive
                   ? "border-slate-900 font-semibold text-slate-900"
-                  : "border-transparent font-medium text-slate-500 hover:text-slate-800"
+                  : "border-transparent font-medium text-slate-500 hover:text-slate-800",
               )}
             >
               {tab.label}
@@ -783,7 +795,7 @@ export function ProjectDetail({
                     Inherited from{" "}
                     <Link
                       href={`/settings/projects/${encodeURIComponent(
-                        connectedHost.projectId
+                        connectedHost.projectId,
                       )}`}
                       className="font-medium text-sky-700 hover:underline"
                     >
@@ -866,16 +878,19 @@ export function ProjectDetail({
         >
           <div className="flex flex-col gap-2">
             {signatureEmails.map((email) => {
-              const isRowPending = emailPending && pendingEmail === email.address;
+              const isRowPending =
+                emailPending && pendingEmail === email.address;
               const isExpanded = editingSignatureId === email.id;
               const isSignaturePending =
                 signaturePending && pendingSignatureId === email.id;
-              const signatureDraft = signatureDrafts[email.id] ?? email.signature;
+              const signatureDraft =
+                signatureDrafts[email.id] ?? email.signature;
               const signatureError = signatureErrors[email.id];
               const signatureDirty =
-                normalizeProjectAliasSignature(signatureDraft) !== email.signature;
+                normalizeProjectAliasSignature(signatureDraft) !==
+                email.signature;
               const signaturePreview = renderSignatureTemplate(signatureDraft, {
-                operatorFirstName: PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME
+                operatorFirstName: PROJECT_ALIAS_SIGNATURE_PREVIEW_FIRST_NAME,
               });
 
               return (
@@ -883,7 +898,7 @@ export function ProjectDetail({
                   key={email.id}
                   className={cn(
                     "rounded-md border border-slate-200 bg-white",
-                    isRowPending && "opacity-60"
+                    isRowPending && "opacity-60",
                   )}
                 >
                   <div className="flex items-center gap-2 px-3 py-2">
@@ -914,7 +929,7 @@ export function ProjectDetail({
                           TRANSITION.fast,
                           FOCUS_RING,
                           RADIUS.sm,
-                          isExpanded && "bg-slate-100 text-slate-700"
+                          isExpanded && "bg-slate-100 text-slate-700",
                         )}
                       >
                         <Pencil className="size-3.5" aria-hidden="true" />
@@ -933,7 +948,7 @@ export function ProjectDetail({
                           TRANSITION.fast,
                           FOCUS_RING,
                           RADIUS.sm,
-                          "disabled:cursor-not-allowed disabled:opacity-40"
+                          "disabled:cursor-not-allowed disabled:opacity-40",
                         )}
                       >
                         <Trash2 className="size-3.5" aria-hidden="true" />
@@ -958,7 +973,7 @@ export function ProjectDetail({
                           onChange={(event) => {
                             handleSignatureDraftChange(
                               email.id,
-                              event.target.value
+                              event.target.value,
                             );
                           }}
                           disabled={isSignaturePending}
@@ -966,7 +981,7 @@ export function ProjectDetail({
                           className={cn(
                             "w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200",
                             signatureError &&
-                              "border-rose-300 bg-rose-50/40 text-rose-900"
+                              "border-rose-300 bg-rose-50/40 text-rose-900",
                           )}
                           placeholder={`Warmly,\nThe ${signaturePlaceholderProjectName} Team\nAdventure Scientists`}
                         />
@@ -1078,6 +1093,42 @@ export function ProjectDetail({
           initialStatus={project.postmarkSenderStatus}
         />
 
+        <SettingsCard
+          title="Automated emails"
+          description="Lifecycle email copy and its independent sending controls."
+          action={
+            <Button asChild type="button" size="sm" variant="outline">
+              <Link
+                href={`/settings/projects/${encodeURIComponent(
+                  project.projectId,
+                )}/automated-emails`}
+              >
+                Manage automated emails
+              </Link>
+            </Button>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-6 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+            <div>
+              <p className={cn(TYPE.label, "text-slate-500")}>Templates</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                {String(project.automatedEmailSummary.templateCount)}
+              </p>
+            </div>
+            <div className="h-8 w-px bg-slate-200" aria-hidden="true" />
+            <div>
+              <p className={cn(TYPE.label, "text-slate-500")}>Active</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                {String(project.automatedEmailSummary.activeCount)}
+              </p>
+            </div>
+            <p className={cn(TYPE.caption, "ml-auto max-w-sm text-slate-500")}>
+              Shells stay inactive until their copy is published and you turn
+              sending on.
+            </p>
+          </div>
+        </SettingsCard>
+
         {isHost ? (
           <SettingsCard
             title="Connected projects"
@@ -1110,7 +1161,7 @@ export function ProjectDetail({
                 AI Knowledge is inherited from{" "}
                 <Link
                   href={`/settings/projects/${encodeURIComponent(
-                    connectedHost.projectId
+                    connectedHost.projectId,
                   )}`}
                   className="font-medium text-sky-700 hover:underline"
                 >
@@ -1153,8 +1204,8 @@ export function ProjectDetail({
                 <p className="max-w-2xl text-[13px] leading-relaxed text-rose-700/90">
                   Stops routing mail to this project. Existing threads stay
                   searchable in the inbox but new mail addressed to this
-                  project&apos;s aliases will bounce. You can reactivate from the
-                  Projects list later.
+                  project&apos;s aliases will bounce. You can reactivate from
+                  the Projects list later.
                 </p>
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rose-200/70 pt-4">
@@ -1245,7 +1296,7 @@ function SettingsCard({
   title,
   description,
   action,
-  children
+  children,
 }: {
   readonly title: string;
   readonly description?: string;
@@ -1258,7 +1309,7 @@ function SettingsCard({
         "p-5",
         RADIUS.md,
         "border border-slate-200 bg-white",
-        SHADOW.sm
+        SHADOW.sm,
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1281,7 +1332,7 @@ function InboxAliasAddControl({
   value,
   onChange,
   onAdd,
-  disabled
+  disabled,
 }: {
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -1354,7 +1405,7 @@ function ConnectedSubDisconnectControl({
   hostName,
   memberCount,
   onDisconnect,
-  disabled
+  disabled,
 }: {
   readonly projectName: string;
   readonly hostName: string;

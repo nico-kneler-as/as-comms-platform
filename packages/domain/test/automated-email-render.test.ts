@@ -10,7 +10,9 @@ const baseInput: AutomatedEmailRenderInput = {
   subjectTemplate: "Update for {{firstName}}",
   bodyDoc: {
     type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "Hello" }] },
+    ],
   },
   values: { firstName: "Taylor" },
   frame: {
@@ -49,7 +51,12 @@ describe("renderAutomatedEmail", () => {
               {
                 type: "text",
                 text: "a link",
-                marks: [{ type: "link", attrs: { href: "https://example.com/?a=1&b=2" } }],
+                marks: [
+                  {
+                    type: "link",
+                    attrs: { href: "https://example.com/?a=1&b=2" },
+                  },
+                ],
               },
             ],
           },
@@ -57,12 +64,18 @@ describe("renderAutomatedEmail", () => {
       },
     });
 
-    expect(result.html).toContain('<p style="margin:0 0 16px;">&lt;Hello&gt; &amp; ');
-    expect(result.html).toContain('<strong style="font-weight:700;">bold</strong>');
+    expect(result.html).toContain(
+      '<p style="margin:0 0 16px;">&lt;Hello&gt; &amp; ',
+    );
+    expect(result.html).toContain(
+      '<strong style="font-weight:700;">bold</strong>',
+    );
     expect(result.html).toContain('<em style="font-style:italic;"> and </em>');
     expect(result.html).toContain('href="https://example.com/?a=1&amp;b=2"');
     expect(result.html).not.toContain('target="_blank"');
-    expect(result.text).toContain("<Hello> & bold and a link (https://example.com/?a=1&b=2)");
+    expect(result.text).toContain(
+      "<Hello> & bold and a link (https://example.com/?a=1&b=2)",
+    );
   });
 
   it("renders nested bullet and ordered lists plus hard breaks", () => {
@@ -77,13 +90,21 @@ describe("renderAutomatedEmail", () => {
               {
                 type: "listItem",
                 content: [
-                  { type: "paragraph", content: [{ type: "text", text: "Parent" }] },
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Parent" }],
+                  },
                   {
                     type: "orderedList",
                     content: [
                       {
                         type: "listItem",
-                        content: [{ type: "paragraph", content: [{ type: "text", text: "Nested" }] }],
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Nested" }],
+                          },
+                        ],
                       },
                     ],
                   },
@@ -93,17 +114,57 @@ describe("renderAutomatedEmail", () => {
           },
           {
             type: "paragraph",
-            content: [{ type: "text", text: "Line one" }, { type: "hardBreak" }, { type: "text", text: "Line two" }],
+            content: [
+              { type: "text", text: "Line one" },
+              { type: "hardBreak" },
+              { type: "text", text: "Line two" },
+            ],
           },
         ],
       },
     });
 
-    expect(result.html).toContain('<ul style="margin:0 0 16px;padding-left:24px;">');
-    expect(result.html).toContain('<ol style="margin:0 0 16px;padding-left:24px;">');
+    expect(result.html).toContain(
+      '<ul style="margin:0 0 16px;padding-left:24px;">',
+    );
+    expect(result.html).toContain(
+      '<ol style="margin:0 0 16px;padding-left:24px;">',
+    );
     expect(result.html).toContain("Line one<br>Line two");
     expect(result.text).toContain("- Parent\n  1. Nested");
     expect(result.text).toContain("Line one\nLine two");
+  });
+
+  it("renders blockquotes with email-safe styles and quoted text lines", () => {
+    const result = renderAutomatedEmail({
+      ...baseInput,
+      bodyDoc: {
+        type: "doc",
+        content: [
+          {
+            type: "blockquote",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "A prior note" },
+                  { type: "hardBreak" },
+                  { type: "text", text: "with another line" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(result.html).toContain(
+      '<blockquote style="margin:0 0 16px;padding:0 0 0 16px;border-left:3px solid #DDE1DA;color:#5F625E;">',
+    );
+    expect(result.html).toContain(
+      '<p style="margin:0 0 16px;">A prior note<br>with another line</p>',
+    );
+    expect(result.text).toContain("> A prior note\n> with another line");
   });
 
   it("HTML-escapes merge pills while preserving their raw value in text", () => {
@@ -111,12 +172,19 @@ describe("renderAutomatedEmail", () => {
       ...baseInput,
       bodyDoc: {
         type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "mergeField", attrs: { key: "firstName" } }] }],
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "mergeField", attrs: { key: "firstName" } }],
+          },
+        ],
       },
       values: { firstName: "<script>alert('xss')</script>" },
     });
 
-    expect(result.html).toContain("&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;");
+    expect(result.html).toContain(
+      "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;",
+    );
     expect(result.html).not.toContain("<script>");
     expect(result.text).toContain("<script>alert('xss')</script>");
   });
@@ -144,7 +212,17 @@ describe("renderAutomatedEmail", () => {
     expectRenderError(
       {
         ...baseInput,
-        bodyDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Nope", marks: [{ type: "underline" }] }] }] },
+        bodyDoc: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Nope", marks: [{ type: "underline" }] },
+              ],
+            },
+          ],
+        },
       },
       "unsupported_mark",
       "underline",
@@ -152,7 +230,23 @@ describe("renderAutomatedEmail", () => {
     expectRenderError(
       {
         ...baseInput,
-        bodyDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Nope", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }] }] },
+        bodyDoc: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Nope",
+                  marks: [
+                    { type: "link", attrs: { href: "javascript:alert(1)" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       },
       "invalid_link",
       "javascript:alert(1)",
@@ -160,7 +254,15 @@ describe("renderAutomatedEmail", () => {
     expectRenderError(
       {
         ...baseInput,
-        bodyDoc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "mergeField", attrs: { key: "missing" } }] }] },
+        bodyDoc: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "mergeField", attrs: { key: "missing" } }],
+            },
+          ],
+        },
       },
       "missing_value",
       "missing",
@@ -173,10 +275,26 @@ describe("renderAutomatedEmail", () => {
       frame: { projectName: "PNW <Bio>", reasonLine: "Reason & context" },
       bodyDoc: {
         type: "doc",
-        content: [{ type: "paragraph", content: [{ type: "text", text: "Read", marks: [{ type: "link", attrs: { href: "https://example.com" } }] }] }],
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "Read",
+                marks: [
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+        ],
       },
     });
-    const withoutBodyLinks = result.html.replace(/<a href="[^"]*"[^>]*>.*?<\/a>/gu, "");
+    const withoutBodyLinks = result.html.replace(
+      /<a href="[^"]*"[^>]*>.*?<\/a>/gu,
+      "",
+    );
 
     expect(result.html).toContain("ADVENTURE&nbsp;SCIENTISTS");
     expect(result.html).toContain("PNW &lt;BIO&gt;");
@@ -200,7 +318,13 @@ describe("renderAutomatedEmail", () => {
               { type: "text", text: "Hello " },
               { type: "text", text: "bold", marks: [{ type: "bold" }] },
               { type: "text", text: " italic", marks: [{ type: "italic" }] },
-              { type: "text", text: " site", marks: [{ type: "link", attrs: { href: "mailto:hello@example.com" } }] },
+              {
+                type: "text",
+                text: " site",
+                marks: [
+                  { type: "link", attrs: { href: "mailto:hello@example.com" } },
+                ],
+              },
               { type: "hardBreak" },
               { type: "mergeField", attrs: { key: "firstName" } },
             ],
@@ -211,21 +335,58 @@ describe("renderAutomatedEmail", () => {
               {
                 type: "listItem",
                 content: [
-                  { type: "paragraph", content: [{ type: "text", text: "First" }] },
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "First" }],
+                  },
                   {
                     type: "orderedList",
-                    content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Nested" }] }] }],
+                    content: [
+                      {
+                        type: "listItem",
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Nested" }],
+                          },
+                        ],
+                      },
+                    ],
                   },
                 ],
               },
-              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Second" }] }] },
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Second" }],
+                  },
+                ],
+              },
             ],
           },
           {
             type: "orderedList",
             content: [
-              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "One" }] }] },
-              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Two" }] }] },
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "One" }],
+                  },
+                ],
+              },
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Two" }],
+                  },
+                ],
+              },
             ],
           },
         ],
@@ -238,11 +399,18 @@ describe("renderAutomatedEmail", () => {
         "Hello bold italic site (mailto:hello@example.com)\nTaylor\n\n- First\n  1. Nested\n- Second\n\n1. One\n2. Two",
         "Adventure Scientists",
         "You're receiving this because you applied to PNW Bio.",
-      ].join("\n\n").replace("Adventure Scientists\n\nYou're", "Adventure Scientists\nYou're"),
+      ]
+        .join("\n\n")
+        .replace(
+          "Adventure Scientists\n\nYou're",
+          "Adventure Scientists\nYou're",
+        ),
     );
   });
 
   it("is deterministic for identical input", () => {
-    expect(renderAutomatedEmail(baseInput)).toEqual(renderAutomatedEmail(baseInput));
+    expect(renderAutomatedEmail(baseInput)).toEqual(
+      renderAutomatedEmail(baseInput),
+    );
   });
 });

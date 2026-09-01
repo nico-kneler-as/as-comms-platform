@@ -20,19 +20,17 @@ const { JSDOM } = workerRequire("jsdom") as {
     options?: {
       readonly url?: string;
       readonly pretendToBeVisual?: boolean;
-    }
+    },
   ) => {
     readonly window: Window & typeof globalThis;
   };
 };
 
 import { StepConnectedProjects } from "../../app/settings/_components/activation-wizard/step-connected-projects";
-import {
-  ACTIVATION_WIZARD_STEPS
-} from "../../app/settings/_components/activation-wizard/shared";
+import { ACTIVATION_WIZARD_STEPS } from "../../app/settings/_components/activation-wizard/shared";
 import {
   activationWizardReducer,
-  createInitialState
+  createInitialState,
 } from "../../app/settings/_components/activation-wizard/state";
 import type { ProjectRowViewModel } from "../../src/server/settings/selectors";
 
@@ -42,14 +40,14 @@ let root: Root | null = null;
 function setupDom() {
   dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost/settings",
-    pretendToBeVisual: true
+    pretendToBeVisual: true,
   });
 
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
-    value: dom.window.navigator
+    value: dom.window.navigator,
   });
   globalThis.HTMLElement = dom.window.HTMLElement;
   globalThis.HTMLButtonElement = dom.window.HTMLButtonElement;
@@ -57,8 +55,9 @@ function setupDom() {
   globalThis.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.Event = dom.window.Event;
-  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true;
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
 
   const container = document.createElement("div");
   document.body.append(container);
@@ -87,7 +86,7 @@ function makeCandidate(input: {
     aiKnowledgeSyncedAt: null,
     hasCachedAiKnowledge: false,
     memberCount: input.memberCount ?? 0,
-    activationRequirementsMet: false
+    activationRequirementsMet: false,
   };
 }
 
@@ -105,14 +104,18 @@ afterEach(() => {
 });
 
 describe("Connected projects wizard step — registration", () => {
-  it("registers Connected projects after AI knowledge and before Review", () => {
-    // Step list order is part of the wizard's UX contract: knowledge ->
-    // connected projects -> review. PR copy depends on this exact ordering.
+  it("registers the automated-email step after signature and before the remaining setup", () => {
+    // Step list order is part of the wizard's UX contract: signature ->
+    // automated emails -> knowledge -> connected projects -> review.
     const titles = ACTIVATION_WIZARD_STEPS.map((step) => step.title);
+    const signatureIndex = titles.indexOf("Email signature");
+    const automatedEmailsIndex = titles.indexOf("Automated emails");
     const knowledgeIndex = titles.indexOf("AI knowledge");
     const connectedIndex = titles.indexOf("Connected projects");
     const reviewIndex = titles.indexOf("Review & activate");
+    expect(automatedEmailsIndex).toBe(signatureIndex + 1);
     expect(knowledgeIndex).toBeGreaterThanOrEqual(0);
+    expect(knowledgeIndex).toBe(automatedEmailsIndex + 1);
     expect(connectedIndex).toBe(knowledgeIndex + 1);
     expect(reviewIndex).toBe(connectedIndex + 1);
   });
@@ -133,7 +136,7 @@ describe("StepConnectedProjects", () => {
           candidates={input.candidates}
           selectedProjectIds={input.selectedProjectIds ?? []}
           onToggle={input.onToggle ?? (() => undefined)}
-        />
+        />,
       );
     });
   }
@@ -142,8 +145,8 @@ describe("StepConnectedProjects", () => {
     renderStep({
       candidates: [
         makeCandidate({ projectId: "p:beech", projectName: "Beech" }),
-        makeCandidate({ projectId: "p:butternut", projectName: "Butternut" })
-      ]
+        makeCandidate({ projectId: "p:butternut", projectName: "Butternut" }),
+      ],
     });
 
     expect(document.body.textContent).toContain("Beech");
@@ -155,7 +158,7 @@ describe("StepConnectedProjects", () => {
     renderStep({ candidates: [] });
 
     expect(document.body.textContent).toContain(
-      "No inactive projects to connect."
+      "No inactive projects to connect.",
     );
     expect(document.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
   });
@@ -164,9 +167,9 @@ describe("StepConnectedProjects", () => {
     const onToggle = vi.fn();
     renderStep({
       candidates: [
-        makeCandidate({ projectId: "p:beech", projectName: "Beech" })
+        makeCandidate({ projectId: "p:beech", projectName: "Beech" }),
       ],
-      onToggle
+      onToggle,
     });
 
     const checkbox = document.querySelector("input[type=checkbox]");
@@ -189,10 +192,10 @@ describe("StepConnectedProjects", () => {
           projectId: "p:beech",
           projectName: "Beech",
           projectAlias: "Beech",
-          aiKnowledgeUrl: "https://www.notion.so/old"
-        })
+          aiKnowledgeUrl: "https://www.notion.so/old",
+        }),
       ],
-      selectedProjectIds: ["p:beech"]
+      selectedProjectIds: ["p:beech"],
     });
 
     expect(document.body.textContent).toContain("Will be cleared on connect");
@@ -205,14 +208,14 @@ describe("StepConnectedProjects", () => {
           projectId: "p:beech",
           projectName: "Beech",
           projectAlias: "Beech",
-          aiKnowledgeUrl: "https://www.notion.so/old"
-        })
+          aiKnowledgeUrl: "https://www.notion.so/old",
+        }),
       ],
-      selectedProjectIds: []
+      selectedProjectIds: [],
     });
 
     expect(document.body.textContent).not.toContain(
-      "Will be cleared on connect"
+      "Will be cleared on connect",
     );
   });
 });
@@ -236,10 +239,10 @@ describe("activationWizardReducer connected-projects state", () => {
           aiKnowledgeSyncedAt: null,
           hasCachedAiKnowledge: false,
           memberCount: 0,
-          activationRequirementsMet: false
-        }
+          activationRequirementsMet: false,
+        },
       ],
-      "p:host"
+      "p:host",
     );
   }
 
@@ -249,13 +252,13 @@ describe("activationWizardReducer connected-projects state", () => {
 
     const afterAdd = activationWizardReducer(initial, {
       type: "toggle-connected-project",
-      projectId: "p:beech"
+      projectId: "p:beech",
     });
     expect(afterAdd.connectedProjectIds).toEqual(["p:beech"]);
 
     const afterRemove = activationWizardReducer(afterAdd, {
       type: "toggle-connected-project",
-      projectId: "p:beech"
+      projectId: "p:beech",
     });
     expect(afterRemove.connectedProjectIds).toEqual([]);
   });
@@ -264,27 +267,24 @@ describe("activationWizardReducer connected-projects state", () => {
     const initial = buildBaseState();
     const afterFirst = activationWizardReducer(initial, {
       type: "toggle-connected-project",
-      projectId: "p:beech"
+      projectId: "p:beech",
     });
     const afterSecond = activationWizardReducer(afterFirst, {
       type: "toggle-connected-project",
-      projectId: "p:butternut"
+      projectId: "p:butternut",
     });
 
-    expect(afterSecond.connectedProjectIds).toEqual([
-      "p:beech",
-      "p:butternut"
-    ]);
+    expect(afterSecond.connectedProjectIds).toEqual(["p:beech", "p:butternut"]);
   });
 
   it("go-next from step 3 (knowledge) lands on step 4 (connected projects)", () => {
     const stateAtKnowledge = {
       ...buildBaseState(),
-      step: 3 as const
+      step: 3 as const,
     };
 
     const afterNext = activationWizardReducer(stateAtKnowledge, {
-      type: "go-next"
+      type: "go-next",
     });
 
     expect(afterNext.step).toBe(4);
@@ -293,11 +293,11 @@ describe("activationWizardReducer connected-projects state", () => {
   it("go-next from step 4 (connected projects) lands on step 5 (review)", () => {
     const stateAtConnected = {
       ...buildBaseState(),
-      step: 4 as const
+      step: 4 as const,
     };
 
     const afterNext = activationWizardReducer(stateAtConnected, {
-      type: "go-next"
+      type: "go-next",
     });
 
     expect(afterNext.step).toBe(5);
@@ -306,7 +306,7 @@ describe("activationWizardReducer connected-projects state", () => {
   it("pick-project resets connectedProjectIds back to empty", () => {
     const seeded = {
       ...buildBaseState(),
-      connectedProjectIds: ["p:beech"]
+      connectedProjectIds: ["p:beech"],
     };
 
     const afterPick = activationWizardReducer(seeded, {
@@ -326,8 +326,8 @@ describe("activationWizardReducer connected-projects state", () => {
         aiKnowledgeSyncedAt: null,
         hasCachedAiKnowledge: false,
         memberCount: 0,
-        activationRequirementsMet: false
-      }
+        activationRequirementsMet: false,
+      },
     });
 
     expect(afterPick.pickedProjectId).toBe("p:other-host");

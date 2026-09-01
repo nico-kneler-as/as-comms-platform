@@ -7,13 +7,14 @@ import {
   type ActivationWizardInput,
   activateProjectFromWizardAction,
   setProjectConnectedProjectsAction,
-  submitWizardAiKnowledgeSourcesAction
+  submitWizardAiKnowledgeSourcesAction,
 } from "@/app/settings/actions";
+import { createFromKindsAction } from "@/app/settings/projects/[projectId]/automated-emails/actions";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogTitle
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
@@ -29,13 +30,11 @@ import {
   getStepTwoValid,
   getDraftLineErrors,
   listEnteredDrafts,
-  normalizeSignatureDraft
+  normalizeSignatureDraft,
 } from "./shared";
-import {
-  activationWizardReducer,
-  createInitialState
-} from "./state";
+import { activationWizardReducer, createInitialState } from "./state";
 import { StepAliases } from "./step-aliases";
+import { StepAutomatedEmails } from "./step-automated-emails";
 import { StepConnectedProjects } from "./step-connected-projects";
 import { StepKnowledge } from "./step-knowledge";
 import { StepPickProject } from "./step-pick-project";
@@ -50,22 +49,22 @@ export interface ActivationWizardProps {
   readonly initialProjectId?: string;
 }
 
-
 export function ActivationWizard({
   open,
   onClose,
   inactiveProjects,
-  initialProjectId
+  initialProjectId,
 }: ActivationWizardProps) {
   const [state, dispatch] = useReducer(
     activationWizardReducer,
     { inactiveProjects, initialProjectId },
     ({ inactiveProjects: projects, initialProjectId: projectId }) =>
-      createInitialState(projects, projectId)
+      createInitialState(projects, projectId),
   );
   const selectedProject =
-    inactiveProjects.find((project) => project.projectId === state.pickedProjectId) ??
-    null;
+    inactiveProjects.find(
+      (project) => project.projectId === state.pickedProjectId,
+    ) ?? null;
   // The activation wizard's connected-projects step picks from the same
   // "inactive AND not yet connected" pool that the project picker uses, but
   // excludes the host being activated. The wizard's caller already filters
@@ -74,19 +73,18 @@ export function ActivationWizard({
   const connectedProjectCandidates = inactiveProjects.filter(
     (project) =>
       project.projectId !== state.pickedProjectId &&
-      project.connectedToProjectId === null
+      project.connectedToProjectId === null,
   );
   const primaryAlias = getPrimaryAlias(state.aliases);
   const stepValid = {
     0: getStepOneValid({
       pickedProjectId: state.pickedProjectId,
-      aliasDraft: state.aliasDraft
+      aliasDraft: state.aliasDraft,
     }),
     1: getStepTwoValid(state.aliases),
     2: getStepThreeValid(state.signatureDraft),
-    3:
-      state.skipKnowledgeSetup ||
-      state.knowledgeStatus === "done"
+    3: true,
+    4: state.skipKnowledgeSetup || state.knowledgeStatus === "done",
   } as const;
   const canContinue =
     state.step === 0
@@ -96,8 +94,10 @@ export function ActivationWizard({
         : state.step === 2
           ? stepValid[2]
           : state.step === 3
-            ? stepValid[3]
-            : true;
+            ? true
+            : state.step === 4
+              ? stepValid[4]
+              : true;
   const isPending =
     state.knowledgeStatus === "syncing" || state.activationStatus === "pending";
   const isActivated = state.activatedProject !== null;
@@ -112,7 +112,7 @@ export function ActivationWizard({
     if (selectedProject === null) {
       dispatch({
         type: "sync-error",
-        message: "Choose a project before saving AI Knowledge sources."
+        message: "Choose a project before saving AI Knowledge sources.",
       });
       return;
     }
@@ -126,15 +126,17 @@ export function ActivationWizard({
     if (enteredDrafts.length === 0) {
       dispatch({
         type: "sync-error",
-        message: "Add at least one AI Knowledge source or skip this step."
+        message: "Add at least one AI Knowledge source or skip this step.",
       });
       return;
     }
 
-    if (Object.keys(getDraftLineErrors(state.knowledgeSourceDrafts)).length > 0) {
+    if (
+      Object.keys(getDraftLineErrors(state.knowledgeSourceDrafts)).length > 0
+    ) {
       dispatch({
         type: "sync-error",
-        message: "Fix the invalid AI Knowledge source URLs before continuing."
+        message: "Fix the invalid AI Knowledge source URLs before continuing.",
       });
       return;
     }
@@ -145,13 +147,13 @@ export function ActivationWizard({
       selectedProject.projectId,
       enteredDrafts.map((draft) => ({
         url: draft.url.trim(),
-        label: draft.label.trim().length > 0 ? draft.label.trim() : null
-      }))
+        label: draft.label.trim().length > 0 ? draft.label.trim() : null,
+      })),
     );
     if (!result.ok) {
       dispatch({
         type: "sync-error",
-        message: result.message
+        message: result.message,
       });
       return;
     }
@@ -174,14 +176,14 @@ export function ActivationWizard({
       projectId: selectedProject.projectId,
       projectAlias: state.aliasDraft.trim(),
       aliases: state.aliases,
-      signature: normalizeSignatureDraft(state.signatureDraft)
+      signature: normalizeSignatureDraft(state.signatureDraft),
     };
 
     const result = await activateProjectFromWizardAction(input);
     if (!result.ok) {
       dispatch({
         type: "activation-error",
-        message: result.message
+        message: result.message,
       });
       return;
     }
@@ -189,7 +191,7 @@ export function ActivationWizard({
     if (state.connectedProjectIds.length > 0) {
       const connectionResult = await setProjectConnectedProjectsAction(
         selectedProject.projectId,
-        state.connectedProjectIds
+        state.connectedProjectIds,
       );
       if (!connectionResult.ok) {
         // The host activated successfully but the connection step failed;
@@ -197,7 +199,25 @@ export function ActivationWizard({
         // detail page. The host stays activated.
         dispatch({
           type: "activation-error",
-          message: `Project activated, but connecting sub-projects failed: ${connectionResult.message}`
+          message: `Project activated, but connecting sub-projects failed: ${connectionResult.message}`,
+        });
+        return;
+      }
+    }
+
+    if (
+      state.automatedEmailKinds.length > 0 ||
+      state.includeCustomAutomatedEmail
+    ) {
+      const templatesResult = await createFromKindsAction({
+        projectId: selectedProject.projectId,
+        kinds: state.automatedEmailKinds,
+        includeCustom: state.includeCustomAutomatedEmail,
+      });
+      if (!templatesResult.ok) {
+        dispatch({
+          type: "activation-error",
+          message: `Project activated, but automated email shells could not be created: ${templatesResult.message}`,
         });
         return;
       }
@@ -205,7 +225,7 @@ export function ActivationWizard({
 
     dispatch({
       type: "activation-success",
-      project: result.data
+      project: result.data,
     });
   }
 
@@ -324,12 +344,32 @@ export function ActivationWizard({
                   primaryAliasAddress={primaryAlias?.address ?? null}
                   signatureDraft={state.signatureDraft}
                   onSignatureChange={(nextValue) => {
-                    dispatch({ type: "set-signature", signatureDraft: nextValue });
+                    dispatch({
+                      type: "set-signature",
+                      signatureDraft: nextValue,
+                    });
                   }}
                 />
               ) : null}
 
               {!isActivated && state.step === 3 ? (
+                <StepAutomatedEmails
+                  projectId={selectedProject?.projectId ?? null}
+                  selectedKinds={state.automatedEmailKinds}
+                  includeCustom={state.includeCustomAutomatedEmail}
+                  onSelectedKindsChange={(kinds) => {
+                    dispatch({ type: "set-automated-email-kinds", kinds });
+                  }}
+                  onIncludeCustomChange={(checked) => {
+                    dispatch({
+                      type: "set-include-custom-automated-email",
+                      checked,
+                    });
+                  }}
+                />
+              ) : null}
+
+              {!isActivated && state.step === 4 ? (
                 <StepKnowledge
                   knowledgeSourceDrafts={state.knowledgeSourceDrafts}
                   skipKnowledgeSetup={state.skipKnowledgeSetup}
@@ -341,7 +381,7 @@ export function ActivationWizard({
                   onRemoveRow={(index) => {
                     dispatch({
                       type: "remove-knowledge-source-row",
-                      index
+                      index,
                     });
                   }}
                   onFieldChange={(index, field, value) => {
@@ -349,13 +389,13 @@ export function ActivationWizard({
                       type: "set-knowledge-source-field",
                       index,
                       field,
-                      value
+                      value,
                     });
                   }}
                   onSkipKnowledgeSetupChange={(checked) => {
                     dispatch({
                       type: "set-skip-knowledge-setup",
-                      checked
+                      checked,
                     });
                   }}
                   onSubmit={() => {
@@ -364,20 +404,20 @@ export function ActivationWizard({
                 />
               ) : null}
 
-              {!isActivated && state.step === 4 ? (
+              {!isActivated && state.step === 5 ? (
                 <StepConnectedProjects
                   candidates={connectedProjectCandidates}
                   selectedProjectIds={state.connectedProjectIds}
                   onToggle={(projectId) => {
                     dispatch({
                       type: "toggle-connected-project",
-                      projectId
+                      projectId,
                     });
                   }}
                 />
               ) : null}
 
-              {!isActivated && state.step === 5 ? (
+              {!isActivated && state.step === 6 ? (
                 <StepReview
                   selectedProject={selectedProject}
                   aliasDraft={state.aliasDraft}
@@ -387,6 +427,10 @@ export function ActivationWizard({
                   signatureDraft={state.signatureDraft}
                   connectedProjectIds={state.connectedProjectIds}
                   connectedProjectCandidates={connectedProjectCandidates}
+                  automatedEmailKinds={state.automatedEmailKinds}
+                  includeCustomAutomatedEmail={
+                    state.includeCustomAutomatedEmail
+                  }
                   activationError={state.activationMessage}
                 />
               ) : null}
@@ -409,7 +453,7 @@ export function ActivationWizard({
                 <Button type="button" onClick={handleClose}>
                   Done
                 </Button>
-              ) : state.step === 5 ? (
+              ) : state.step === 6 ? (
                 <Button
                   type="button"
                   onClick={() => {

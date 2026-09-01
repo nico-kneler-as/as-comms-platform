@@ -1,14 +1,15 @@
 import type { ProjectMutationData } from "@/app/settings/actions";
+import type { AutomatedEmailKind } from "@as-comms/contracts";
 import type { ProjectRowViewModel } from "@/src/server/settings/selectors";
 
 import {
   type AliasDraft,
   buildDefaultSignature,
   buildInitialAliasDraft,
-  buildInitialAliases
+  buildInitialAliases,
 } from "./shared";
 
-export type StepIndex = 0 | 1 | 2 | 3 | 4 | 5;
+export type StepIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type KnowledgeStatus = "idle" | "syncing" | "done" | "error";
 
 export interface KnowledgeSourceDraft {
@@ -22,6 +23,11 @@ export interface WizardState {
   readonly aliasDraft: string;
   readonly aliases: readonly AliasDraft[];
   readonly signatureDraft: string;
+  readonly automatedEmailKinds: readonly Exclude<
+    AutomatedEmailKind,
+    "custom"
+  >[];
+  readonly includeCustomAutomatedEmail: boolean;
   readonly knowledgeSourceDrafts: readonly KnowledgeSourceDraft[];
   readonly skipKnowledgeSetup: boolean;
   readonly knowledgeStatus: KnowledgeStatus;
@@ -42,6 +48,14 @@ export type WizardAction =
   | { readonly type: "remove-alias"; readonly address: string }
   | { readonly type: "make-primary"; readonly address: string }
   | { readonly type: "set-signature"; readonly signatureDraft: string }
+  | {
+      readonly type: "set-automated-email-kinds";
+      readonly kinds: readonly Exclude<AutomatedEmailKind, "custom">[];
+    }
+  | {
+      readonly type: "set-include-custom-automated-email";
+      readonly checked: boolean;
+    }
   | { readonly type: "add-knowledge-source-row" }
   | { readonly type: "remove-knowledge-source-row"; readonly index: number }
   | {
@@ -57,7 +71,10 @@ export type WizardAction =
   | { readonly type: "toggle-connected-project"; readonly projectId: string }
   | { readonly type: "activation-start" }
   | { readonly type: "activation-error"; readonly message: string }
-  | { readonly type: "activation-success"; readonly project: ProjectMutationData };
+  | {
+      readonly type: "activation-success";
+      readonly project: ProjectMutationData;
+    };
 
 // Wizard always starts the AI Knowledge step with one empty row so the
 // operator sees the input shape immediately. If the project already has a
@@ -65,7 +82,7 @@ export type WizardAction =
 // re-activating a pre-migration project shows the existing source as
 // editable rather than dropping it.
 function buildInitialKnowledgeSourceDrafts(
-  project: ProjectRowViewModel | null
+  project: ProjectRowViewModel | null,
 ): readonly KnowledgeSourceDraft[] {
   const initialUrl = project?.aiKnowledgeUrl?.trim() ?? "";
   return [{ url: initialUrl, label: "" }];
@@ -73,7 +90,7 @@ function buildInitialKnowledgeSourceDrafts(
 
 export function createInitialState(
   projects: readonly ProjectRowViewModel[],
-  initialProjectId?: string
+  initialProjectId?: string,
 ): WizardState {
   const initialProject =
     projects.find((project) => project.projectId === initialProjectId) ?? null;
@@ -84,6 +101,8 @@ export function createInitialState(
     aliasDraft: buildInitialAliasDraft(initialProject),
     aliases: buildInitialAliases(initialProject),
     signatureDraft: "",
+    automatedEmailKinds: [],
+    includeCustomAutomatedEmail: false,
     knowledgeSourceDrafts: buildInitialKnowledgeSourceDrafts(initialProject),
     skipKnowledgeSetup: false,
     knowledgeStatus: "idle",
@@ -91,7 +110,7 @@ export function createInitialState(
     connectedProjectIds: [],
     activationStatus: "idle",
     activationMessage: null,
-    activatedProject: null
+    activatedProject: null,
   };
 }
 
@@ -108,19 +127,19 @@ function prepareStateForStep(state: WizardState, step: StepIndex): WizardState {
     return {
       ...state,
       step,
-      signatureDraft: buildDefaultSignature(state.aliasDraft)
+      signatureDraft: buildDefaultSignature(state.aliasDraft),
     };
   }
 
   return {
     ...state,
-    step
+    step,
   };
 }
 
 export function activationWizardReducer(
   state: WizardState,
-  action: WizardAction
+  action: WizardAction,
 ): WizardState {
   switch (action.type) {
     case "go-back":
@@ -128,27 +147,27 @@ export function activationWizardReducer(
         {
           ...state,
           activationMessage: null,
-          activationStatus: "idle"
+          activationStatus: "idle",
         },
-        Math.max(state.step - 1, 0) as StepIndex
+        Math.max(state.step - 1, 0) as StepIndex,
       );
     case "go-next":
       return prepareStateForStep(
         {
           ...state,
           activationMessage: null,
-          activationStatus: "idle"
+          activationStatus: "idle",
         },
-        Math.min(state.step + 1, 5) as StepIndex
+        Math.min(state.step + 1, 6) as StepIndex,
       );
     case "go-to-step":
       return prepareStateForStep(
         {
           ...state,
           activationMessage: null,
-          activationStatus: "idle"
+          activationStatus: "idle",
         },
-        action.step
+        action.step,
       );
     case "pick-project":
       return {
@@ -157,14 +176,18 @@ export function activationWizardReducer(
         aliasDraft: buildInitialAliasDraft(action.project),
         aliases: buildInitialAliases(action.project),
         signatureDraft: "",
-        knowledgeSourceDrafts: buildInitialKnowledgeSourceDrafts(action.project),
+        automatedEmailKinds: [],
+        includeCustomAutomatedEmail: false,
+        knowledgeSourceDrafts: buildInitialKnowledgeSourceDrafts(
+          action.project,
+        ),
         skipKnowledgeSetup: false,
         knowledgeStatus: "idle",
         knowledgeMessage: null,
         connectedProjectIds: [],
         activationStatus: "idle",
         activationMessage: null,
-        activatedProject: null
+        activatedProject: null,
       };
     case "set-alias": {
       const nextAlias = action.aliasDraft;
@@ -178,7 +201,7 @@ export function activationWizardReducer(
         aliasDraft: nextAlias,
         signatureDraft: nextSignature,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     }
     case "add-alias":
@@ -188,15 +211,15 @@ export function activationWizardReducer(
           ...state.aliases,
           {
             address: action.address,
-            isPrimary: state.aliases.length === 0
-          }
+            isPrimary: state.aliases.length === 0,
+          },
         ],
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     case "remove-alias": {
       const remaining = state.aliases.filter(
-        (alias) => alias.address !== action.address
+        (alias) => alias.address !== action.address,
       );
       const primaryExists = remaining.some((alias) => alias.isPrimary);
       return {
@@ -205,11 +228,11 @@ export function activationWizardReducer(
           remaining.length > 0 && !primaryExists
             ? remaining.map((alias, index) => ({
                 ...alias,
-                isPrimary: index === 0
+                isPrimary: index === 0,
               }))
             : remaining,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     }
     case "make-primary":
@@ -217,32 +240,46 @@ export function activationWizardReducer(
         ...state,
         aliases: state.aliases.map((alias) => ({
           ...alias,
-          isPrimary: alias.address === action.address
+          isPrimary: alias.address === action.address,
         })),
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     case "set-signature":
       return {
         ...state,
         signatureDraft: action.signatureDraft,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
+      };
+    case "set-automated-email-kinds":
+      return {
+        ...state,
+        automatedEmailKinds: action.kinds,
+        activationMessage: null,
+        activationStatus: "idle",
+      };
+    case "set-include-custom-automated-email":
+      return {
+        ...state,
+        includeCustomAutomatedEmail: action.checked,
+        activationMessage: null,
+        activationStatus: "idle",
       };
     case "add-knowledge-source-row":
       return {
         ...resetKnowledgeState(state),
         knowledgeSourceDrafts: [
           ...state.knowledgeSourceDrafts,
-          { url: "", label: "" }
+          { url: "", label: "" },
         ],
         skipKnowledgeSetup: false,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     case "remove-knowledge-source-row": {
       const filtered = state.knowledgeSourceDrafts.filter(
-        (_draft, index) => index !== action.index
+        (_draft, index) => index !== action.index,
       );
       // Never let the operator delete down to zero rows — keep at least one
       // empty placeholder so they can keep typing without re-clicking "Add
@@ -255,21 +292,21 @@ export function activationWizardReducer(
         knowledgeSourceDrafts: nextDrafts,
         skipKnowledgeSetup: false,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     }
     case "set-knowledge-source-field": {
       const nextDrafts = state.knowledgeSourceDrafts.map((draft, index) =>
         index === action.index
           ? { ...draft, [action.field]: action.value }
-          : draft
+          : draft,
       );
       return {
         ...resetKnowledgeState(state),
         knowledgeSourceDrafts: nextDrafts,
         skipKnowledgeSetup: false,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     }
     case "set-skip-knowledge-setup":
@@ -277,7 +314,7 @@ export function activationWizardReducer(
         ...resetKnowledgeState(state),
         skipKnowledgeSetup: action.checked,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     case "sync-start":
       return {
@@ -285,19 +322,19 @@ export function activationWizardReducer(
         knowledgeStatus: "syncing",
         knowledgeMessage: null,
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     case "sync-done":
       return {
         ...state,
         knowledgeStatus: "done",
-        knowledgeMessage: null
+        knowledgeMessage: null,
       };
     case "sync-error":
       return {
         ...state,
         knowledgeStatus: "error",
-        knowledgeMessage: action.message
+        knowledgeMessage: action.message,
       };
     case "toggle-connected-project": {
       const isSelected = state.connectedProjectIds.includes(action.projectId);
@@ -305,32 +342,32 @@ export function activationWizardReducer(
         ...state,
         connectedProjectIds: isSelected
           ? state.connectedProjectIds.filter(
-              (projectId) => projectId !== action.projectId
+              (projectId) => projectId !== action.projectId,
             )
           : [...state.connectedProjectIds, action.projectId],
         activationMessage: null,
-        activationStatus: "idle"
+        activationStatus: "idle",
       };
     }
     case "activation-start":
       return {
         ...state,
         activationStatus: "pending",
-        activationMessage: null
+        activationMessage: null,
       };
     case "activation-error":
       return {
         ...state,
-        step: 5,
+        step: 6,
         activationStatus: "error",
-        activationMessage: action.message
+        activationMessage: action.message,
       };
     case "activation-success":
       return {
         ...state,
         activationStatus: "idle",
         activationMessage: null,
-        activatedProject: action.project
+        activatedProject: action.project,
       };
     default:
       return state;

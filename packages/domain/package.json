@@ -10,6 +10,10 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./automated-email-merge": {
+      "types": "./src/automated-email-merge.ts",
+      "default": "./dist/automated-email-merge.js"
+    },
     "./phone": {
       "types": "./src/phone.ts",
       "default": "./dist/phone.js"

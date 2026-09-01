@@ -12,6 +12,14 @@ export function revalidateProjectSettings(projectId: string): void {
   revalidatePath(`/settings/projects/${encodeURIComponent(projectId)}`);
 }
 
+export function revalidateAutomatedEmailViews(projectId: string): void {
+  revalidateProjectSettings(projectId);
+  revalidateTag(`automated-emails:${projectId}`);
+  revalidatePath(
+    `/settings/projects/${encodeURIComponent(projectId)}/automated-emails`,
+  );
+}
+
 export function revalidateAccessSettings(): void {
   revalidateTag("settings:team");
   revalidatePath("/settings/team");

@@ -3,11 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/link", () => ({
-  default: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children
+  default: ({ children }: { readonly children: unknown }) => children,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -17,8 +13,8 @@ vi.mock("next/navigation", () => ({
     replace: vi.fn(),
     back: vi.fn(),
     forward: vi.fn(),
-    prefetch: vi.fn()
-  })
+    prefetch: vi.fn(),
+  }),
 }));
 
 vi.mock("lucide-react", () => ({
@@ -47,65 +43,29 @@ vi.mock("lucide-react", () => ({
   Sparkles: () => null,
   Trash2: () => null,
   UserPlus: () => null,
-  X: () => null
+  X: () => null,
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children
+  Button: ({ children }: { readonly children: unknown }) => children,
 }));
 
 vi.mock("@/components/ui/input", () => ({
-  Input: () => null
+  Input: () => null,
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogContent: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogDescription: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogFooter: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogHeader: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogTitle: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children,
-  DialogTrigger: ({
-    children
-  }: {
-    readonly children: unknown;
-  }) => children
+  Dialog: ({ children }: { readonly children: unknown }) => children,
+  DialogContent: ({ children }: { readonly children: unknown }) => children,
+  DialogDescription: ({ children }: { readonly children: unknown }) => children,
+  DialogFooter: ({ children }: { readonly children: unknown }) => children,
+  DialogHeader: ({ children }: { readonly children: unknown }) => children,
+  DialogTitle: ({ children }: { readonly children: unknown }) => children,
+  DialogTrigger: ({ children }: { readonly children: unknown }) => children,
 }));
 
 vi.mock("@/components/ui/status-badge", () => ({
-  StatusBadge: ({
-    label
-  }: {
-    readonly label: string;
-  }) => label
+  StatusBadge: ({ label }: { readonly label: string }) => label,
 }));
 
 vi.mock("../../app/settings/actions", () => ({
@@ -122,9 +82,8 @@ vi.mock("../../app/settings/actions", () => ({
   updateProjectAliasAction: vi.fn(),
   updateProjectAliasSignatureAction: vi.fn(),
   updateAiKnowledgeSourceAction: vi.fn(),
-  updateProjectEmailsAction: vi.fn()
-  ,
-  updateOperatingContextAction: vi.fn()
+  updateProjectEmailsAction: vi.fn(),
+  updateOperatingContextAction: vi.fn(),
 }));
 
 import { ProjectDetail } from "../../app/settings/_components/project-detail";
@@ -157,20 +116,24 @@ describe("ProjectDetail role-aware rendering", () => {
           memberCount: 0,
           activationRequirementsMet: false,
           isAdmin: false,
+          automatedEmailSummary: {
+            templateCount: 0,
+            activeCount: 0,
+          },
           emails: [
             {
               id: "alias:inactive",
               address: "inactive@asc.internal",
               isPrimary: true,
-              signature: ""
-            }
+              signature: "",
+            },
           ],
           salesforceProjectId: "project:inactive",
           connectedProjects: [],
           connectedToHost: null,
-          availableConnectionCandidates: []
-        }
-      })
+          availableConnectionCandidates: [],
+        },
+      }),
     );
 
     expect(html).toContain("Inbox aliases");
