@@ -178,7 +178,10 @@ describe("renderAutomatedEmail", () => {
     });
     const withoutBodyLinks = result.html.replace(/<a href="[^"]*"[^>]*>.*?<\/a>/gu, "");
 
-    expect(result.html).toContain("Adventure Scientists · PNW &lt;Bio&gt;");
+    expect(result.html).toContain("ADVENTURE&nbsp;SCIENTISTS");
+    expect(result.html).toContain("PNW &lt;BIO&gt;");
+    expect(result.html).toContain("background-color:#213515");
+    expect(result.html).toContain("background-color:#FAFBF9");
     expect(result.html).toContain("Reason &amp; context");
     expect(result.html).toContain("max-width:600px");
     expect(result.html).not.toContain("<img");
