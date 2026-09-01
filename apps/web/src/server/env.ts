@@ -29,7 +29,12 @@ export const webEnvSchema = z.object({
   POSTMARK_SERVER_TOKEN: z.string().trim().min(1).optional(),
   POSTMARK_ACCOUNT_TOKEN: z.string().trim().min(1).optional(),
   POSTMARK_WEBHOOK_SIGNING_SECRET: z.string().trim().min(1).optional(),
-  POSTMARK_TRANSACTIONAL_STREAM_ID: z.string().trim().min(1).default("outbound"),
+  AUTOMATED_EMAIL_WEBHOOK_SECRET: z.string().trim().min(1).optional(),
+  POSTMARK_TRANSACTIONAL_STREAM_ID: z
+    .string()
+    .trim()
+    .min(1)
+    .default("outbound"),
   POSTMARK_BROADCAST_STREAM_ID: z.string().trim().min(1).default("broadcast"),
   NEWSLETTER_SIGNUP_ALLOWED_ORIGIN: z
     .string()
@@ -53,6 +58,7 @@ export function readWebEnv(env: NodeJS.ProcessEnv = process.env): WebEnv {
     POSTMARK_SERVER_TOKEN: env.POSTMARK_SERVER_TOKEN,
     POSTMARK_ACCOUNT_TOKEN: env.POSTMARK_ACCOUNT_TOKEN,
     POSTMARK_WEBHOOK_SIGNING_SECRET: env.POSTMARK_WEBHOOK_SIGNING_SECRET,
+    AUTOMATED_EMAIL_WEBHOOK_SECRET: env.AUTOMATED_EMAIL_WEBHOOK_SECRET,
     POSTMARK_TRANSACTIONAL_STREAM_ID: env.POSTMARK_TRANSACTIONAL_STREAM_ID,
     POSTMARK_BROADCAST_STREAM_ID: env.POSTMARK_BROADCAST_STREAM_ID,
     NEWSLETTER_SIGNUP_ALLOWED_ORIGIN: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,

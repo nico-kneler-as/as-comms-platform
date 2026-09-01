@@ -360,6 +360,12 @@ function buildDefaultProjectionSeed(
         snippet: "",
         source: "fallback"
       };
+    case "automated.email.sent":
+      return {
+        summary: "Automated email sent",
+        snippet: "",
+        source: "fallback"
+      };
     case "campaign.email.delivered":
       return {
         summary: "Campaign email delivered",

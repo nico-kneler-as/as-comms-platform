@@ -51,6 +51,10 @@ import {
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
 import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js";
+import {
+  createAutomatedEmailSendTaskDependencies,
+  type AutomatedEmailSendTaskDependencies,
+} from "./jobs/send-automated-email/index.js";
 import { type SmsBroadcastSendTaskDependencies } from "./jobs/sms-broadcast-send/index.js";
 import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
@@ -86,6 +90,7 @@ import {
 } from "./jobs/reconcile-superseded-projections.js";
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
 import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-status/index.js";
+import { createOpsAlertSender } from "./ops-alert/sender.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
@@ -203,7 +208,7 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
 function readSyncStateLeaseThresholdMs(env: NodeJS.ProcessEnv): number {
   const parsed = Number(
     env.SYNC_STATE_LEASE_THRESHOLD_MS ??
-      String(defaultSyncStateLeaseThresholdMs)
+      String(defaultSyncStateLeaseThresholdMs),
   );
 
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -213,16 +218,16 @@ function readSyncStateLeaseThresholdMs(env: NodeJS.ProcessEnv): number {
   return parsed;
 }
 
-function buildDefaultMailchimpTransitionDiscoverySeed(now = new Date()): string {
+function buildDefaultMailchimpTransitionDiscoverySeed(
+  now = new Date(),
+): string {
   return new Date(
     now.getTime() -
       mailchimpTransitionDiscoverySeedLookbackDays * 24 * 60 * 60 * 1000,
   ).toISOString();
 }
 
-function readOptionalTrimmedEnv(
-  value: string | undefined,
-): string | null {
+function readOptionalTrimmedEnv(value: string | undefined): string | null {
   if (value === undefined) {
     return null;
   }
@@ -279,9 +284,15 @@ function readOptionalPositiveIntegerEnv(
 function buildCampaignSendDependencies(input: {
   readonly connection: DatabaseConnection;
   readonly env: NodeJS.ProcessEnv;
-  readonly campaigns: ReturnType<typeof createStage5RepositoryBundleFromConnection>;
-  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
-  readonly settings: ReturnType<typeof createStage2RepositoryBundleFromConnection>;
+  readonly campaigns: ReturnType<
+    typeof createStage5RepositoryBundleFromConnection
+  >;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
+  readonly settings: ReturnType<
+    typeof createStage2RepositoryBundleFromConnection
+  >;
 }): CampaignSendTaskDependencies | undefined {
   const serverToken = readOptionalTrimmedEnv(input.env.POSTMARK_SERVER_TOKEN);
   const baseUrl =
@@ -377,6 +388,84 @@ function buildCampaignSendDependencies(input: {
   };
 }
 
+function buildAutomatedEmailSendDependencies(input: {
+  readonly connection: DatabaseConnection;
+  readonly env: NodeJS.ProcessEnv;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
+  readonly settings: ReturnType<
+    typeof createStage2RepositoryBundleFromConnection
+  >;
+}): AutomatedEmailSendTaskDependencies {
+  const salesforceConfigKeys = [
+    "SALESFORCE_LOGIN_URL",
+    "SALESFORCE_CLIENT_ID",
+    "SALESFORCE_USERNAME",
+    "SALESFORCE_JWT_PRIVATE_KEY",
+  ];
+  const salesforceClient = salesforceConfigKeys.some(
+    (key) => !input.env[key]?.trim(),
+  )
+    ? null
+    : createSalesforceApiClient(
+        readAutomatedEmailSalesforceConfig(input.env),
+      );
+  const postmarkServerToken = readOptionalTrimmedEnv(
+    input.env.POSTMARK_SERVER_TOKEN,
+  );
+  const postmarkBaseUrl = readOptionalTrimmedEnv(input.env.POSTMARK_BASE_URL);
+  const postmarkClient =
+    postmarkServerToken === null
+      ? null
+      : createPostmarkClient({
+          serverToken: postmarkServerToken,
+          accountToken: readOptionalTrimmedEnv(
+            input.env.POSTMARK_ACCOUNT_TOKEN,
+          ),
+          webhookSigningSecret:
+            readOptionalTrimmedEnv(input.env.POSTMARK_WEBHOOK_SIGNING_SECRET) ??
+            "unused",
+          ...(postmarkBaseUrl === null ? {} : { baseUrl: postmarkBaseUrl }),
+        });
+
+  return createAutomatedEmailSendTaskDependencies({
+    db: input.connection.db,
+    persistence: createStage1PersistenceService(input.repositories),
+    contacts: input.repositories.contacts,
+    projects: input.settings.projects,
+    salesforceClient,
+    postmarkClient,
+    opsAlert: createOpsAlertSender({
+      env: input.env,
+      stateRepository: input.settings.opsAlertState,
+    }),
+  });
+}
+
+function readAutomatedEmailSalesforceConfig(
+  env: NodeJS.ProcessEnv,
+): SalesforceCaptureServiceConfig {
+  return {
+    // This field guards the Salesforce capture HTTP service, not direct SOQL
+    // calls. The API client does not use it, but its shared config type requires
+    // a non-empty value.
+    bearerToken: "direct-salesforce-api-client",
+    loginUrl: readRequiredEnv(env, "SALESFORCE_LOGIN_URL"),
+    clientId: readRequiredEnv(env, "SALESFORCE_CLIENT_ID"),
+    username: readRequiredEnv(env, "SALESFORCE_USERNAME"),
+    jwtPrivateKey: readRequiredEnv(env, "SALESFORCE_JWT_PRIVATE_KEY"),
+    jwtExpirationSeconds: readOptionalPositiveIntegerEnv(
+      env,
+      "SALESFORCE_JWT_EXPIRATION_SECONDS",
+      180,
+    ),
+    apiVersion: readOptionalStringEnv(env, "SALESFORCE_API_VERSION", "61.0"),
+    contactCaptureMode: "delta_polling",
+    membershipCaptureMode: "delta_polling",
+  };
+}
+
 function readWorkerSmsConfig(
   env: NodeJS.ProcessEnv,
 ): z.infer<typeof workerSmsConfigSchema> {
@@ -399,7 +488,9 @@ function readWorkerSmsConfig(
 
   const enabled = parseBooleanEnv(env.SMS_ENABLED);
   const service =
-    accountSid === null || authToken === null || messagingServiceSidOrFromNumber === null
+    accountSid === null ||
+    authToken === null ||
+    messagingServiceSidOrFromNumber === null
       ? null
       : workerSmsServiceConfigSchema.parse({
           accountSid,
@@ -421,13 +512,15 @@ function readWorkerSmsConfig(
 
 function buildSmsBroadcastSendDependencies(input: {
   readonly sms: WorkerConfig["sms"];
-  readonly campaigns: ReturnType<typeof createStage5RepositoryBundleFromConnection>;
-  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+  readonly campaigns: ReturnType<
+    typeof createStage5RepositoryBundleFromConnection
+  >;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
 }): SmsBroadcastSendTaskDependencies {
   const provider: Pick<TwilioProvider, "sendSms"> | null =
-    input.sms.service === null
-      ? null
-      : createTwilioProvider(input.sms.service);
+    input.sms.service === null ? null : createTwilioProvider(input.sms.service);
 
   return {
     campaignRuns: input.campaigns.campaignRuns,
@@ -443,7 +536,9 @@ function buildSmsBroadcastSendDependencies(input: {
 function buildReconcileSalesforceStateDependencies(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly db: Stage1Database;
-  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
 }): ReconcileSalesforceStateTaskDependencies | undefined {
   const requiredEnvs = [
     "SALESFORCE_CAPTURE_TOKEN",
@@ -476,8 +571,12 @@ function buildReconcileSalesforceStateDependencies(input: {
 function buildSynthesizeProjectKnowledgeDependencies(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly fetchImplementation: FetchImplementation;
-  readonly repositories: ReturnType<typeof createStage1RepositoryBundleFromConnection>;
-  readonly settings: ReturnType<typeof createStage2RepositoryBundleFromConnection>;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
+  readonly settings: ReturnType<
+    typeof createStage2RepositoryBundleFromConnection
+  >;
   readonly db: Stage1Database;
 }): SynthesizeProjectKnowledgeDependencies | undefined {
   const notionApiKey = readOptionalTrimmedEnv(input.env.NOTION_API_KEY);
@@ -669,7 +768,11 @@ function readOptionalCaptureConfig(
     readonly defaultTimeoutMs?: number;
   },
 ):
-  | { readonly baseUrl?: string; readonly bearerToken?: string; readonly timeoutMs?: number }
+  | {
+      readonly baseUrl?: string;
+      readonly bearerToken?: string;
+      readonly timeoutMs?: number;
+    }
   | undefined {
   const baseUrl = env[input.baseUrlKey];
   const bearerToken = env[input.tokenKey];
@@ -855,6 +958,12 @@ export async function createStage1WorkerRuntimeServices(
     repositories,
     settings,
   });
+  const automatedEmailSend = buildAutomatedEmailSendDependencies({
+    connection,
+    env: input?.env ?? process.env,
+    repositories,
+    settings,
+  });
   const smsBroadcastSend = buildSmsBroadcastSendDependencies({
     sms: config.sms,
     campaigns,
@@ -871,16 +980,17 @@ export async function createStage1WorkerRuntimeServices(
           fetchImplementation: input.fetchImplementation,
         };
   const fetchImplementation = input?.fetchImplementation ?? fetch;
-  const leaseThresholdMs = readSyncStateLeaseThresholdMs(input?.env ?? process.env);
-  const synthesizeProjectKnowledge = buildSynthesizeProjectKnowledgeDependencies(
-    {
+  const leaseThresholdMs = readSyncStateLeaseThresholdMs(
+    input?.env ?? process.env,
+  );
+  const synthesizeProjectKnowledge =
+    buildSynthesizeProjectKnowledgeDependencies({
       env: input?.env ?? process.env,
       fetchImplementation,
       repositories,
       settings,
       db: connection.db,
-    },
-  );
+    });
   const capture = {
     gmail: createGmailCapturePort(config.capture.gmail, fetchOptions),
     salesforce: createSalesforceCapturePort(
@@ -959,6 +1069,7 @@ export async function createStage1WorkerRuntimeServices(
         : {
             campaignSend,
           }),
+      automatedEmailSend,
       smsBroadcastSend,
       campaignEventsTailFinalize: {
         db: connection.db,
