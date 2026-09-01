@@ -19,6 +19,7 @@ import {
   filterItemsAtOrAfterPlatformFullCaptureCutover,
 } from "@/app/_lib/cutover";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
+import { AUTOMATED_EMAIL_TIMELINE_LABEL } from "@/src/lib/automated-email-send-presentation";
 
 import { INBOX_FILTERS } from "./filters";
 import { formatUtcRailEventDate } from "./format-date";
@@ -434,11 +435,9 @@ async function loadUnresolvedCaseCacheRows(input: {
       ? []
       : await input.runtime.repositories.contacts.listByIds(allOtherContactIds);
   const otherContactById = new Map(otherContacts.map((row) => [row.id, row]));
-  const sortableCases: (
-    InboxUnresolvedCaseCacheRow & {
-      readonly caseId: string;
-    }
-  )[] = [];
+  const sortableCases: (InboxUnresolvedCaseCacheRow & {
+    readonly caseId: string;
+  })[] = [];
 
   for (const identityCase of identityCases) {
     const resolvedOtherContacts = buildIdentityCaseOtherContactIds({
@@ -1100,9 +1099,7 @@ export function resolvePrimaryProjectForContact(input: {
     const metadata = input.projectMetadataById[primary.projectId];
     const ownName = metadata?.projectName ?? primary.projectId;
     const hostName =
-      metadata?.connectedToProjectId == null
-        ? null
-        : metadata.hostProjectName;
+      metadata?.connectedToProjectId == null ? null : metadata.hostProjectName;
 
     return {
       projectId: primary.projectId,
@@ -1121,9 +1118,7 @@ export function resolvePrimaryProjectForContact(input: {
     // as the chip's secondary line when the project is a connected sub.
     const ownName = input.conversationProjectFallback.projectName;
     const hostName =
-      metadata?.connectedToProjectId == null
-        ? null
-        : metadata.hostProjectName;
+      metadata?.connectedToProjectId == null ? null : metadata.hostProjectName;
 
     return {
       projectId: fallbackId,
@@ -1227,9 +1222,7 @@ function buildProjectMembershipViewModel(
   // the host's name actually resolved — otherwise fall back to the sub's
   // own name as a single-line label so we never render an empty primary.
   const hostName =
-    metadata?.connectedToProjectId == null
-      ? null
-      : metadata.hostProjectName;
+    metadata?.connectedToProjectId == null ? null : metadata.hostProjectName;
 
   return {
     membershipId: membership.id,
@@ -1642,6 +1635,8 @@ function fallbackLatestSubject(eventType: CanonicalEventType): string {
       return "Broadcast email clicked";
     case "campaign.email.unsubscribed":
       return "Broadcast email unsubscribed";
+    case "automated.email.sent":
+      return AUTOMATED_EMAIL_TIMELINE_LABEL;
     case "note.internal.created":
       return "Internal note created";
     default:
@@ -2284,7 +2279,9 @@ function timelineBody(item: TimelineItem): string {
       return item.messageTextPreview || item.summary;
     case "auto_email":
       return stripSignature(
-        parseCommunicationPreview(item.snippet).body || item.summary,
+        parseCommunicationPreview(item.snippet).body ||
+          item.summary ||
+          AUTOMATED_EMAIL_TIMELINE_LABEL,
       );
     case "auto_sms":
       return item.messageTextPreview;
@@ -2301,7 +2298,9 @@ function timelineBody(item: TimelineItem): string {
   }
 }
 
-function resolveTimelineEmailBody(item: Extract<TimelineItem, { family: "one_to_one_email" }>): string {
+function resolveTimelineEmailBody(
+  item: Extract<TimelineItem, { family: "one_to_one_email" }>,
+): string {
   const preview = resolvePreferredMessagePreview({
     explicitSubjects: [item.subject],
     rawCandidates: [item.bodyPreview, item.snippet],
@@ -2320,7 +2319,11 @@ function findRecentOutboundThreadBody(input: {
     return null;
   }
 
-  for (let index = input.activityTimelineItems.length - 1; index >= 0; index -= 1) {
+  for (
+    let index = input.activityTimelineItems.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
     const candidate = input.activityTimelineItems[index];
 
     if (
@@ -2609,7 +2612,8 @@ function buildTimelineEntry(input: {
         : body
       : body;
   const bodyWithDuplicateOutboundEchoStripped =
-    input.item.family === "one_to_one_email" && visualEmailDirection === "inbound"
+    input.item.family === "one_to_one_email" &&
+    visualEmailDirection === "inbound"
       ? stripDuplicateOutboundEcho({
           inboundBody: resolvedBody,
           recentOutboundBody: findRecentOutboundThreadBody({
@@ -2630,8 +2634,9 @@ function buildTimelineEntry(input: {
           canonicalEventId: input.item.canonicalEventId,
           inboundFirstOccurrenceOnThread:
             input.item.threadId !== null && input.item.threadId.length > 0
-              ? (input.inboundFirstOccurrenceByThread.get(input.item.threadId) ??
-                null)
+              ? (input.inboundFirstOccurrenceByThread.get(
+                  input.item.threadId,
+                ) ?? null)
               : null,
         })
       : [];
@@ -2643,7 +2648,9 @@ function buildTimelineEntry(input: {
             .filter(
               (
                 attachment,
-              ): attachment is (typeof attachment & { readonly filename: string }) =>
+              ): attachment is typeof attachment & {
+                readonly filename: string;
+              } =>
                 attachment.provider === "drive" && attachment.filename !== null,
             )
             .map((attachment) => attachment.filename),
@@ -2719,7 +2726,10 @@ function buildTimelineEntry(input: {
   const sideOfBubble =
     finalKind === "inbound-email" || finalKind === "outbound-email"
       ? resolveEmailBubbleSide({
-          fromHeader: input.item.family === "one_to_one_email" ? input.item.fromHeader : null,
+          fromHeader:
+            input.item.family === "one_to_one_email"
+              ? input.item.fromHeader
+              : null,
           participantRows,
           allProjectAliasesLowerSet,
           mailboxAlias:
@@ -3211,7 +3221,9 @@ function shouldFallbackToCapturedMailbox(
     return true;
   }
 
-  return fromEmail !== null && toEmail.toLowerCase() === fromEmail.toLowerCase();
+  return (
+    fromEmail !== null && toEmail.toLowerCase() === fromEmail.toLowerCase()
+  );
 }
 
 /**
@@ -3280,16 +3292,19 @@ function buildComposerReplyContext(input: {
   const visibleTimelineItems = hasPostCutoverActivity
     ? filterItemsAtOrAfterPlatformFullCaptureCutover(input.timelineItems)
     : input.timelineItems;
-  const inboundItems = [...visibleTimelineItems].reverse().filter(
-    (
-      item,
-    ): item is Extract<
-      TimelineItem,
-      { family: "one_to_one_email" | "one_to_one_sms" }
-    > =>
-      (item.family === "one_to_one_email" || item.family === "one_to_one_sms") &&
-      item.direction === "inbound",
-  );
+  const inboundItems = [...visibleTimelineItems]
+    .reverse()
+    .filter(
+      (
+        item,
+      ): item is Extract<
+        TimelineItem,
+        { family: "one_to_one_email" | "one_to_one_sms" }
+      > =>
+        (item.family === "one_to_one_email" ||
+          item.family === "one_to_one_sms") &&
+        item.direction === "inbound",
+    );
   const latestInboundItem = inboundItems[0];
   const inboundEmails = inboundItems.filter(
     (item): item is Extract<TimelineItem, { family: "one_to_one_email" }> =>
@@ -3330,15 +3345,15 @@ function buildComposerReplyContext(input: {
         : "",
     threadCursor:
       latestInboundItem.family === "one_to_one_email"
-        ? latestQuotableInboundEmail?.canonicalEventId ?? null
+        ? (latestQuotableInboundEmail?.canonicalEventId ?? null)
         : null,
     threadId:
       latestInboundItem.family === "one_to_one_email"
-        ? latestInboundItem.threadId ?? null
+        ? (latestInboundItem.threadId ?? null)
         : null,
     inReplyToRfc822:
       latestInboundItem.family === "one_to_one_email"
-        ? latestInboundItem.rfc822MessageId ?? null
+        ? (latestInboundItem.rfc822MessageId ?? null)
         : null,
     defaultAlias: input.defaultAlias,
     cc:
@@ -4214,9 +4229,8 @@ async function readInboxDetailCacheData(
   const visibleTimelineItems = hasPostCutoverActivity
     ? filterItemsAtOrAfterPlatformFullCaptureCutover(activityTimelineItems)
     : activityTimelineItems;
-  const orderedTimelineItems = reorderLifecycleTimelineItems(
-    visibleTimelineItems,
-  );
+  const orderedTimelineItems =
+    reorderLifecycleTimelineItems(visibleTimelineItems);
   const timelinePage = paginateTimelineItems({
     timelineItems: orderedTimelineItems,
     limit: input.timelineLimit,
@@ -4392,13 +4406,11 @@ async function readInboxDetailCacheData(
         ) ?? [],
       ]),
     ),
-    inboundFirstOccurrenceByThread: buildInboundFirstOccurrenceByThread(
-      {
-        items: timelinePage.items,
-        attachmentsBySourceEvidenceId,
-        sourceEvidenceIdByCanonicalEventId,
-      },
-    ),
+    inboundFirstOccurrenceByThread: buildInboundFirstOccurrenceByThread({
+      items: timelinePage.items,
+      attachmentsBySourceEvidenceId,
+      sourceEvidenceIdByCanonicalEventId,
+    }),
     gmailMailboxAliasByCanonicalEventId: new Map(
       timelinePage.items.flatMap((item) => {
         const sourceEvidenceId = sourceEvidenceIdByCanonicalEventId.get(
@@ -4409,9 +4421,7 @@ async function readInboxDetailCacheData(
         }
         const detail = gmailDetailBySourceEvidenceId.get(sourceEvidenceId);
         const alias = normalizeEmailAddress(detail?.projectInboxAlias ?? null);
-        return alias === null
-          ? []
-          : [[item.canonicalEventId, alias] as const];
+        return alias === null ? [] : [[item.canonicalEventId, alias] as const];
       }),
     ),
     timelinePage: {

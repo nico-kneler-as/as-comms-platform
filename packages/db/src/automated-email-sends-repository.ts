@@ -154,6 +154,33 @@ export async function updateSendStatus(
   return mapSend(row);
 }
 
+/**
+ * Releases a held row back to the worker queue. The status guard makes this
+ * safe against a concurrent worker or operator action: only a still-held row
+ * can be reset, and processing metadata is cleared for the fresh evaluation.
+ */
+export async function resetHeldSendToReceived(
+  db: AutomatedEmailSendsDatabase,
+  id: string,
+): Promise<AutomatedEmailSendRecord | null> {
+  const [row] = await db
+    .update(automatedEmailSends)
+    .set({
+      status: "received",
+      statusReason: null,
+      processedAt: null,
+    })
+    .where(
+      and(
+        eq(automatedEmailSends.id, id),
+        eq(automatedEmailSends.status, "held"),
+      ),
+    )
+    .returning();
+
+  return row === undefined ? null : mapSend(row);
+}
+
 export async function getSendLogRow(
   db: AutomatedEmailSendsDatabase,
   id: string,

@@ -14,7 +14,11 @@ import { requireSession } from "@/src/server/auth/session";
 import { getAutomatedEmailTestSendRuntime } from "@/src/server/automated-email/postmark-test-send";
 import { revalidateAutomatedEmailViews } from "@/src/server/settings/revalidate";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
-import { loadAutomatedEmailKindSources } from "@/src/server/automated-email/selectors";
+import { enqueueAutomatedEmailSendJob } from "@/src/server/automated-email/enqueue";
+import {
+  loadAutomatedEmailKindSources,
+  loadAutomatedEmailSendLogPage,
+} from "@/src/server/automated-email/selectors";
 
 const lifecycleKinds = [
   "application_received",
@@ -91,6 +95,14 @@ const previewSchema = templateTargetSchema.extend({
 
 const sendTestSchema = previewSchema.extend({
   recipientEmail: z.string().trim().email(),
+});
+
+const sendLogPageSchema = templateTargetSchema.extend({
+  cursor: z.string().min(1).nullable().optional(),
+});
+
+const sendNowSchema = templateTargetSchema.extend({
+  sendId: z.string().uuid(),
 });
 
 type TemplateMutationData = Readonly<{
@@ -358,6 +370,98 @@ export async function getAutomatedEmailKindSourcesAction(projectId: string) {
     return errorResult(
       "kind_sources_failed",
       "The template starters could not be loaded. You can still start blank.",
+      true,
+    );
+  }
+}
+
+export async function loadSendLogPageAction(input: {
+  readonly projectId: string;
+  readonly templateId: string;
+  readonly cursor?: string | null;
+}) {
+  await requireSession();
+  const parsed = sendLogPageSchema.safeParse(input);
+  if (!parsed.success) {
+    return errorResult("validation_error", "The send log could not be loaded.");
+  }
+
+  try {
+    const page = await loadAutomatedEmailSendLogPage({
+      projectId: parsed.data.projectId,
+      templateId: parsed.data.templateId,
+      ...(parsed.data.cursor === undefined
+        ? {}
+        : { cursor: parsed.data.cursor }),
+    });
+    if (page === null) {
+      return errorResult(
+        "template_not_found",
+        "That automated email was not found.",
+      );
+    }
+    return success(page);
+  } catch {
+    return errorResult(
+      "send_log_load_failed",
+      "The send log could not be loaded. Try again.",
+      true,
+    );
+  }
+}
+
+export async function sendAutomatedEmailNowAction(input: {
+  readonly projectId: string;
+  readonly templateId: string;
+  readonly sendId: string;
+}) {
+  await requireSession();
+  const parsed = sendNowSchema.safeParse(input);
+  if (!parsed.success) {
+    return errorResult("validation_error", "That send could not be released.");
+  }
+
+  const owned = await loadOwnedTemplate(
+    parsed.data.projectId,
+    parsed.data.templateId,
+  );
+  if (owned === null) {
+    return errorResult(
+      "template_not_found",
+      "That automated email was not found.",
+    );
+  }
+
+  try {
+    const send = await owned.runtime.automatedEmails.getSendLogRow(
+      parsed.data.sendId,
+    );
+    if (send?.templateId !== owned.template.id) {
+      return errorResult("send_not_found", "That send log row was not found.");
+    }
+    if (send.status !== "held") {
+      return errorResult("send_not_held", "Only held sends can be released.");
+    }
+
+    const reset = await owned.runtime.automatedEmails.resetHeldSendToReceived(
+      send.id,
+    );
+    if (reset === null) {
+      return errorResult(
+        "send_not_held",
+        "This send is no longer held. Refresh the log and try again.",
+      );
+    }
+    await enqueueAutomatedEmailSendJob({
+      runtime: owned.runtime,
+      sendId: reset.id,
+    });
+    revalidateAutomatedEmailViews(parsed.data.projectId);
+    return success({ id: reset.id, status: reset.status });
+  } catch {
+    return errorResult(
+      "send_release_failed",
+      "The send could not be released. Try again.",
       true,
     );
   }
