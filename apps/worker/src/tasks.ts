@@ -13,6 +13,11 @@ import {
   type CampaignSendTaskDependencies,
 } from "./jobs/campaign-send/index.js";
 import {
+  createAutomatedEmailSendTask,
+  automatedEmailSendJobName,
+  type AutomatedEmailSendTaskDependencies,
+} from "./jobs/send-automated-email/index.js";
+import {
   createSmsBroadcastSendTask,
   smsBroadcastSendJobName,
   type SmsBroadcastSendTaskDependencies,
@@ -100,6 +105,7 @@ export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
     readonly campaignSend?: CampaignSendTaskDependencies;
+    readonly automatedEmailSend?: AutomatedEmailSendTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
@@ -127,6 +133,13 @@ export function createTaskList(
       ? {}
       : {
           [campaignSendJobName]: createCampaignSendTask(input.campaignSend),
+        }),
+    ...(input?.automatedEmailSend === undefined
+      ? {}
+      : {
+          [automatedEmailSendJobName]: createAutomatedEmailSendTask(
+            input.automatedEmailSend,
+          ),
         }),
     ...(input?.smsBroadcastSend === undefined
       ? {}
@@ -190,23 +203,22 @@ export function createTaskList(
       ? {}
       : {
           [reconcileCaptureGapsJobName]: createReconcileCaptureGapsTask(
-            input.reconcileCaptureGaps
-          )
+            input.reconcileCaptureGaps,
+          ),
         }),
     ...(input?.reconcileStaleRunning === undefined
       ? {}
       : {
           [reconcileStaleRunningJobName]: createReconcileStaleRunningTask(
-            input.reconcileStaleRunning
-          )
+            input.reconcileStaleRunning,
+          ),
         }),
     ...(input?.reconcileSalesforceState === undefined
       ? {}
       : {
-          [reconcileSalesforceStateJobName]:
-            createReconcileSalesforceStateTask(
-              input.reconcileSalesforceState,
-            ),
+          [reconcileSalesforceStateJobName]: createReconcileSalesforceStateTask(
+            input.reconcileSalesforceState,
+          ),
         }),
     ...(input?.reconcileSupersededProjections === undefined
       ? {}

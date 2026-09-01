@@ -2,6 +2,8 @@ import {
   accounts,
   aggregateBroadcastLinkClicksByRunId,
   countMediaAssets,
+  createSendLogRow,
+  createTemplate,
   countBroadcastUploadedRecipientsForRun,
   createOrgSender,
   createMcpOAuthRepositoryFromConnection,
@@ -14,8 +16,11 @@ import {
   replaceBroadcastUploadedRecipientsForRun,
   searchNewsletterSubscribers as searchNewsletterSubscribersFromDb,
   getOrgSenderByEmail,
+  getSendLogRow,
+  getTemplateById,
   listMediaAssets,
   listOrgSenders,
+  listSendsByTemplate,
   createStage1RepositoryBundle,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundle,
@@ -83,6 +88,9 @@ export interface Stage1WebRuntime {
   readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
   readonly internalNotes: Stage1InternalNoteService;
+  readonly automatedEmails: ReturnType<
+    typeof createAutomatedEmailWebRepository
+  >;
 }
 
 export interface Stage1WebTransaction {
@@ -137,6 +145,22 @@ function createRuntime(): Stage1WebRuntime {
     normalization,
     timelinePresentation: createStage1TimelinePresentationService(repositories),
     internalNotes,
+    automatedEmails: createAutomatedEmailWebRepository(connection.db),
+  };
+}
+
+export function createAutomatedEmailWebRepository(
+  db: NonNullable<Stage1WebRuntime["connection"]>["db"],
+) {
+  return {
+    getTemplateById: (id: string) => getTemplateById(db, id),
+    createTemplate: (input: Parameters<typeof createTemplate>[1]) =>
+      createTemplate(db, input),
+    createSendLogRow: (input: Parameters<typeof createSendLogRow>[1]) =>
+      createSendLogRow(db, input),
+    getSendLogRow: (id: string) => getSendLogRow(db, id),
+    listSendsByTemplate: (input: Parameters<typeof listSendsByTemplate>[1]) =>
+      listSendsByTemplate(db, input),
   };
 }
 
@@ -156,7 +180,9 @@ export async function withStage1WebTransaction<T>(
 ): Promise<T> {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return runtime.connection.db.transaction(async (tx) =>
@@ -185,7 +211,9 @@ export async function createBroadcastMediaAssetRecord(
 ) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return createMediaAsset(runtime.connection.db, input);
@@ -196,7 +224,9 @@ export async function listBroadcastMediaAssets(
 ) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return listMediaAssets(runtime.connection.db, input);
@@ -205,7 +235,9 @@ export async function listBroadcastMediaAssets(
 export async function countBroadcastMediaAssets() {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return countMediaAssets(runtime.connection.db);
@@ -216,7 +248,9 @@ export async function recordBroadcastLinkClick(
 ) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return insertBroadcastLinkClick(runtime.connection.db, input);
@@ -227,7 +261,9 @@ export async function recordBroadcastOpen(
 ) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return insertBroadcastOpen(runtime.connection.db, input);
@@ -236,7 +272,9 @@ export async function recordBroadcastOpen(
 export async function aggregateBroadcastLinkClicksForRun(runId: string) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return aggregateBroadcastLinkClicksByRunId(runtime.connection.db, runId);
@@ -248,7 +286,9 @@ export async function replaceBroadcastUploadedRecipients(
 ) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return replaceBroadcastUploadedRecipientsForRun(
@@ -261,7 +301,9 @@ export async function replaceBroadcastUploadedRecipients(
 export async function listBroadcastUploadedRecipients(runId: string) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return listBroadcastUploadedRecipientsForRun(runtime.connection.db, runId);
@@ -270,7 +312,9 @@ export async function listBroadcastUploadedRecipients(runId: string) {
 export async function countBroadcastUploadedRecipients(runId: string) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return countBroadcastUploadedRecipientsForRun(runtime.connection.db, runId);
@@ -279,7 +323,9 @@ export async function countBroadcastUploadedRecipients(runId: string) {
 export async function listEnabledOrgSenders() {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return listOrgSenders(runtime.connection.db, { enabledOnly: true });
@@ -288,7 +334,9 @@ export async function listEnabledOrgSenders() {
 export async function listAllOrgSenders() {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return listOrgSenders(runtime.connection.db, { enabledOnly: false });
@@ -297,7 +345,9 @@ export async function listAllOrgSenders() {
 export async function createOrgSenderRecord(input: CreateOrgSenderInput) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return createOrgSender(runtime.connection.db, input);
@@ -306,7 +356,9 @@ export async function createOrgSenderRecord(input: CreateOrgSenderInput) {
 export async function setOrgSenderEnabledState(id: string, enabled: boolean) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return setOrgSenderEnabled(runtime.connection.db, id, enabled);
@@ -315,7 +367,9 @@ export async function setOrgSenderEnabledState(id: string, enabled: boolean) {
 export async function getOrgSenderByEmailRecord(email: string) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return getOrgSenderByEmail(runtime.connection.db, email);
@@ -324,16 +378,23 @@ export async function getOrgSenderByEmailRecord(email: string) {
 export async function listSendableNewsletterSubscribers() {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return listSendableNewsletterSubscribersFromDb(runtime.connection.db);
 }
 
-export async function searchNewsletterSubscribers(query: string, limit: number) {
+export async function searchNewsletterSubscribers(
+  query: string,
+  limit: number,
+) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return searchNewsletterSubscribersFromDb(runtime.connection.db, query, limit);
@@ -342,7 +403,9 @@ export async function searchNewsletterSubscribers(query: string, limit: number) 
 export async function softDeleteBroadcastMediaAsset(id: string) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
-    throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
   }
 
   return softDeleteMediaAsset(runtime.connection.db, id);

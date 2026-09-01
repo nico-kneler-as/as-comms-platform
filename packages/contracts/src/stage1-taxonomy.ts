@@ -20,7 +20,7 @@ export const recordSourceValues = [
   "mailchimp",
   "postmark",
   "manual",
-  "system"
+  "system",
 ] as const;
 export const recordSourceSchema = z.enum(recordSourceValues);
 export type RecordSource = z.infer<typeof recordSourceSchema>;
@@ -30,7 +30,7 @@ export const channelValues = [
   "sms",
   "lifecycle",
   "campaign_email",
-  "note"
+  "note",
 ] as const;
 export const channelSchema = z.enum(channelValues);
 export type Channel = z.infer<typeof channelSchema>;
@@ -53,7 +53,8 @@ export const canonicalEventTypeValues = [
   "campaign.email.opened",
   "campaign.email.clicked",
   "campaign.email.unsubscribed",
-  "note.internal.created"
+  "automated.email.sent",
+  "note.internal.created",
 ] as const;
 export const canonicalEventTypeSchema = z.enum(canonicalEventTypeValues);
 export type CanonicalEventType = z.infer<typeof canonicalEventTypeSchema>;
@@ -62,7 +63,7 @@ export const inboxDrivingEventTypeValues = [
   "communication.email.inbound",
   "communication.email.outbound",
   "communication.sms.inbound",
-  "communication.sms.outbound"
+  "communication.sms.outbound",
 ] as const;
 export const inboxDrivingEventTypeSchema = z.enum(inboxDrivingEventTypeValues);
 export type InboxDrivingEventType = z.infer<typeof inboxDrivingEventTypeSchema>;
@@ -85,11 +86,12 @@ export const canonicalEventTypeChannel = {
   "campaign.email.opened": "campaign_email",
   "campaign.email.clicked": "campaign_email",
   "campaign.email.unsubscribed": "campaign_email",
-  "note.internal.created": "note"
+  "automated.email.sent": "campaign_email",
+  "note.internal.created": "note",
 } as const satisfies Record<CanonicalEventType, Channel>;
 
 export function resolveCanonicalChannel(
-  eventType: CanonicalEventType
+  eventType: CanonicalEventType,
 ): Channel {
   return canonicalEventTypeChannel[eventType];
 }
@@ -98,7 +100,7 @@ export const reviewStateValues = [
   "clear",
   "needs_identity_review",
   "needs_routing_review",
-  "quarantined"
+  "quarantined",
 ] as const;
 export const reviewStateSchema = z.enum(reviewStateValues);
 export type ReviewState = z.infer<typeof reviewStateSchema>;
@@ -109,10 +111,10 @@ export const provenanceWinnerReasonValues = [
   "gmail_wins_duplicate_collapse",
   "earliest_gmail_wins_duplicate_collapse",
   "simpletexting_wins_duplicate_collapse",
-  "salesforce_only_best_evidence"
+  "salesforce_only_best_evidence",
 ] as const;
 export const provenanceWinnerReasonSchema = z.enum(
-  provenanceWinnerReasonValues
+  provenanceWinnerReasonValues,
 );
 export type ProvenanceWinnerReason = z.infer<
   typeof provenanceWinnerReasonSchema
@@ -122,7 +124,7 @@ export const contactIdentityKindValues = [
   "salesforce_contact_id",
   "volunteer_id_plain",
   "email",
-  "phone"
+  "phone",
 ] as const;
 export const contactIdentityKindSchema = z.enum(contactIdentityKindValues);
 export type ContactIdentityKind = z.infer<typeof contactIdentityKindSchema>;
@@ -130,18 +132,22 @@ export type ContactIdentityKind = z.infer<typeof contactIdentityKindSchema>;
 export const communicationMessageKindValues = [
   "one_to_one",
   "auto",
-  "campaign"
+  "campaign",
 ] as const;
 export const communicationMessageKindSchema = z.enum(
-  communicationMessageKindValues
+  communicationMessageKindValues,
 );
 export type CommunicationMessageKind = z.infer<
   typeof communicationMessageKindSchema
 >;
 
 export const communicationDirectionValues = ["inbound", "outbound"] as const;
-export const communicationDirectionSchema = z.enum(communicationDirectionValues);
-export type CommunicationDirection = z.infer<typeof communicationDirectionSchema>;
+export const communicationDirectionSchema = z.enum(
+  communicationDirectionValues,
+);
+export type CommunicationDirection = z.infer<
+  typeof communicationDirectionSchema
+>;
 
 export const campaignEmailActivityTypeValues = [
   "sent",
@@ -150,10 +156,10 @@ export const campaignEmailActivityTypeValues = [
   "complained",
   "opened",
   "clicked",
-  "unsubscribed"
+  "unsubscribed",
 ] as const;
 export const campaignEmailActivityTypeSchema = z.enum(
-  campaignEmailActivityTypeValues
+  campaignEmailActivityTypeValues,
 );
 export type CampaignEmailActivityType = z.infer<
   typeof campaignEmailActivityTypeSchema
@@ -167,7 +173,7 @@ export const timelineFamilyValues = [
   "campaign_sms",
   "one_to_one_email",
   "one_to_one_sms",
-  "internal_note"
+  "internal_note",
 ] as const;
 export const timelineFamilySchema = z.enum(timelineFamilyValues);
 export type TimelineFamily = z.infer<typeof timelineFamilySchema>;
@@ -180,10 +186,10 @@ export const identityResolutionReasonCodeValues = [
   "identity_missing_anchor",
   "identity_multi_candidate",
   "identity_conflict",
-  "identity_anchor_mismatch"
+  "identity_anchor_mismatch",
 ] as const;
 export const identityResolutionReasonCodeSchema = z.enum(
-  identityResolutionReasonCodeValues
+  identityResolutionReasonCodeValues,
 );
 export type IdentityResolutionReasonCode = z.infer<
   typeof identityResolutionReasonCodeSchema
@@ -192,10 +198,10 @@ export type IdentityResolutionReasonCode = z.infer<
 export const routingReviewReasonCodeValues = [
   "routing_missing_membership",
   "routing_multiple_memberships",
-  "routing_context_conflict"
+  "routing_context_conflict",
 ] as const;
 export const routingReviewReasonCodeSchema = z.enum(
-  routingReviewReasonCodeValues
+  routingReviewReasonCodeValues,
 );
 export type RoutingReviewReasonCode = z.infer<
   typeof routingReviewReasonCodeSchema
@@ -203,7 +209,7 @@ export type RoutingReviewReasonCode = z.infer<
 
 export const quarantineReasonCodeValues = [
   "replay_checksum_mismatch",
-  "duplicate_collapse_conflict"
+  "duplicate_collapse_conflict",
 ] as const;
 export const quarantineReasonCodeSchema = z.enum(quarantineReasonCodeValues);
 export type QuarantineReasonCode = z.infer<typeof quarantineReasonCodeSchema>;
@@ -211,7 +217,7 @@ export type QuarantineReasonCode = z.infer<typeof quarantineReasonCodeSchema>;
 export const reviewQueueReasonCodeValues = [
   ...identityResolutionReasonCodeValues,
   ...routingReviewReasonCodeValues,
-  ...quarantineReasonCodeValues
+  ...quarantineReasonCodeValues,
 ] as const;
 export const reviewQueueReasonCodeSchema = z.enum(reviewQueueReasonCodeValues);
 export type ReviewQueueReasonCode = z.infer<typeof reviewQueueReasonCodeSchema>;
@@ -219,7 +225,7 @@ export type ReviewQueueReasonCode = z.infer<typeof reviewQueueReasonCodeSchema>;
 export const reviewCaseStatusValues = [
   "open",
   "resolved",
-  "quarantined"
+  "quarantined",
 ] as const;
 export const reviewCaseStatusSchema = z.enum(reviewCaseStatusValues);
 export type ReviewCaseStatus = z.infer<typeof reviewCaseStatusSchema>;
@@ -230,7 +236,7 @@ export const syncJobTypeValues = [
   "projection_rebuild",
   "parity_snapshot",
   "final_delta_sync",
-  "dead_letter_reprocess"
+  "dead_letter_reprocess",
 ] as const;
 export const syncJobTypeSchema = z.enum(syncJobTypeValues);
 export type SyncJobType = z.infer<typeof syncJobTypeSchema>;
@@ -245,7 +251,7 @@ export const syncStatusValues = [
   "succeeded",
   "failed",
   "quarantined",
-  "cancelled"
+  "cancelled",
 ] as const;
 export const syncStatusSchema = z.enum(syncStatusValues);
 export type SyncStatus = z.infer<typeof syncStatusSchema>;
@@ -254,7 +260,7 @@ export const auditActorTypeValues = [
   "system",
   "user",
   "worker",
-  "provider"
+  "provider",
 ] as const;
 export const auditActorTypeSchema = z.enum(auditActorTypeValues);
 export type AuditActorType = z.infer<typeof auditActorTypeSchema>;

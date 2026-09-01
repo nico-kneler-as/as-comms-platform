@@ -15,7 +15,10 @@ import {
 import type { DatabaseSchema } from "./schema/index.js";
 import { automatedEmailSends } from "./schema/index.js";
 
-type AutomatedEmailSendsDatabase = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
+export type AutomatedEmailSendsDatabase = PgDatabase<
+  PgQueryResultHKT,
+  DatabaseSchema
+>;
 
 type AutomatedEmailSendCursorKey = Readonly<{
   receivedAt: string;
@@ -33,6 +36,7 @@ export interface CreateAutomatedEmailSendInput {
 export interface UpdateAutomatedEmailSendStatusInput {
   readonly status: Exclude<AutomatedEmailSendStatus, "received">;
   readonly statusReason?: string | null;
+  readonly contactId?: string | null;
   readonly renderedPreview?: AutomatedEmailRenderedPreview | null;
   readonly ledgerEventId?: string | null;
   readonly providerMessageId?: string | null;
@@ -121,10 +125,19 @@ export async function updateSendStatus(
     .update(automatedEmailSends)
     .set({
       status: input.status,
-      statusReason: input.statusReason ?? null,
-      renderedPreview: input.renderedPreview ?? null,
-      ledgerEventId: input.ledgerEventId ?? null,
-      providerMessageId: input.providerMessageId ?? null,
+      ...(input.statusReason === undefined
+        ? {}
+        : { statusReason: input.statusReason }),
+      ...(input.contactId === undefined ? {} : { contactId: input.contactId }),
+      ...(input.renderedPreview === undefined
+        ? {}
+        : { renderedPreview: input.renderedPreview }),
+      ...(input.ledgerEventId === undefined
+        ? {}
+        : { ledgerEventId: input.ledgerEventId }),
+      ...(input.providerMessageId === undefined
+        ? {}
+        : { providerMessageId: input.providerMessageId }),
       processedAt: new Date(),
     })
     .where(eq(automatedEmailSends.id, id))
@@ -135,6 +148,19 @@ export async function updateSendStatus(
   }
 
   return mapSend(row);
+}
+
+export async function getSendLogRow(
+  db: AutomatedEmailSendsDatabase,
+  id: string,
+): Promise<AutomatedEmailSendRecord | null> {
+  const [row] = await db
+    .select()
+    .from(automatedEmailSends)
+    .where(eq(automatedEmailSends.id, id))
+    .limit(1);
+
+  return row === undefined ? null : mapSend(row);
 }
 
 export async function findRecentSendForDedupe(
@@ -181,10 +207,7 @@ export async function listSendsByTemplate(
             or(
               lt(automatedEmailSends.receivedAt, new Date(cursor.receivedAt)),
               and(
-                eq(
-                  automatedEmailSends.receivedAt,
-                  new Date(cursor.receivedAt),
-                ),
+                eq(automatedEmailSends.receivedAt, new Date(cursor.receivedAt)),
                 lt(automatedEmailSends.id, cursor.id),
               ),
             ),
@@ -212,9 +235,10 @@ export async function getLastReceivedAtByTemplateIds(
 ): Promise<ReadonlyMap<string, string | null>> {
   const uniqueTemplateIds = [...new Set(templateIds)];
   const receivedAtByTemplateId = new Map<string, string | null>(
-    uniqueTemplateIds.map(
-      (templateId): [string, string | null] => [templateId, null],
-    ),
+    uniqueTemplateIds.map((templateId): [string, string | null] => [
+      templateId,
+      null,
+    ]),
   );
 
   if (receivedAtByTemplateId.size === 0) {

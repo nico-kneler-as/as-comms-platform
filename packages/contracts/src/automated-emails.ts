@@ -31,6 +31,28 @@ export const automatedEmailSendStatusSchema = z.enum(
 
 const timestampSchema = z.string().datetime();
 
+export const automatedEmailWebhookPayloadSchema = z.object({
+  templateId: z.string().uuid(),
+  expeditionMemberId: z.string().min(1),
+  firedAt: timestampSchema.optional(),
+  flowApiName: z.string().optional(),
+});
+
+export type AutomatedEmailWebhookPayload = z.infer<
+  typeof automatedEmailWebhookPayloadSchema
+>;
+
+export const automatedEmailSendJobName = "send-automated-email" as const;
+export const automatedEmailSendJobMaxAttempts = 5 as const;
+export const automatedEmailSendPayloadSchema = z.object({
+  sendId: z.string().uuid(),
+});
+export type AutomatedEmailSendPayload = z.infer<
+  typeof automatedEmailSendPayloadSchema
+>;
+
+export const automatedEmailDedupeWindowMs = 24 * 60 * 60 * 1_000;
+
 export const automatedEmailRenderedPreviewSchema = z.object({
   subject: z.string(),
   html: z.string(),

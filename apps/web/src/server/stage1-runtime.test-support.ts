@@ -19,6 +19,7 @@ import {
 import type { OrgSenderRecord } from "@as-comms/contracts";
 
 import {
+  createAutomatedEmailWebRepository,
   setStage1WebRuntimeForTests,
   type Stage1WebRuntime,
 } from "./stage1-runtime";
@@ -46,7 +47,9 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
 
   const runtime: Stage1WebRuntime = {
     connection: {
-      db: context.db as unknown as NonNullable<Stage1WebRuntime["connection"]>["db"],
+      db: context.db as unknown as NonNullable<
+        Stage1WebRuntime["connection"]
+      >["db"],
       sql: null as never,
     },
     repositories: context.repositories,
@@ -63,6 +66,11 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
       persistence: context.persistence,
       normalization: context.normalization,
     }),
+    automatedEmails: createAutomatedEmailWebRepository(
+      context.db as unknown as NonNullable<
+        Stage1WebRuntime["connection"]
+      >["db"],
+    ),
   };
   setStage1WebRuntimeForTests(runtime);
 

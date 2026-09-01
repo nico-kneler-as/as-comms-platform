@@ -523,7 +523,8 @@ function isOutboundProjectionEvent(
   return (
     eventType === "communication.email.outbound" ||
     eventType === "communication.sms.outbound" ||
-    eventType === "campaign.email.sent"
+    eventType === "campaign.email.sent" ||
+    eventType === "automated.email.sent"
   );
 }
 
@@ -551,6 +552,7 @@ function tierRankForEventType(
     case "campaign.email.clicked":
     case "campaign.email.bounced":
     case "campaign.email.complained":
+    case "automated.email.sent":
       return 3;
   }
 }
@@ -573,6 +575,8 @@ function ingestSnippetFallbackForEventType(
       return "SMS opted out";
     case "campaign.email.sent":
       return "Campaign email sent";
+    case "automated.email.sent":
+      return "Automated email sent";
     case "campaign.email.delivered":
       return "Campaign email delivered";
     case "campaign.email.opened":
@@ -1611,6 +1615,8 @@ function resolveInboxSnippet(
       return "SMS opted out";
     case "campaign.email.sent":
       return "Campaign email sent";
+    case "automated.email.sent":
+      return "Automated email sent";
     case "campaign.email.delivered":
       return "Campaign email delivered";
     case "campaign.email.opened":
