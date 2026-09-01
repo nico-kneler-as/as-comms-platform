@@ -19,6 +19,7 @@ import {
   getSendLogRow,
   getLastReceivedAtByTemplateIds,
   getSendStatusCountsByTemplateId,
+  resetHeldSendToReceived,
   getTemplateById,
   findLatestPublishedByKind,
   listMediaAssets,
@@ -180,6 +181,7 @@ export function createAutomatedEmailWebRepository(
     createSendLogRow: (input: Parameters<typeof createSendLogRow>[1]) =>
       createSendLogRow(db, input),
     getSendLogRow: (id: string) => getSendLogRow(db, id),
+    resetHeldSendToReceived: (id: string) => resetHeldSendToReceived(db, id),
     listSendsByTemplate: (input: Parameters<typeof listSendsByTemplate>[1]) =>
       listSendsByTemplate(db, input),
     getLastReceivedAtByTemplateIds: (templateIds: readonly string[]) =>

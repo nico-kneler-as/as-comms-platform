@@ -68,8 +68,7 @@ export async function seedInboxContact(
       role: "volunteer",
       status: input.membershipStatus ?? null,
       source: "salesforce",
-      createdAt:
-        input.membershipCreatedAt ?? new Date().toISOString(),
+      createdAt: input.membershipCreatedAt ?? new Date().toISOString(),
     });
   }
 }
@@ -379,6 +378,77 @@ export async function seedInboxAutoEmailEvent(
   return {
     canonicalEventId,
   };
+}
+
+/** Mirrors the worker's durable automated-email ledger record, rather than
+ * the older Salesforce auto-email activity fixture above. */
+export async function seedInboxAutomatedEmailLedgerEvent(
+  context: TestStage1Context,
+  input: {
+    readonly id: string;
+    readonly contactId: string;
+    readonly occurredAt: string;
+    readonly subject: string;
+  },
+): Promise<{ readonly canonicalEventId: string }> {
+  const sourceEvidenceId = `source:automated-email:${input.id}`;
+  const canonicalEventId = `canonical:automated-email:${input.id}`;
+
+  await context.repositories.sourceEvidence.append({
+    id: sourceEvidenceId,
+    provider: "postmark",
+    providerRecordType: "automated_email_send",
+    providerRecordId: `postmark:${input.id}`,
+    receivedAt: input.occurredAt,
+    occurredAt: input.occurredAt,
+    payloadRef: `automated-email://sends/${input.id}`,
+    idempotencyKey: `automated-email:source:${input.id}`,
+    checksum: `checksum:automated-email:${input.id}`,
+  });
+
+  await context.repositories.canonicalEvents.upsert({
+    id: canonicalEventId,
+    contactId: input.contactId,
+    eventType: "automated.email.sent",
+    channel: "campaign_email",
+    occurredAt: input.occurredAt,
+    sourceEvidenceId,
+    idempotencyKey: `automated-email:event:${input.id}`,
+    contentFingerprint: null,
+    provenance: {
+      primaryProvider: "postmark",
+      primarySourceEvidenceId: sourceEvidenceId,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType: "automated_email_send",
+      sourceRecordId: `postmark:${input.id}`,
+      messageKind: "campaign",
+      campaignRef: {
+        providerCampaignId: `template:${input.id}`,
+        providerAudienceId: `send:${input.id}`,
+        providerMessageName: input.subject,
+      },
+      threadRef: null,
+      direction: "outbound",
+      notes: null,
+    },
+    reviewState: "clear",
+  });
+
+  await context.repositories.timelineProjection.upsert({
+    id: `timeline:automated-email:${input.id}`,
+    contactId: input.contactId,
+    canonicalEventId,
+    occurredAt: input.occurredAt,
+    sortKey: `${input.occurredAt}::${canonicalEventId}`,
+    eventType: "automated.email.sent",
+    summary: "Automated email sent",
+    channel: "campaign_email",
+    primaryProvider: "postmark",
+    reviewState: "clear",
+  });
+
+  return { canonicalEventId };
 }
 
 export async function seedInboxAutoSmsEvent(

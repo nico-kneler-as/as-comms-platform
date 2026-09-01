@@ -111,7 +111,9 @@ function getLifecycleMilestone(
 
 function resolveCommunicationMessageKind(input: {
   readonly event: CanonicalEventRecord;
-  readonly salesforceCommunicationDetail: SalesforceCommunicationDetail | undefined;
+  readonly salesforceCommunicationDetail:
+    | SalesforceCommunicationDetail
+    | undefined;
 }): TimelineProvenance["messageKind"] {
   const provenance = input.event.provenance as TimelineProvenance;
   const eventType = input.event.eventType as string;
@@ -153,17 +155,15 @@ function resolveFamily(
     return "campaign_email";
   }
 
-  if (
-    eventType === "communication.email.outbound" &&
-    messageKind === "auto"
-  ) {
+  if (eventType === "automated.email.sent") {
     return "auto_email";
   }
 
-  if (
-    eventType === "communication.sms.outbound" &&
-    messageKind === "auto"
-  ) {
+  if (eventType === "communication.email.outbound" && messageKind === "auto") {
+    return "auto_email";
+  }
+
+  if (eventType === "communication.sms.outbound" && messageKind === "auto") {
     return "auto_sms";
   }
 
@@ -363,7 +363,9 @@ interface CanonicalTimelineItemWithEvent {
 
 const timelineDuplicateWindowMs = 5 * 60 * 1000;
 
-function normalizeDuplicateText(value: string | null | undefined): string | null {
+function normalizeDuplicateText(
+  value: string | null | undefined,
+): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -373,7 +375,7 @@ function normalizeDuplicateText(value: string | null | undefined): string | null
 }
 
 function firstNonEmptyDuplicateText(
-  values: readonly (string | null | undefined)[]
+  values: readonly (string | null | undefined)[],
 ): string {
   for (const value of values) {
     if (typeof value === "string" && normalizeDuplicateText(value) !== null) {
@@ -384,9 +386,7 @@ function firstNonEmptyDuplicateText(
   return "";
 }
 
-function timelineCampaignEmailDuplicateKey(
-  item: TimelineItem,
-): string | null {
+function timelineCampaignEmailDuplicateKey(item: TimelineItem): string | null {
   if (item.family !== "campaign_email") {
     return null;
   }
@@ -709,8 +709,12 @@ function preferTimelineDuplicate(
   }
 
   const providerDelta =
-    timelineProviderPriority(candidate.canonicalEvent.provenance.primaryProvider) -
-    timelineProviderPriority(existing.canonicalEvent.provenance.primaryProvider);
+    timelineProviderPriority(
+      candidate.canonicalEvent.provenance.primaryProvider,
+    ) -
+    timelineProviderPriority(
+      existing.canonicalEvent.provenance.primaryProvider,
+    );
 
   if (providerDelta > 0) {
     return candidate;
@@ -1206,16 +1210,24 @@ export function createStage1TimelinePresentationService(
 ): Stage1TimelinePresentationService {
   return {
     async listTimelineItemsByContactId(contactId) {
-      const [canonicalEvents, timelineRows, pendingRows, smsMessages, internalNotes] =
-        await Promise.all([
+      const [
+        canonicalEvents,
+        timelineRows,
+        pendingRows,
+        smsMessages,
+        internalNotes,
+      ] = await Promise.all([
         repositories.canonicalEvents.listByContactId(contactId),
         repositories.timelineProjection.listByContactId(contactId),
         repositories.pendingOutbounds.findForContact(contactId, {
           limit: Number.MAX_SAFE_INTEGER,
         }),
-          repositories.smsMessages.listByContact(contactId, Number.MAX_SAFE_INTEGER),
-          repositories.internalNotes.findByContactId(contactId),
-        ]);
+        repositories.smsMessages.listByContact(
+          contactId,
+          Number.MAX_SAFE_INTEGER,
+        ),
+        repositories.internalNotes.findByContactId(contactId),
+      ]);
       const canonicalTimelineEvents = canonicalEvents.filter(
         (event) => !isInternalNoteEvent(event),
       );
@@ -1234,9 +1246,10 @@ export function createStage1TimelinePresentationService(
         }),
         canonicalEventById,
       });
-      const canonicalItems = [...mergedCanonicalItems, ...buildInternalNoteTimelineItems(internalNotes)].sort(
-        (left, right) => left.sortKey.localeCompare(right.sortKey),
-      );
+      const canonicalItems = [
+        ...mergedCanonicalItems,
+        ...buildInternalNoteTimelineItems(internalNotes),
+      ].sort((left, right) => left.sortKey.localeCompare(right.sortKey));
 
       return mergeTimelineItems({
         canonicalItems,
@@ -1248,12 +1261,15 @@ export function createStage1TimelinePresentationService(
     async listTimelineItemsPageByContactId(contactId, input) {
       const [canonicalEvents, rows, pendingRows, smsMessages, internalNotes] =
         await Promise.all([
-        repositories.canonicalEvents.listByContactId(contactId),
-        repositories.timelineProjection.listByContactId(contactId),
-        repositories.pendingOutbounds.findForContact(contactId, {
-          limit: Number.MAX_SAFE_INTEGER,
-        }),
-          repositories.smsMessages.listByContact(contactId, Number.MAX_SAFE_INTEGER),
+          repositories.canonicalEvents.listByContactId(contactId),
+          repositories.timelineProjection.listByContactId(contactId),
+          repositories.pendingOutbounds.findForContact(contactId, {
+            limit: Number.MAX_SAFE_INTEGER,
+          }),
+          repositories.smsMessages.listByContact(
+            contactId,
+            Number.MAX_SAFE_INTEGER,
+          ),
           repositories.internalNotes.findByContactId(contactId),
         ]);
       const canonicalTimelineEvents = canonicalEvents.filter(
@@ -1280,9 +1296,10 @@ export function createStage1TimelinePresentationService(
         }),
         canonicalEventById,
       });
-      const canonicalItems = [...mergedCanonicalItems, ...buildInternalNoteTimelineItems(internalNotes)].sort(
-        (left, right) => left.sortKey.localeCompare(right.sortKey),
-      );
+      const canonicalItems = [
+        ...mergedCanonicalItems,
+        ...buildInternalNoteTimelineItems(internalNotes),
+      ].sort((left, right) => left.sortKey.localeCompare(right.sortKey));
       const mergedItems = mergeTimelineItems({
         canonicalItems,
         pendingRows,

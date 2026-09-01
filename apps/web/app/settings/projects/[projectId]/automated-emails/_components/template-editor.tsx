@@ -43,7 +43,6 @@ import {
   isAllowedComposerLinkHref,
 } from "@/src/lib/composer-link-schemes";
 import type { AutomatedEmailEditorViewModel } from "@/src/server/automated-email/selectors";
-import { AUTOMATED_EMAIL_SEND_STATUS_META } from "@/src/lib/automated-email-send-presentation";
 
 import {
   publishTemplateAction,
@@ -54,6 +53,7 @@ import {
   setTemplateActiveAction,
 } from "../actions";
 import { MergeFieldExtension, mergeFieldLabel } from "./merge-field-extension";
+import { AutomatedEmailSendLogContent } from "./send-log-content";
 
 type EditorTab = "content" | "send-log";
 type SamplePerson = "nico" | "selah";
@@ -124,8 +124,12 @@ function CopyIdChip({ id }: { readonly id: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return undefined;
-    const timeout = window.setTimeout(() => { setCopied(false); }, 1400);
-    return () => { window.clearTimeout(timeout); };
+    const timeout = window.setTimeout(() => {
+      setCopied(false);
+    }, 1400);
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, [copied]);
 
   return (
@@ -230,7 +234,9 @@ function ToolbarButton({
       aria-label={label}
       aria-pressed={active}
       title={label}
-      onMouseDown={(event) => { event.preventDefault(); }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
       onClick={onClick}
       className={cn(
         "inline-flex size-7 items-center justify-center rounded text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400",
@@ -372,7 +378,9 @@ function SendingStrip({
             role="switch"
             checked={active}
             disabled={disabled}
-            onChange={(event) => { onChange(event.target.checked); }}
+            onChange={(event) => {
+              onChange(event.target.checked);
+            }}
             className="peer sr-only"
           />
           <span className="relative h-5 w-9 rounded-full bg-slate-300 transition-colors peer-checked:bg-emerald-500 peer-focus-visible:ring-2 peer-focus-visible:ring-slate-400 peer-disabled:opacity-50 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" />
@@ -435,7 +443,9 @@ function PreviewDrawer({
   useEffect(() => {
     if (!sent) return undefined;
     const timeout = window.setTimeout(onClose, 1600);
-    return () => { window.clearTimeout(timeout); };
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, [onClose, sent]);
 
   function handleSendTest() {
@@ -486,7 +496,9 @@ function PreviewDrawer({
                 <button
                   key={sample.id}
                   type="button"
-                  onClick={() => { setPerson(sample.id); }}
+                  onClick={() => {
+                    setPerson(sample.id);
+                  }}
                   className={cn(
                     "rounded px-2 py-0.5 text-[11px] transition-colors",
                     person === sample.id
@@ -519,7 +531,9 @@ function PreviewDrawer({
             </span>
             <Input
               value={testEmail}
-              onChange={(event) => { setTestEmail(event.target.value); }}
+              onChange={(event) => {
+                setTestEmail(event.target.value);
+              }}
               type="email"
               className="h-7 max-w-[260px] bg-white text-[12px]"
             />
@@ -544,7 +558,9 @@ function PreviewDrawer({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => { setTestOpen(false); }}
+              onClick={() => {
+                setTestOpen(false);
+              }}
               disabled={testPending}
               className="ml-auto h-7 px-2 text-[11px] font-normal text-slate-500"
             >
@@ -613,7 +629,9 @@ function PreviewDrawer({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => { setTestOpen(true); }}
+              onClick={() => {
+                setTestOpen(true);
+              }}
             >
               <Send className="size-3" /> Send test
             </Button>
@@ -624,93 +642,13 @@ function PreviewDrawer({
   );
 }
 
-function SendLogContent({
-  data,
-  active,
-  hasPublishedCopy,
-}: {
-  readonly data: AutomatedEmailEditorViewModel;
-  readonly active: boolean;
-  readonly hasPublishedCopy: boolean;
-}) {
-  const statuses = ["sent", "duplicate", "held", "failed"] as const;
-  const total =
-    data.sendCounts.received +
-    statuses.reduce((sum, status) => sum + data.sendCounts[status], 0);
-  return (
-    <div className="flex flex-col gap-3 pt-4">
-      <section className="flex items-center gap-6 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Last sent
-          </p>
-          <div className="mt-1">
-            <WebhookIndicator value={data.lastReceivedAt} />
-          </div>
-        </div>
-        <Separator orientation="vertical" className="h-8 bg-slate-200" />
-        <div className="flex items-center gap-5">
-          {statuses.map((status) => (
-            <div key={status}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                {AUTOMATED_EMAIL_SEND_STATUS_META[status].label}
-              </p>
-              <p
-                className={cn(
-                  "mt-0.5 text-[15px] font-semibold tabular-nums",
-                  data.sendCounts[status] > 0
-                    ? "text-slate-900"
-                    : "text-slate-300",
-                )}
-              >
-                {String(data.sendCounts[status])}
-              </p>
-            </div>
-          ))}
-        </div>
-        {active && !hasPublishedCopy ? (
-          <span className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2 py-1 text-[11.5px] font-medium text-rose-700 ring-1 ring-inset ring-rose-200">
-            <AlertCircle className="size-3.5" /> Holding — no published copy
-          </span>
-        ) : null}
-      </section>
-      {data.sendCounts.received > 0 ? (
-        <p className="rounded-md bg-slate-100 px-3 py-2 text-[11.5px] text-slate-500">
-          {String(data.sendCounts.received)} webhook
-          {data.sendCounts.received === 1 ? " is" : "s are"} processing.
-        </p>
-      ) : null}
-      {total === 0 ? (
-        <section className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-6 py-10 text-center">
-          <h2 className="text-[13.5px] font-medium text-slate-900">
-            Nothing has come through yet
-          </h2>
-          <p className="mx-auto mt-1 max-w-[46ch] text-[12px] leading-relaxed text-slate-500">
-            When the Salesforce flow fires at this template&apos;s ID, rows land
-            here — including while the template is inactive. That&apos;s the dry
-            run: you read what would have gone out, then activate.
-          </p>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
-            <span className="text-[11.5px] text-slate-500">
-              Give Ricky this ID
-            </span>
-            <CopyIdChip id={data.template.id} />
-          </div>
-        </section>
-      ) : null}
-    </div>
-  );
-}
-
 export function AutomatedEmailTemplateEditor({
   data,
 }: {
   readonly data: AutomatedEmailEditorViewModel;
 }) {
   const router = useRouter();
-  const [template, setTemplate] = useState(
-    data.template,
-  );
+  const [template, setTemplate] = useState(data.template);
   const [name, setName] = useState(data.template.name);
   const [draftSubject, setDraftSubject] = useState(data.template.draftSubject);
   const [draftDoc, setDraftDoc] = useState<unknown>(() =>
@@ -939,7 +877,9 @@ export function AutomatedEmailTemplateEditor({
                 value={name}
                 aria-label="Template name"
                 disabled={pending}
-                onChange={(event) => { setName(event.target.value); }}
+                onChange={(event) => {
+                  setName(event.target.value);
+                }}
                 onBlur={handleNameBlur}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") event.currentTarget.blur();
@@ -1011,7 +951,9 @@ export function AutomatedEmailTemplateEditor({
               type="button"
               role="tab"
               aria-selected={current}
-              onClick={() => { setTab(nextTab); }}
+              onClick={() => {
+                setTab(nextTab);
+              }}
               className={cn(
                 "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors",
                 current
@@ -1031,7 +973,7 @@ export function AutomatedEmailTemplateEditor({
       </div>
 
       {tab === "send-log" ? (
-        <SendLogContent
+        <AutomatedEmailSendLogContent
           data={data}
           active={active}
           hasPublishedCopy={hasPublishedCopy}
@@ -1054,7 +996,9 @@ export function AutomatedEmailTemplateEditor({
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => { router.refresh(); }}
+                    onClick={() => {
+                      router.refresh();
+                    }}
                   >
                     <RefreshCw className="size-3" /> Reload template
                   </Button>
@@ -1142,7 +1086,9 @@ export function AutomatedEmailTemplateEditor({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => { setDrawerMode("preview"); }}
+                onClick={() => {
+                  setDrawerMode("preview");
+                }}
               >
                 <Eye className="size-3" /> Preview
               </Button>
@@ -1150,7 +1096,9 @@ export function AutomatedEmailTemplateEditor({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => { setDrawerMode("send-test"); }}
+                onClick={() => {
+                  setDrawerMode("send-test");
+                }}
               >
                 <Send className="size-3" /> Send test
               </Button>
@@ -1164,7 +1112,9 @@ export function AutomatedEmailTemplateEditor({
               </span>
               <Input
                 value={draftSubject}
-                onChange={(event) => { setDraftSubject(event.target.value); }}
+                onChange={(event) => {
+                  setDraftSubject(event.target.value);
+                }}
                 placeholder="What the volunteer sees in their inbox"
                 aria-label="Subject line"
                 className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 text-[14.5px] font-semibold tracking-tight shadow-none placeholder:font-normal focus-visible:ring-0"
@@ -1265,7 +1215,9 @@ export function AutomatedEmailTemplateEditor({
         data={data}
         draftSubject={draftSubject}
         draftDoc={draftDoc}
-        onClose={() => { setDrawerMode(null); }}
+        onClose={() => {
+          setDrawerMode(null);
+        }}
       />
     </div>
   );

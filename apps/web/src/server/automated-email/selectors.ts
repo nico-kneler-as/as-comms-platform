@@ -1,5 +1,6 @@
 import type {
   AutomatedEmailKind,
+  AutomatedEmailRenderedPreview,
   AutomatedEmailSendStatus,
   AutomatedEmailTemplateRecord,
 } from "@as-comms/contracts";
@@ -60,6 +61,23 @@ export interface AutomatedEmailEditorViewModel extends AutomatedEmailProjectView
   readonly template: AutomatedEmailTemplateViewModel;
   readonly lastReceivedAt: string | null;
   readonly sendCounts: AutomatedEmailSendCountsViewModel;
+  readonly initialSendLog: AutomatedEmailSendLogPageViewModel;
+}
+
+export interface AutomatedEmailSendLogRowViewModel {
+  readonly id: string;
+  readonly receivedAt: string;
+  readonly expeditionMemberId: string;
+  readonly memberName: string;
+  readonly memberEmail: string | null;
+  readonly status: AutomatedEmailSendStatus;
+  readonly statusReason: string | null;
+  readonly renderedPreview: AutomatedEmailRenderedPreview | null;
+}
+
+export interface AutomatedEmailSendLogPageViewModel {
+  readonly items: readonly AutomatedEmailSendLogRowViewModel[];
+  readonly nextCursor: string | null;
 }
 
 const lifecycleKinds = [
@@ -135,6 +153,52 @@ function toSendCounts(
     duplicate: counts.duplicate,
     held: counts.held,
     failed: counts.failed,
+  };
+}
+
+export async function loadAutomatedEmailSendLogPage(input: {
+  readonly projectId: string;
+  readonly templateId: string;
+  readonly cursor?: string | null;
+  readonly limit?: number;
+}): Promise<AutomatedEmailSendLogPageViewModel | null> {
+  const runtime = await getStage1WebRuntime();
+  const template = await runtime.automatedEmails.getTemplateById(
+    input.templateId,
+  );
+  if (template?.projectId !== input.projectId) {
+    return null;
+  }
+
+  const sends = await runtime.automatedEmails.listSendsByTemplate({
+    templateId: template.id,
+    limit: input.limit ?? 25,
+    ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+  });
+  const contactIds = sends.items.flatMap((send) =>
+    send.contactId === null ? [] : [send.contactId],
+  );
+  const contacts = await runtime.repositories.contacts.listByIds(contactIds);
+  const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
+
+  return {
+    items: sends.items.map((send) => {
+      const contact =
+        send.contactId === null
+          ? null
+          : (contactById.get(send.contactId) ?? null);
+      return {
+        id: send.id,
+        receivedAt: send.receivedAt,
+        expeditionMemberId: send.expeditionMemberId,
+        memberName: contact?.displayName ?? send.expeditionMemberId,
+        memberEmail: contact?.primaryEmail ?? null,
+        status: send.status,
+        statusReason: send.statusReason,
+        renderedPreview: send.renderedPreview,
+      };
+    }),
+    nextCursor: sends.nextCursor,
   };
 }
 
@@ -235,15 +299,18 @@ export async function loadAutomatedEmailEditor(
     return null;
   }
 
-  const [lastReceivedAtByTemplateId, sendCounts] = await Promise.all([
-    runtime.automatedEmails.getLastReceivedAtByTemplateIds([template.id]),
-    runtime.automatedEmails.getSendStatusCountsByTemplateId(template.id),
-  ]);
+  const [lastReceivedAtByTemplateId, sendCounts, initialSendLog] =
+    await Promise.all([
+      runtime.automatedEmails.getLastReceivedAtByTemplateIds([template.id]),
+      runtime.automatedEmails.getSendStatusCountsByTemplateId(template.id),
+      loadAutomatedEmailSendLogPage({ projectId, templateId: template.id }),
+    ]);
 
   return {
     ...project,
     template: toTemplateViewModel(template),
     lastReceivedAt: lastReceivedAtByTemplateId.get(template.id) ?? null,
     sendCounts: toSendCounts(sendCounts),
+    initialSendLog: initialSendLog ?? { items: [], nextCursor: null },
   };
 }

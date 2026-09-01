@@ -1,5 +1,7 @@
 import type { AutomatedEmailSendStatus } from "@as-comms/contracts";
 
+export const AUTOMATED_EMAIL_TIMELINE_LABEL = "Automated email sent";
+
 export const AUTOMATED_EMAIL_SEND_STATUS_META = {
   sent: { label: "Sent", tone: "emerald" },
   duplicate: { label: "Duplicate", tone: "slate" },

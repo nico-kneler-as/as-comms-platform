@@ -31,6 +31,7 @@ import {
   insertBroadcastOpen,
   setOrgSenderEnabled,
   upsertNewsletterSubscriber,
+  updateSendStatus,
 } from "@as-comms/db";
 
 export type { TestStage1Context } from "@as-comms/db/test-helpers";
@@ -121,4 +122,14 @@ export async function insertBroadcastOpenForTests(
   input: Parameters<typeof insertBroadcastOpen>[1],
 ) {
   return insertBroadcastOpen(runtime.context.db, input);
+}
+
+export async function holdAutomatedEmailSendForTests(
+  runtime: Stage1WebTestRuntime,
+  sendId: string,
+): Promise<void> {
+  await updateSendStatus(runtime.context.db, sendId, {
+    status: "held",
+    statusReason: "no_published_copy",
+  });
 }

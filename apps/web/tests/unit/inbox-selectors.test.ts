@@ -84,6 +84,7 @@ import type {
 import {
   createInboxTestRuntime,
   seedInboxAutoEmailEvent,
+  seedInboxAutomatedEmailLedgerEvent,
   seedInboxAutoSmsEvent,
   seedInboxCampaignEmailEvent,
   seedInboxCampaignSmsEvent,
@@ -3278,9 +3279,9 @@ describe("real inbox selectors", () => {
       ],
       moreCount: 1,
     });
-    expect(summary?.contact.unresolvedCases[0]?.openedAtLabel.length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      summary?.contact.unresolvedCases[0]?.openedAtLabel.length,
+    ).toBeGreaterThan(0);
     expect(summary?.contact.unresolvedCases[1]).toMatchObject({
       kind: "routing",
       reasonLabel: "Needs review",
@@ -5015,6 +5016,34 @@ describe("real inbox selectors", () => {
       label: "Received training - Amazon Basin Research",
       occurredAtLabel: "Apr 9",
     });
+  });
+
+  it("renders automated email ledger sends as automated timeline rows without changing inbox state", async () => {
+    if (runtime === null) {
+      throw new Error("Expected inbox test runtime");
+    }
+
+    await seedInboxAutomatedEmailLedgerEvent(runtime.context, {
+      id: "sarah-automated-ledger-1",
+      contactId: "contact:sarah-martinez",
+      occurredAt: "2026-04-13T09:00:00.000Z",
+      subject: "Trip details",
+    });
+
+    const detail = await getInboxDetail("contact:sarah-martinez");
+
+    expect(
+      detail?.timeline.find(
+        (entry) =>
+          entry.id === "timeline:automated-email:sarah-automated-ledger-1",
+      ),
+    ).toMatchObject({
+      kind: "outbound-auto-email",
+      body: "Automated email sent",
+      isUnread: false,
+    });
+    expect(detail?.bucket).toBe("new");
+    expect(detail?.isUnread).toBe(true);
   });
 
   it("uses short project aliases in lifecycle timeline bodies and project activity labels", async () => {
@@ -8059,13 +8088,13 @@ describe("real inbox selectors", () => {
       (entry) => entry.id === "timeline:inbound-dupe-3",
     );
 
-    expect(firstEntry?.attachments.map((attachment) => attachment.filename)).toEqual([
-      "photo.jpg",
-    ]);
+    expect(
+      firstEntry?.attachments.map((attachment) => attachment.filename),
+    ).toEqual(["photo.jpg"]);
     expect(secondEntry?.attachments).toEqual([]);
-    expect(thirdEntry?.attachments.map((attachment) => attachment.filename)).toEqual([
-      "different.jpg",
-    ]);
+    expect(
+      thirdEntry?.attachments.map((attachment) => attachment.filename),
+    ).toEqual(["different.jpg"]);
   });
 
   it("falls back to pending attachment metadata when pending outbounds have no canonical attachments yet", async () => {
