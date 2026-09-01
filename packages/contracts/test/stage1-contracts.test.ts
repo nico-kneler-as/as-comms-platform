@@ -20,8 +20,9 @@ describe("Stage 1 contracts", () => {
   it("keeps the canonical event taxonomy and channel mapping aligned", () => {
     // 15 original Stage 1 + 3 Stage 5A additions
     // (campaign.email.delivered / .bounced / .complained, written by the
-    // Postmark webhook handler in Brief A2)
-    expect(canonicalEventTypeValues).toHaveLength(18);
+    // Postmark webhook handler in Brief A2) + automated.email.sent (PRD #693
+    // Brick D, SF-flow-triggered transactional sends)
+    expect(canonicalEventTypeValues).toHaveLength(19);
     expect(resolveCanonicalChannel("communication.email.inbound")).toBe("email");
     expect(resolveCanonicalChannel("communication.sms.opt_out")).toBe("sms");
     expect(resolveCanonicalChannel("lifecycle.completed_training")).toBe(
@@ -31,6 +32,9 @@ describe("Stage 1 contracts", () => {
       "campaign_email"
     );
     expect(resolveCanonicalChannel("campaign.email.bounced")).toBe(
+      "campaign_email"
+    );
+    expect(resolveCanonicalChannel("automated.email.sent")).toBe(
       "campaign_email"
     );
     expect(resolveCanonicalChannel("note.internal.created")).toBe("note");
