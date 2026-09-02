@@ -1,4 +1,8 @@
-export type MergeToken = "firstName" | "projectName" | "aliasEmail";
+export type MergeToken =
+  | "firstName"
+  | "projectName"
+  | "aliasEmail"
+  | "viewInBrowser";
 
 export interface AudienceMember {
   readonly contactId: string | null;
@@ -22,6 +26,7 @@ export interface MergeContext {
   readonly firstName: string | null;
   readonly projectName: string | null;
   readonly aliasEmail: string | null;
+  readonly viewInBrowserUrl: string | null;
 }
 
 export type MissingTokensByContact = Readonly<Record<string, readonly string[]>>;

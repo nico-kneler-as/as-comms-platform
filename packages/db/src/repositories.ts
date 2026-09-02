@@ -194,6 +194,13 @@ import {
   syncState,
   users,
 } from "./schema/index.js";
+import {
+  ensureBroadcastWebVersion,
+  findBroadcastWebVersionByRunId,
+  findPublishedBroadcastWebVersionByToken,
+  setBroadcastWebVersionPublished,
+  storeBroadcastWebVersionHtml,
+} from "./broadcast-web-versions-repository.js";
 
 function normalizePhoneLookupValue(phone: string): string {
   return tryNormalizePhoneE164(phone) ?? phone;
@@ -364,6 +371,21 @@ export interface Stage5RepositoryBundle {
         readonly providerEventId?: string;
       },
     ): Promise<void>;
+  };
+  readonly broadcastWebVersions: {
+    ensure(runId: string): ReturnType<typeof ensureBroadcastWebVersion>;
+    findByRunId(runId: string): ReturnType<typeof findBroadcastWebVersionByRunId>;
+    findPublishedByToken(
+      token: string,
+    ): ReturnType<typeof findPublishedBroadcastWebVersionByToken>;
+    storeRendered(
+      runId: string,
+      input: { readonly html: string; readonly title: string },
+    ): ReturnType<typeof storeBroadcastWebVersionHtml>;
+    setPublished(
+      runId: string,
+      input: { readonly published: boolean; readonly userId: string | null },
+    ): ReturnType<typeof setBroadcastWebVersionPublished>;
   };
   readonly contactConsent: {
     recordOptOut(
@@ -7886,6 +7908,17 @@ export function createStage5RepositoryBundle(
           .set(deliveryFields as Partial<typeof audienceSnapshots.$inferInsert>)
           .where(eq(audienceSnapshots.id, id));
       },
+    },
+
+    broadcastWebVersions: {
+      ensure: (runId) => ensureBroadcastWebVersion(db, runId),
+      findByRunId: (runId) => findBroadcastWebVersionByRunId(db, runId),
+      findPublishedByToken: (token) =>
+        findPublishedBroadcastWebVersionByToken(db, token),
+      storeRendered: (runId, input) =>
+        storeBroadcastWebVersionHtml(db, runId, input),
+      setPublished: (runId, input) =>
+        setBroadcastWebVersionPublished(db, runId, input),
     },
 
     contactConsent: {

@@ -1499,6 +1499,38 @@ export const campaignRuns = pgTable(
   ],
 );
 
+export const broadcastWebVersions = pgTable(
+  "broadcast_web_versions",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .unique()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    publicToken: text("public_token").notNull().unique(),
+    title: text("title"),
+    renderedHtml: text("rendered_html"),
+    renderedAt: timestamp("rendered_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    publishedAt: timestamp("published_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    unpublishedAt: timestamp("unpublished_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    publishChangedByUserId: text("publish_changed_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+);
+
 export const audienceSnapshots = pgTable(
   "audience_snapshots",
   {

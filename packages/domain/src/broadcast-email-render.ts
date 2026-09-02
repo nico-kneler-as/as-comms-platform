@@ -145,6 +145,7 @@ export interface BroadcastEmailRenderInput {
   readonly scopedUnsubscribeHref: string;
   readonly allUnsubscribeHref: string;
   readonly senderEmail: string;
+  readonly webVersionHref?: string | null;
 }
 
 export interface BroadcastEmailRenderOutput {
@@ -190,13 +191,22 @@ export function renderBroadcastEmail(
     allHref: input.allUnsubscribeHref,
   });
   const sanitizedBodyHtml = stripLockedFooterBlock(input.bodyHtmlTemplate);
+  const webVersionHref = input.webVersionHref?.trim() ?? "";
+  const webVersionHtml =
+    webVersionHref.length === 0
+      ? ""
+      : `<div style="text-align:center;font-size:12px;line-height:1.6;color:#64748b;padding:8px 0 12px;">Having trouble viewing this email? <a href="${escapeHtml(webVersionHref)}" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">View it in your browser</a>.</div>`;
+  const bodyText = [input.bodyTextTemplate, signatureBlock.text, footer.text]
+    .filter((part) => part.trim().length > 0)
+    .join("\n\n");
 
   return {
     fromHeader,
-    bodyHtml: `${preheaderHtml}${sanitizedBodyHtml}${signatureBlock.html}${footer.html}`,
-    bodyText: [input.bodyTextTemplate, signatureBlock.text, footer.text]
-      .filter((part) => part.trim().length > 0)
-      .join("\n\n"),
+    bodyHtml: `${preheaderHtml}${webVersionHtml}${sanitizedBodyHtml}${signatureBlock.html}${footer.html}`,
+    bodyText:
+      webVersionHref.length === 0
+        ? bodyText
+        : `View in browser: ${webVersionHref}\n\n${bodyText}`,
     listUnsubscribeHeaderValue: `<${input.scopedUnsubscribeHref}>`,
   };
 }

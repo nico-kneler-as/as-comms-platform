@@ -15,6 +15,7 @@ import {
   automatedEmailTemplates,
   audienceSnapshots,
   broadcastLinkClicks,
+  broadcastWebVersions,
   broadcastOpens,
   broadcastUploadedRecipients,
   canonicalEventAudience,
@@ -57,6 +58,7 @@ describe("Stage 1 DB schema", () => {
       "broadcastMediaAssets",
       "broadcastOpens",
       "broadcastUploadedRecipients",
+      "broadcastWebVersions",
       "campaignRuns",
       "canonicalEventAudience",
       "canonicalEventLedger",
@@ -142,6 +144,7 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(broadcastUploadedRecipients)).toBe(
       "broadcast_uploaded_recipients"
     );
+    expect(getTableName(broadcastWebVersions)).toBe("broadcast_web_versions");
     expect(getTableName(contactConsent)).toBe("contact_consent");
     expect(getTableName(suppressionList)).toBe("suppression_list");
     expect(getTableName(orgSettings)).toBe("org_settings");

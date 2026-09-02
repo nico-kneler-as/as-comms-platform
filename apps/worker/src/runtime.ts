@@ -354,6 +354,12 @@ function buildCampaignSendDependencies(input: {
         settingsProjects: input.settings.projects,
         settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
+        broadcastWebVersions: {
+          ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
+          async storeRendered(runId, rendered) {
+            await input.campaigns.broadcastWebVersions.storeRendered(runId, rendered);
+          },
+        },
         auditEvidence: input.repositories.auditEvidence,
       },
       audienceResolver,
@@ -384,6 +390,9 @@ function buildCampaignSendDependencies(input: {
       postmarkClient,
       appUrl,
       broadcastMessageStream,
+      newsletterSubscribeUrl:
+        readOptionalTrimmedEnv(input.env.NEWSLETTER_SUBSCRIBE_PAGE_URL) ??
+        undefined,
     }),
   };
 }

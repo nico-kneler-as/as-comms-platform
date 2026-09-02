@@ -19,6 +19,10 @@ import {
   normalizeAliasEmail,
   renderBroadcastEmail,
 } from "./broadcast-email-render.js";
+import {
+  buildBroadcastWebVersionUrl,
+  renderBroadcastWebVersion,
+} from "./broadcast-web-version-render.js";
 import type { AudienceResolver } from "./audience-resolver.js";
 import type { ExclusionFilter } from "./exclusion-filter.js";
 import type { MergeRenderer } from "./merge-renderer.js";
@@ -95,6 +99,15 @@ interface CampaignSendRepositories {
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
   };
+  readonly broadcastWebVersions: {
+    ensure(
+      runId: string,
+    ): Promise<{ readonly publicToken: string; readonly renderedHtml: string | null }>;
+    storeRendered(
+      runId: string,
+      input: { readonly html: string; readonly title: string },
+    ): Promise<void>;
+  };
   readonly auditEvidence?: {
     append(record: AuditEvidenceRecord): Promise<AuditEvidenceRecord>;
   };
@@ -107,11 +120,15 @@ function normalizeReason(reason: string): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-function toMergeContext(member: AudienceMember): MergeContext {
+function toMergeContext(
+  member: AudienceMember,
+  viewInBrowserUrl: string | null = null,
+): MergeContext {
   return {
     firstName: member.frozenFirstName,
     projectName: member.frozenProjectName,
     aliasEmail: member.frozenAliasEmail,
+    viewInBrowserUrl,
   };
 }
 
@@ -300,6 +317,7 @@ export function createCampaignSendOrchestrator(deps: {
   postmarkClient: PostmarkClientLike;
   appUrl: string;
   broadcastMessageStream?: string;
+  newsletterSubscribeUrl?: string | undefined;
   batchSize?: number;
   logger?: Pick<Console, "error" | "info" | "warn">;
   now?: () => Date;
@@ -314,6 +332,12 @@ export function createCampaignSendOrchestrator(deps: {
     trimmedBroadcastMessageStream.length === 0
       ? "broadcast"
       : trimmedBroadcastMessageStream;
+  const trimmedNewsletterSubscribeUrl = deps.newsletterSubscribeUrl?.trim();
+  const newsletterSubscribeUrl =
+    trimmedNewsletterSubscribeUrl === undefined ||
+    trimmedNewsletterSubscribeUrl.length === 0
+      ? "https://www.adventurescientists.org"
+      : trimmedNewsletterSubscribeUrl;
   if (appUrl.length === 0) {
     throw new Error(
       "createCampaignSendOrchestrator requires a non-empty appUrl for unsubscribe links.",
@@ -431,11 +455,11 @@ export function createCampaignSendOrchestrator(deps: {
 
       const orgSettings = await deps.repositories.orgSettings.read();
       const footerAddress = formatOrgAddress(orgSettings);
-      const projectAlias =
+      const project =
         run.projectId === null
           ? null
-          : (await deps.repositories.settingsProjects.findById(run.projectId))
-              ?.projectAlias ?? null;
+          : await deps.repositories.settingsProjects.findById(run.projectId);
+      const projectAlias = project?.projectAlias ?? null;
 
       const snapshots = (await deps.repositories.audienceSnapshots.listForRun(runId)).filter(
         (snapshot) => snapshot.deliveryStatus === "pending",
@@ -451,6 +475,33 @@ export function createCampaignSendOrchestrator(deps: {
                 senderAliasEmail,
               )
             )?.signature ?? null;
+      const webVersion = await deps.repositories.broadcastWebVersions.ensure(
+        runId,
+      );
+      const pageUrl = buildBroadcastWebVersionUrl({
+        appUrl,
+        token: webVersion.publicToken,
+      });
+
+      if (webVersion.renderedHtml === null) {
+        const renderedWebVersion = renderBroadcastWebVersion({
+          launchType: run.launchType,
+          kind: run.kind,
+          subject: run.subjectTemplate ?? "",
+          bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+          projectName: project?.projectName ?? null,
+          projectAlias,
+          senderEmail: run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? "",
+          signature,
+          footerAddress,
+          pageUrl,
+          subscribeUrl: newsletterSubscribeUrl,
+        });
+        await deps.repositories.broadcastWebVersions.storeRendered(runId, {
+          html: renderedWebVersion.html,
+          title: renderedWebVersion.title,
+        });
+      }
 
       for (let index = 0; index < snapshots.length; index += batchSize) {
         const stateCheck = await deps.repositories.campaignRuns.findById(runId);
@@ -522,6 +573,7 @@ export function createCampaignSendOrchestrator(deps: {
             scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
             allUnsubscribeHref: unsubscribeUrls.allHref,
             senderEmail: sender,
+            webVersionHref: pageUrl,
           });
 
           const rendered = deps.mergeRenderer.render(
@@ -533,7 +585,7 @@ export function createCampaignSendOrchestrator(deps: {
               bodyHtml: composed.bodyHtml,
               bodyText: composed.bodyText,
             },
-            toMergeContext(member),
+            toMergeContext(member, pageUrl),
           );
 
           messages.push({
