@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AutomatedEmailTemplateEditor } from "../_components/template-editor";
+import { SettingsContent } from "../../../../_components/settings-content";
 import { requireSession } from "@/src/server/auth/session";
 import { loadAutomatedEmailEditor } from "@/src/server/automated-email/selectors";
 
@@ -34,5 +35,9 @@ export default async function AutomatedEmailEditorPage({ params }: PageProps) {
     );
   }
 
-  return <AutomatedEmailTemplateEditor data={data} />;
+  return (
+    <SettingsContent>
+      <AutomatedEmailTemplateEditor data={data} />
+    </SettingsContent>
+  );
 }

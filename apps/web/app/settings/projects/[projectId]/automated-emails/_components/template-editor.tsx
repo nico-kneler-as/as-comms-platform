@@ -861,9 +861,9 @@ export function AutomatedEmailTemplateEditor({
   }
 
   return (
-    <div className="mx-auto flex w-full min-w-[1060px] max-w-[1220px] flex-col gap-4 px-10 py-8">
+    <div className="flex w-full flex-col gap-4">
       <Link
-        href={`/settings/projects/${encodeURIComponent(data.projectId)}/automated-emails`}
+        href={`/settings/projects/${encodeURIComponent(data.projectId)}?tab=automated-emails`}
         className="inline-flex w-fit items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-slate-500 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
       >
         <ChevronLeft className="size-3.5" /> Automated emails

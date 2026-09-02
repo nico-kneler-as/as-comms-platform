@@ -398,7 +398,7 @@ export function AutomatedEmailTemplateList({
 
   return (
     <>
-      <div className="flex min-w-[1060px] flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-6">
           <div>
             <h1 className="text-[15px] font-semibold text-slate-900">
