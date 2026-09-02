@@ -43,6 +43,7 @@ import {
   BroadcastMediaLibrary,
   type BroadcastMediaLibraryAsset,
 } from "../../app/broadcasts/media/_components/broadcast-media-library";
+import { toMediaLibraryItem } from "../../app/broadcasts/media/_lib/media-library-item";
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as {
@@ -128,6 +129,8 @@ function makeAsset(overrides: Partial<BroadcastMediaLibraryAsset> = {}) {
     url: "https://cdn.example.org/images/hero.png",
     filename: "hero.png",
     contentType: "image/png",
+    kind: "image" as const,
+    typeLabel: "PNG image",
     sizeBytes: 1024,
     createdAt: "2026-06-27T18:00:00.000Z",
     ...overrides,
@@ -156,7 +159,7 @@ describe("broadcast media library", () => {
   it("renders the empty state and uploaded assets", () => {
     const emptyContainer = setupDom();
     renderLibrary(emptyContainer, { assets: [] });
-    expect(emptyContainer.textContent).toContain("No images yet");
+    expect(emptyContainer.textContent).toContain("No files yet");
     expect(emptyContainer.textContent).toContain("Upload one to get started.");
 
     act(() => {
@@ -183,6 +186,28 @@ describe("broadcast media library", () => {
     expect(assetsContainer.textContent).toContain("hero.png");
     expect(assetsContainer.textContent).toContain("secondary.webp");
     expect(assetsContainer.textContent).toContain("Copy URL");
+  });
+
+  it("renders audio and PDF tiles without image elements", () => {
+    const container = setupDom();
+    renderLibrary(container, {
+      assets: [
+        makeAsset({ id: "audio", filename: "recording.mp3", contentType: "audio/mpeg", kind: "audio", typeLabel: "MP3 audio", url: "https://cdn.example.org/audio/recording.mp3" }),
+        makeAsset({ id: "pdf", filename: "guide.pdf", contentType: "application/pdf", kind: "document", typeLabel: "PDF", url: "https://cdn.example.org/files/guide.pdf" }),
+      ],
+    });
+
+    expect(container.textContent).toContain("MP3 audio");
+    expect(container.textContent).toContain("PDF");
+    expect(container.querySelectorAll("audio")).toHaveLength(1);
+    expect(container.querySelectorAll("img")).toHaveLength(0);
+  });
+
+  it("derives a stable media kind and human label from the content type", () => {
+    expect(toMediaLibraryItem({ id: "audio", publicUrl: "https://cdn.example.org/audio/a.mp3", filename: "a.mp3", contentType: "audio/mpeg", sizeBytes: 1, createdAt: "2026-01-01T00:00:00.000Z" })).toMatchObject({ kind: "audio", typeLabel: "MP3 audio" });
+    expect(toMediaLibraryItem({ id: "pdf", publicUrl: "https://cdn.example.org/files/a.pdf", filename: "a.pdf", contentType: "application/pdf", sizeBytes: 1, createdAt: "2026-01-01T00:00:00.000Z" })).toMatchObject({ kind: "document", typeLabel: "PDF" });
+    expect(toMediaLibraryItem({ id: "svg", publicUrl: "https://cdn.example.org/images/a.svg", filename: "a.svg", contentType: "image/svg+xml", sizeBytes: 1, createdAt: "2026-01-01T00:00:00.000Z" })).toMatchObject({ kind: "image", typeLabel: "image/svg+xml" });
+    expect(toMediaLibraryItem({ id: "unknown", publicUrl: "https://cdn.example.org/files/a.bin", filename: "a.bin", contentType: "application/octet-stream", sizeBytes: 1, createdAt: "2026-01-01T00:00:00.000Z" })).toMatchObject({ kind: "document", typeLabel: "application/octet-stream" });
   });
 
   it("copies the asset url", async () => {
