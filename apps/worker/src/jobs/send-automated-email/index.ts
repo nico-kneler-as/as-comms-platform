@@ -5,6 +5,8 @@ import type { Task } from "graphile-worker";
 import {
   AUTOMATED_EMAIL_MERGE_FIELDS,
   renderAutomatedEmail,
+  type AutomatedEmailMergeFieldKey,
+  collectAutomatedEmailMergeKeys,
   resolveAutomatedEmailMergeFields,
   type AutomatedEmailSalesforceClient,
   type Stage1PersistenceService,
@@ -294,10 +296,26 @@ export function createAutomatedEmailSendTask(
 
     let resolution;
     try {
+      // Resolve ONLY the fields this template references (plus the recipient
+      // email). Requesting the whole catalog would hold every send on required
+      // fields the copy never uses.
+      const referencedKeys = collectAutomatedEmailMergeKeys(
+        template.publishedSubject ?? template.draftSubject,
+        template.publishedDoc ?? template.draftDoc,
+      );
+      const catalogKeys = new Set<string>(
+        AUTOMATED_EMAIL_MERGE_FIELDS.map((field) => field.key),
+      );
+      const isCatalogKey = (key: string): key is AutomatedEmailMergeFieldKey =>
+        catalogKeys.has(key);
+      const keysToResolve = [
+        "email",
+        ...referencedKeys.filter((key) => key !== "email"),
+      ].filter(isCatalogKey);
       resolution = await resolveAutomatedEmailMergeFields(
         deps.salesforceClient,
         send.expeditionMemberId,
-        AUTOMATED_EMAIL_MERGE_FIELDS.map((field) => field.key),
+        keysToResolve,
       );
     } catch (error) {
       if (isTransientProviderError(error)) {

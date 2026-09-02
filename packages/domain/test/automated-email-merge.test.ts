@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUTOMATED_EMAIL_MERGE_FIELDS,
   type AutomatedEmailMergeFieldKey,
   type AutomatedEmailSalesforceClient,
   resolveAutomatedEmailMergeFields,
@@ -35,6 +36,23 @@ function resolve(
 }
 
 describe("resolveAutomatedEmailMergeFields", () => {
+  it("publishes the new required fields in the shared picker catalog", () => {
+    expect(AUTOMATED_EMAIL_MERGE_FIELDS).toEqual(
+      expect.arrayContaining([
+        {
+          key: "volunteerId",
+          label: "Volunteer ID",
+          policy: { kind: "required" },
+        },
+        {
+          key: "esriUsername",
+          label: "Esri username",
+          policy: { kind: "required" },
+        },
+      ]),
+    );
+  });
+
   it.each([validFifteenCharacterId, validEighteenCharacterId])(
     "accepts a %s Salesforce ID",
     async (expeditionMemberId) => {
@@ -161,6 +179,40 @@ describe("resolveAutomatedEmailMergeFields", () => {
     });
   });
 
+  it("resolves the required volunteer ID fallback chain and Esri username", async () => {
+    const client = new FakeSalesforceClient([
+      {
+        Contact__r: {
+          Volunteer_ID_Plain__c: " ",
+          Volunteer_ID__c: " encrypted-id ",
+        },
+        Esri_Username__c: " field-user ",
+      },
+    ]);
+
+    await expect(
+      resolve(client, ["volunteerId", "esriUsername"]),
+    ).resolves.toEqual({
+      outcome: "resolved",
+      contactId: null,
+      recipientEmail: null,
+      values: { volunteerId: "encrypted-id", esriUsername: "field-user" },
+      missingRequired: [],
+    });
+  });
+
+  it("reports new catalog fields as required when Salesforce does not supply them", async () => {
+    const client = new FakeSalesforceClient([{}]);
+
+    await expect(
+      resolve(client, ["volunteerId", "esriUsername"]),
+    ).resolves.toMatchObject({
+      outcome: "resolved",
+      values: {},
+      missingRequired: ["volunteerId", "esriUsername"],
+    });
+  });
+
   it("returns not_found when Salesforce returns no expedition member", async () => {
     const client = new FakeSalesforceClient([]);
 
@@ -191,7 +243,7 @@ describe("resolveAutomatedEmailMergeFields", () => {
     await resolve(client);
 
     expect(client.queries).toEqual([
-      "SELECT Id, First_Name__c, Last_Name__c, Email__c, Contact__c, Contact__r.FirstName, Contact__r.LastName, Contact__r.Email, Expedition__r.Name FROM Expedition_Members__c WHERE Id = '001ABCDEF123456'",
+      "SELECT Id, First_Name__c, Last_Name__c, Email__c, Esri_Username__c, Contact__c, Contact__r.FirstName, Contact__r.LastName, Contact__r.Email, Contact__r.Volunteer_ID_Plain__c, Contact__r.Volunteer_ID__c, Expedition__r.Name FROM Expedition_Members__c WHERE Id = '001ABCDEF123456'",
     ]);
     expect(client.queries[0]?.match(/001ABCDEF123456/gu)).toHaveLength(1);
   });

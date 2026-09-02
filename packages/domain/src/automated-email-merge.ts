@@ -2,7 +2,9 @@ export type AutomatedEmailMergeFieldKey =
   | "firstName"
   | "lastName"
   | "email"
-  | "projectName";
+  | "projectName"
+  | "volunteerId"
+  | "esriUsername";
 
 export type AutomatedEmailMergeFieldPolicy =
   | { readonly kind: "fallback"; readonly value: string }
@@ -39,6 +41,16 @@ export const AUTOMATED_EMAIL_MERGE_FIELDS = [
   {
     key: "projectName",
     label: "Project name",
+    policy: { kind: "required" },
+  },
+  {
+    key: "volunteerId",
+    label: "Volunteer ID",
+    policy: { kind: "required" },
+  },
+  {
+    key: "esriUsername",
+    label: "Esri username",
     policy: { kind: "required" },
   },
 ] as const satisfies readonly AutomatedEmailMergeField[];
@@ -134,11 +146,16 @@ function readResolvedValues(
       readTrimmedString(row.Email__c),
     ),
     projectName: readRelatedString(row, "Expedition__r", "Name"),
+    volunteerId: coalesce(
+      readRelatedString(row, "Contact__r", "Volunteer_ID_Plain__c"),
+      readRelatedString(row, "Contact__r", "Volunteer_ID__c"),
+    ),
+    esriUsername: readTrimmedString(row.Esri_Username__c),
   };
 }
 
 function buildExpeditionMemberQuery(expeditionMemberId: string): string {
-  return `SELECT Id, First_Name__c, Last_Name__c, Email__c, Contact__c, Contact__r.FirstName, Contact__r.LastName, Contact__r.Email, Expedition__r.Name FROM Expedition_Members__c WHERE Id = '${expeditionMemberId}'`;
+  return `SELECT Id, First_Name__c, Last_Name__c, Email__c, Esri_Username__c, Contact__c, Contact__r.FirstName, Contact__r.LastName, Contact__r.Email, Contact__r.Volunteer_ID_Plain__c, Contact__r.Volunteer_ID__c, Expedition__r.Name FROM Expedition_Members__c WHERE Id = '${expeditionMemberId}'`;
 }
 
 function readField(key: string): AutomatedEmailMergeField {

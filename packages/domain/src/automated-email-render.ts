@@ -351,6 +351,36 @@ function renderTransactionalFrame(input: {
 }
 
 /** Renders a transactional email without performing I/O or applying value fallbacks. */
+/**
+ * Collects the merge-field keys a template actually references — `mergeField`
+ * pills in the body document plus `{{token}}`s in the subject — in encounter
+ * order, de-duplicated. The send pipeline resolves ONLY these keys, so a
+ * template that never mentions a field can never be held for it.
+ */
+export function collectAutomatedEmailMergeKeys(
+  subjectTemplate: string,
+  bodyDoc: unknown,
+): readonly string[] {
+  const keys: string[] = [];
+  const push = (key: string): void => {
+    if (key.length > 0 && !keys.includes(key)) keys.push(key);
+  };
+  for (const match of subjectTemplate.matchAll(tokenPattern)) {
+    push(match[1] ?? "");
+  }
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    const record = node as { type?: unknown; attrs?: unknown; content?: unknown };
+    if (record.type === "mergeField") {
+      const attrs = record.attrs as { key?: unknown } | undefined;
+      if (typeof attrs?.key === "string") push(attrs.key);
+    }
+    if (Array.isArray(record.content)) record.content.forEach(walk);
+  };
+  walk(bodyDoc);
+  return keys;
+}
+
 export function renderAutomatedEmail(
   input: AutomatedEmailRenderInput,
 ): AutomatedEmailRenderOutput {

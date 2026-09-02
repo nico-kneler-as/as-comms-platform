@@ -33,6 +33,7 @@
     "ops:recover-orphan-task-details": "tsx scripts/ops/recover-orphan-task-details.ts",
     "ops:promote-admin": "tsx scripts/ops/promote-admin.ts",
     "ops:import-mailchimp-newsletter": "tsx scripts/ops/import-mailchimp-newsletter.ts",
+    "ops:import-sf-flow-emails": "tsx scripts/ops/import-sf-flow-emails.ts",
     "ops:reconcile-sms-consent": "tsx scripts/ops/reconcile-sms-consent-from-salesforce.ts",
     "build": "turbo build && node scripts/verify-runtime-exports.mjs",
     "lint": "turbo lint",
