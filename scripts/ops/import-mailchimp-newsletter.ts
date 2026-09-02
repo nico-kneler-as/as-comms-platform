@@ -13,9 +13,11 @@ import type {
   UpsertNewsletterSuppressionInput,
 } from "@as-comms/contracts";
 import {
+  clearMailchimpNewsletterSuppressionByEmail,
   closeDatabaseConnection,
   createDatabaseConnection,
   countSendableNewsletterSubscribers,
+  getNewsletterSuppressionByEmail,
   upsertNewsletterSubscriber,
   upsertNewsletterSuppression,
   type DatabaseConnection,
@@ -31,6 +33,7 @@ type NewsletterImportOptions = {
   readonly subscribedCsv?: string;
   readonly unsubscribedCsv?: string;
   readonly cleanedCsv?: string;
+  readonly source?: string;
   readonly execute: boolean;
 };
 
@@ -45,6 +48,7 @@ export type NewsletterImportSummary = {
   readonly execute: boolean;
   readonly subscribed: FileSummary & {
     readonly subscribersUpserted: number;
+    readonly suppressionsCleared: number;
   };
   readonly unsubscribed: FileSummary & {
     readonly suppressionsUpserted: number;
@@ -59,6 +63,7 @@ export type NewsletterImportSummary = {
     readonly blankEmailRowsSkipped: number;
     readonly uniqueEmailRows: number;
     readonly subscribersUpserted: number;
+    readonly suppressionsCleared: number;
     readonly suppressionsUpserted: number;
     readonly sendableSubscribersAfterRun: number | null;
   };
@@ -119,7 +124,10 @@ function parseMailchimpTimestamp(value: string | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function mapSubscriberRow(row: MailchimpCsvRow): UpsertNewsletterSubscriberInput | null {
+function mapSubscriberRow(
+  row: MailchimpCsvRow,
+  source: string,
+): UpsertNewsletterSubscriberInput | null {
   const email = row["Email Address"];
   if (!email?.trim()) {
     return null;
@@ -143,7 +151,7 @@ function mapSubscriberRow(row: MailchimpCsvRow): UpsertNewsletterSubscriberInput
     lastChangedAt: parseMailchimpTimestamp(row.LAST_CHANGED),
     interests: normalizeOptionalString(row["What content are you interested in?"]),
     tags: normalizeOptionalString(row.TAGS),
-    source: "mailchimp_import",
+    source,
   };
 }
 
@@ -163,13 +171,16 @@ function mapSuppressionRow(
   };
 }
 
-function parseSubscriberDataset(csvText: string): ParsedSubscriberDataset {
+function parseSubscriberDataset(
+  csvText: string,
+  source: string,
+): ParsedSubscriberDataset {
   const rows = parseMailchimpCsv(csvText);
   const inputs: UpsertNewsletterSubscriberInput[] = [];
   let blankEmailRowsSkipped = 0;
 
   for (const row of rows) {
-    const mapped = mapSubscriberRow(row);
+    const mapped = mapSubscriberRow(row, source);
     if (mapped === null) {
       blankEmailRowsSkipped += 1;
       continue;
@@ -229,6 +240,19 @@ function requireEnv(env: NodeJS.ProcessEnv, key: string): string {
   }
 
   return value;
+}
+
+function normalizeSubscriberSource(source: string | undefined): string {
+  if (source === undefined) {
+    return "mailchimp_import";
+  }
+
+  const normalized = source.trim();
+  if (!normalized) {
+    throw new Error("--source must be a non-empty string.");
+  }
+
+  return normalized;
 }
 
 function parseDotenvLine(line: string): [string, string] | null {
@@ -299,8 +323,9 @@ async function readOptionalCsvFile(filePath: string | undefined): Promise<string
 
 export function parseSubscriberRows(
   csvText: string,
+  source?: string,
 ): readonly UpsertNewsletterSubscriberInput[] {
-  return parseSubscriberDataset(csvText).inputs;
+  return parseSubscriberDataset(csvText, normalizeSubscriberSource(source)).inputs;
 }
 
 export function parseSuppressionRows(
@@ -314,14 +339,12 @@ export async function runNewsletterImport(
   context: NewsletterImportContext,
   options: NewsletterImportOptions,
 ): Promise<NewsletterImportSummary> {
-  if (options.execute && context.db === undefined) {
-    throw new Error("Database connection is required when execute=true.");
-  }
+  const source = normalizeSubscriberSource(options.source);
 
   const subscribedDataset =
     options.subscribedCsv === undefined
       ? null
-      : parseSubscriberDataset(options.subscribedCsv);
+      : parseSubscriberDataset(options.subscribedCsv, source);
   const unsubscribedDataset =
     options.unsubscribedCsv === undefined
       ? null
@@ -334,6 +357,15 @@ export async function runNewsletterImport(
   const subscriberInputs = dedupeByEmail(subscribedDataset?.inputs ?? []);
   const unsubscribedInputs = dedupeByEmail(unsubscribedDataset?.inputs ?? []);
   const cleanedInputs = dedupeByEmail(cleanedDataset?.inputs ?? []);
+  const requiresDatabase = options.execute || subscriberInputs.length > 0;
+
+  if (requiresDatabase && context.db === undefined) {
+    throw new Error(
+      "Database connection is required when execute=true or subscribed rows are provided.",
+    );
+  }
+
+  let suppressionsCleared = 0;
 
   if (options.execute) {
     const db = context.db;
@@ -362,7 +394,12 @@ export async function runNewsletterImport(
     };
 
     for (const input of subscriberInputs) {
-      await safeUpsert(() => upsertNewsletterSubscriber(db, input), input.email);
+      await safeUpsert(async () => {
+        await upsertNewsletterSubscriber(db, input);
+        if (await clearMailchimpNewsletterSuppressionByEmail(db, input.email)) {
+          suppressionsCleared += 1;
+        }
+      }, input.email);
     }
 
     for (const input of unsubscribedInputs) {
@@ -377,6 +414,16 @@ export async function runNewsletterImport(
       console.warn(
         `[import-mailchimp-newsletter] skipped ${skippedInvalidRows} row(s) that failed validation.`,
       );
+    }
+  } else if (context.db !== undefined) {
+    for (const input of subscriberInputs) {
+      const suppression = await getNewsletterSuppressionByEmail(
+        context.db,
+        input.email,
+      );
+      if (suppression !== null && suppression.reason !== "platform_optout") {
+        suppressionsCleared += 1;
+      }
     }
   }
 
@@ -393,6 +440,7 @@ export async function runNewsletterImport(
       blankEmailRowsSkipped: subscribedDataset?.blankEmailRowsSkipped ?? 0,
       uniqueEmailRows: subscriberInputs.length,
       subscribersUpserted: subscriberInputs.length,
+      suppressionsCleared,
     },
     unsubscribed: {
       provided: unsubscribedDataset !== null,
@@ -422,6 +470,7 @@ export async function runNewsletterImport(
       uniqueEmailRows:
         subscriberInputs.length + unsubscribedInputs.length + cleanedInputs.length,
       subscribersUpserted: subscriberInputs.length,
+      suppressionsCleared,
       suppressionsUpserted: unsubscribedInputs.length + cleanedInputs.length,
       sendableSubscribersAfterRun,
     },
@@ -433,6 +482,7 @@ export async function runNewsletterImport(
 export function renderNewsletterImportSummary(summary: NewsletterImportSummary): string {
   const mode = summary.execute ? "execute" : "dry-run";
   const actionVerb = summary.execute ? "upserted" : "would upsert";
+  const suppressionClearVerb = summary.execute ? "cleared" : "would_clear";
 
   return [
     "# Mailchimp newsletter import",
@@ -442,6 +492,7 @@ export function renderNewsletterImportSummary(summary: NewsletterImportSummary):
     "| file | provided | rows_read | blank_email_rows_skipped | unique_email_rows | action | count |",
     "| --- | --- | --- | --- | --- | --- | --- |",
     `| subscribed | ${String(summary.subscribed.provided)} | ${summary.subscribed.rowsRead} | ${summary.subscribed.blankEmailRowsSkipped} | ${summary.subscribed.uniqueEmailRows} | subscribers ${actionVerb} | ${summary.subscribed.subscribersUpserted} |`,
+    `| subscribed (suppression reconciliation) | ${String(summary.subscribed.provided)} | ${summary.subscribed.rowsRead} | ${summary.subscribed.blankEmailRowsSkipped} | ${summary.subscribed.uniqueEmailRows} | suppressions ${suppressionClearVerb} | ${summary.subscribed.suppressionsCleared} |`,
     `| unsubscribed | ${String(summary.unsubscribed.provided)} | ${summary.unsubscribed.rowsRead} | ${summary.unsubscribed.blankEmailRowsSkipped} | ${summary.unsubscribed.uniqueEmailRows} | suppressions (${summary.unsubscribed.reason}) ${actionVerb} | ${summary.unsubscribed.suppressionsUpserted} |`,
     `| cleaned | ${String(summary.cleaned.provided)} | ${summary.cleaned.rowsRead} | ${summary.cleaned.blankEmailRowsSkipped} | ${summary.cleaned.uniqueEmailRows} | suppressions (${summary.cleaned.reason}) ${actionVerb} | ${summary.cleaned.suppressionsUpserted} |`,
     "",
@@ -451,6 +502,7 @@ export function renderNewsletterImportSummary(summary: NewsletterImportSummary):
     `| blank_email_rows_skipped | ${summary.totals.blankEmailRowsSkipped} |`,
     `| unique_email_rows | ${summary.totals.uniqueEmailRows} |`,
     `| subscribers_${summary.execute ? "upserted" : "would_upsert"} | ${summary.totals.subscribersUpserted} |`,
+    `| suppressions_${suppressionClearVerb} | ${summary.totals.suppressionsCleared} |`,
     `| suppressions_${summary.execute ? "upserted" : "would_upsert"} | ${summary.totals.suppressionsUpserted} |`,
     `| sendable_subscribers_after_run | ${summary.totals.sendableSubscribersAfterRun ?? "n/a"} |`,
   ].join("\n");
@@ -458,6 +510,7 @@ export function renderNewsletterImportSummary(summary: NewsletterImportSummary):
 
 type CommandOptions = {
   readonly execute: boolean;
+  readonly source: string;
   readonly subscribedPath?: string;
   readonly unsubscribedPath?: string;
   readonly cleanedPath?: string;
@@ -480,12 +533,17 @@ function parseCommandOptions(args: readonly string[]): CommandOptions {
         type: "boolean",
         default: false,
       },
+      source: {
+        type: "string",
+        default: "mailchimp_import",
+      },
     },
     allowPositionals: false,
   });
 
   return {
     execute: values.execute ?? false,
+    source: normalizeSubscriberSource(values.source),
     subscribedPath: values.subscribed,
     unsubscribedPath: values.unsubscribed,
     cleanedPath: values.cleaned,
@@ -532,13 +590,14 @@ export async function main(
     readOptionalCsvFile(options.cleanedPath),
   ]);
 
-  if (!options.execute) {
+  if (!options.execute && subscribedCsv === undefined) {
     const summary = await runNewsletterImport(
       {},
       {
         subscribedCsv,
         unsubscribedCsv,
         cleanedCsv,
+        source: options.source,
         execute: false,
       },
     );
@@ -556,7 +615,8 @@ export async function main(
         subscribedCsv,
         unsubscribedCsv,
         cleanedCsv,
-        execute: true,
+        source: options.source,
+        execute: options.execute,
       },
     );
     console.log(renderNewsletterImportSummary(summary));

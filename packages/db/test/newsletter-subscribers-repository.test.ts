@@ -6,6 +6,7 @@ import {
   newsletterSuppressions,
 } from "../src/index.js";
 import {
+  clearMailchimpNewsletterSuppressionByEmail,
   countSendableNewsletterSubscribers,
   getNewsletterSubscriberByEmail,
   getNewsletterSuppressionByEmail,
@@ -81,6 +82,87 @@ describe("newsletter subscribers repository", () => {
     );
 
     expect(fetched).toEqual(created);
+  });
+
+  it("clears an unsubscribed suppression for a Mailchimp re-subscription", async () => {
+    await upsertNewsletterSuppression(context.db, {
+      email: "unsubscribed@example.com",
+      reason: "unsubscribed",
+      source: "mailchimp_import",
+    });
+
+    await expect(
+      clearMailchimpNewsletterSuppressionByEmail(
+        context.db,
+        "unsubscribed@example.com",
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      getNewsletterSuppressionByEmail(context.db, "unsubscribed@example.com"),
+    ).resolves.toBeNull();
+  });
+
+  it("clears a cleaned suppression for a Mailchimp re-subscription", async () => {
+    await upsertNewsletterSuppression(context.db, {
+      email: "cleaned@example.com",
+      reason: "cleaned",
+      source: "mailchimp_import",
+    });
+
+    await expect(
+      clearMailchimpNewsletterSuppressionByEmail(
+        context.db,
+        "cleaned@example.com",
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      getNewsletterSuppressionByEmail(context.db, "cleaned@example.com"),
+    ).resolves.toBeNull();
+  });
+
+  it("preserves a platform opt-out when processing a Mailchimp re-subscription", async () => {
+    await upsertNewsletterSuppression(context.db, {
+      email: "platform-optout@example.com",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+
+    await expect(
+      clearMailchimpNewsletterSuppressionByEmail(
+        context.db,
+        "platform-optout@example.com",
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      getNewsletterSuppressionByEmail(context.db, "platform-optout@example.com"),
+    ).resolves.toMatchObject({ reason: "platform_optout" });
+  });
+
+  it("returns false when no suppression exists", async () => {
+    await expect(
+      clearMailchimpNewsletterSuppressionByEmail(
+        context.db,
+        "missing@example.com",
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("normalizes email before clearing a Mailchimp suppression", async () => {
+    await upsertNewsletterSuppression(context.db, {
+      email: "normalized@example.com",
+      reason: "unsubscribed",
+      source: "mailchimp_import",
+    });
+
+    await expect(
+      clearMailchimpNewsletterSuppressionByEmail(
+        context.db,
+        " Normalized@Example.com ",
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      getNewsletterSuppressionByEmail(context.db, "normalized@example.com"),
+    ).resolves.toBeNull();
   });
 
   it("counts sendable subscribers excluding suppressions and non-subscribed statuses", async () => {
