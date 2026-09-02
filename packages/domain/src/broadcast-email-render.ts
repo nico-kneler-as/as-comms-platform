@@ -195,7 +195,7 @@ export function renderBroadcastEmail(
   const webVersionHtml =
     webVersionHref.length === 0
       ? ""
-      : `<div style="text-align:center;font-size:12px;line-height:1.6;color:#64748b;padding:8px 0 12px;">Having trouble viewing this email? <a href="${escapeHtml(webVersionHref)}" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">View it in your browser</a>.</div>`;
+      : `<div style="text-align:center;font-size:12px;line-height:1.6;color:#64748b;padding:8px 0 12px;">Having trouble viewing this email? <a data-pm-no-track href="${escapeHtml(webVersionHref)}" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">View it in your browser</a>.</div>`;
   const bodyText = [input.bodyTextTemplate, signatureBlock.text, footer.text]
     .filter((part) => part.trim().length > 0)
     .join("\n\n");

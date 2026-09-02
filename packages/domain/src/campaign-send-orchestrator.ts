@@ -21,6 +21,7 @@ import {
 } from "./broadcast-email-render.js";
 import {
   buildBroadcastWebVersionUrl,
+  isBroadcastWebVersionEligible,
   renderBroadcastWebVersion,
 } from "./broadcast-web-version-render.js";
 import type { AudienceResolver } from "./audience-resolver.js";
@@ -475,32 +476,36 @@ export function createCampaignSendOrchestrator(deps: {
                 senderAliasEmail,
               )
             )?.signature ?? null;
-      const webVersion = await deps.repositories.broadcastWebVersions.ensure(
-        runId,
-      );
-      const pageUrl = buildBroadcastWebVersionUrl({
-        appUrl,
-        token: webVersion.publicToken,
-      });
+      // Plain typed emails get no public page and no browser link at all.
+      let pageUrl: string | null = null;
+      if (isBroadcastWebVersionEligible(run)) {
+        const webVersion = await deps.repositories.broadcastWebVersions.ensure(
+          runId,
+        );
+        pageUrl = buildBroadcastWebVersionUrl({
+          appUrl,
+          token: webVersion.publicToken,
+        });
 
-      if (webVersion.renderedHtml === null) {
-        const renderedWebVersion = renderBroadcastWebVersion({
-          launchType: run.launchType,
-          kind: run.kind,
-          subject: run.subjectTemplate ?? "",
-          bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
-          projectName: project?.projectName ?? null,
-          projectAlias,
-          senderEmail: run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? "",
-          signature,
-          footerAddress,
-          pageUrl,
-          subscribeUrl: newsletterSubscribeUrl,
-        });
-        await deps.repositories.broadcastWebVersions.storeRendered(runId, {
-          html: renderedWebVersion.html,
-          title: renderedWebVersion.title,
-        });
+        if (webVersion.renderedHtml === null) {
+          const renderedWebVersion = renderBroadcastWebVersion({
+            launchType: run.launchType,
+            kind: run.kind,
+            subject: run.subjectTemplate ?? "",
+            bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+            projectName: project?.projectName ?? null,
+            projectAlias,
+            senderEmail: run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? "",
+            signature,
+            footerAddress,
+            pageUrl,
+            subscribeUrl: newsletterSubscribeUrl,
+          });
+          await deps.repositories.broadcastWebVersions.storeRendered(runId, {
+            html: renderedWebVersion.html,
+            title: renderedWebVersion.title,
+          });
+        }
       }
 
       for (let index = 0; index < snapshots.length; index += batchSize) {
@@ -573,7 +578,7 @@ export function createCampaignSendOrchestrator(deps: {
             scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
             allUnsubscribeHref: unsubscribeUrls.allHref,
             senderEmail: sender,
-            webVersionHref: pageUrl,
+            ...(pageUrl === null ? {} : { webVersionHref: pageUrl }),
           });
 
           const rendered = deps.mergeRenderer.render(

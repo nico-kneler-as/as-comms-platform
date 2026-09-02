@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBroadcastWebVersionUrl,
+  isBroadcastWebVersionEligible,
   renderBroadcastWebVersion,
 } from "../src/broadcast-web-version-render.js";
 
@@ -19,6 +20,23 @@ const baseInput = {
   pageUrl: "https://app.example.test/b/a%2Fb",
   subscribeUrl: "https://www.adventurescientists.org/subscribe",
 };
+
+describe("isBroadcastWebVersionEligible", () => {
+  it("covers newsletters and HTML broadcasts but not plain typed emails", () => {
+    expect(
+      isBroadcastWebVersionEligible({ kind: "newsletter", launchType: "normal_email" }),
+    ).toBe(true);
+    expect(
+      isBroadcastWebVersionEligible({ kind: "project", launchType: "html_email" }),
+    ).toBe(true);
+    expect(
+      isBroadcastWebVersionEligible({ kind: "newsletter", launchType: "html_email" }),
+    ).toBe(true);
+    expect(
+      isBroadcastWebVersionEligible({ kind: "project", launchType: "normal_email" }),
+    ).toBe(false);
+  });
+});
 
 describe("broadcast web version rendering", () => {
   it("builds a normalized public URL", () => {

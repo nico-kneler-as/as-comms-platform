@@ -76,11 +76,12 @@ async function seedNewsletterRun(
   input: {
     readonly launchType: "normal_email" | "html_email";
     readonly runId: string;
+    readonly kind?: "newsletter" | "project";
   },
 ): Promise<void> {
   await runtime.runtime.campaigns.campaignRuns.create({
     id: input.runId,
-    kind: "newsletter",
+    kind: input.kind ?? "newsletter",
     launchType: input.launchType,
     projectId: null,
     name: "Org sender test",
@@ -299,5 +300,26 @@ describe("campaign org-sender actions", () => {
     expect(
       await publishBroadcastWebVersionNow("web-version-never-sent"),
     ).toMatchObject({ ok: false, code: "campaign_web_version_not_sent" });
+  });
+
+  it("refuses to publish a page for a plain typed email", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterRun(runtime, {
+      launchType: "normal_email",
+      runId: "web-version-plain",
+      kind: "project",
+    });
+
+    expect(
+      await publishBroadcastWebVersionNow("web-version-plain"),
+    ).toMatchObject({ ok: false, code: "campaign_web_version_not_eligible" });
+    await expect(
+      runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
+        "web-version-plain",
+      ),
+    ).resolves.toBeNull();
   });
 });

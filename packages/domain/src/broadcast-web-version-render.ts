@@ -14,6 +14,23 @@ export function buildBroadcastWebVersionUrl(input: {
   return `${input.appUrl.replace(/\/+$/u, "")}/b/${encodeURIComponent(input.token)}`;
 }
 
+/**
+ * Which broadcasts get a public web version at all.
+ *
+ * Newsletters and HTML-designed broadcasts are mass, designed sends where a
+ * shareable public copy is the point. A plain typed email (`normal_email`) is
+ * closer to personal correspondence — often small, operational, and sometimes
+ * carrying logistics we do not want mirrored on a public URL — so it gets no
+ * page and no "view in browser" line. Gates creation only: a page that already
+ * exists stays reachable so it can be unpublished.
+ */
+export function isBroadcastWebVersionEligible(input: {
+  readonly kind: CampaignKind;
+  readonly launchType: LaunchType;
+}): boolean {
+  return input.kind === "newsletter" || input.launchType === "html_email";
+}
+
 export interface BroadcastWebVersionRenderInput {
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
