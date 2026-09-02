@@ -6,6 +6,7 @@ import {
   getNewsletterSuppressionByEmail,
   newsletterSubscribers,
   newsletterSuppressions,
+  upsertNewsletterSuppression,
 } from "@as-comms/db";
 import { createTestStage1Context } from "@as-comms/db/test-helpers";
 
@@ -184,6 +185,122 @@ describe("import-mailchimp-newsletter", () => {
         subscribers: 2,
         suppressions: 2,
       });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("clears an unsubscribed suppression when a subscribed row is imported", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await upsertNewsletterSuppression(context.db, {
+        email: "keep@example.com",
+        reason: "unsubscribed",
+        source: "mailchimp_import",
+      });
+
+      const summary = await runNewsletterImport(
+        { db: context.db },
+        {
+          subscribedCsv: importSubscribedFixture,
+          execute: true,
+        },
+      );
+
+      await expect(
+        getNewsletterSuppressionByEmail(context.db, "keep@example.com"),
+      ).resolves.toBeNull();
+      expect(summary.subscribed.suppressionsCleared).toBe(1);
+      expect(summary.totals.suppressionsCleared).toBe(1);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("preserves a platform opt-out when a subscribed row is imported", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await upsertNewsletterSuppression(context.db, {
+        email: "keep@example.com",
+        reason: "platform_optout",
+        source: "recipient_click",
+      });
+
+      const summary = await runNewsletterImport(
+        { db: context.db },
+        {
+          subscribedCsv: importSubscribedFixture,
+          execute: true,
+        },
+      );
+
+      await expect(
+        getNewsletterSuppressionByEmail(context.db, "keep@example.com"),
+      ).resolves.toMatchObject({ reason: "platform_optout" });
+      expect(summary.subscribed.suppressionsCleared).toBe(0);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("dry-runs suppression clearing without deleting the suppression", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await upsertNewsletterSuppression(context.db, {
+        email: "keep@example.com",
+        reason: "unsubscribed",
+        source: "mailchimp_import",
+      });
+
+      const summary = await runNewsletterImport(
+        { db: context.db },
+        {
+          subscribedCsv: importSubscribedFixture,
+          execute: false,
+        },
+      );
+
+      await expect(
+        getNewsletterSuppressionByEmail(context.db, "keep@example.com"),
+      ).resolves.toMatchObject({ reason: "unsubscribed" });
+      expect(summary.subscribed.suppressionsCleared).toBe(1);
+      expect(summary.totals.suppressionsCleared).toBe(1);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("records the supplied source while retaining the Mailchimp default", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await runNewsletterImport(
+        { db: context.db },
+        {
+          subscribedCsv: importSubscribedFixture,
+          source: "salesforce_esp",
+          execute: true,
+        },
+      );
+
+      await expect(
+        getNewsletterSubscriberByEmail(context.db, "keep@example.com"),
+      ).resolves.toMatchObject({ source: "salesforce_esp" });
+
+      await runNewsletterImport(
+        { db: context.db },
+        {
+          subscribedCsv: importSubscribedFixture,
+          execute: true,
+        },
+      );
+
+      await expect(
+        getNewsletterSubscriberByEmail(context.db, "keep@example.com"),
+      ).resolves.toMatchObject({ source: "mailchimp_import" });
     } finally {
       await context.dispose();
     }

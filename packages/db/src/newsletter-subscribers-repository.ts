@@ -6,6 +6,7 @@ import {
   gte,
   ilike,
   isNull,
+  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -101,6 +102,23 @@ async function clearNewsletterSuppressionByEmail(
   await db
     .delete(newsletterSuppressions)
     .where(eq(newsletterSuppressions.email, normalizeEmail(email)));
+}
+
+export async function clearMailchimpNewsletterSuppressionByEmail(
+  db: NewsletterSubscribersDatabase,
+  email: string,
+): Promise<boolean> {
+  const rows = await db
+    .delete(newsletterSuppressions)
+    .where(
+      and(
+        eq(newsletterSuppressions.email, normalizeEmail(email)),
+        ne(newsletterSuppressions.reason, "platform_optout"),
+      ),
+    )
+    .returning();
+
+  return rows.length > 0;
 }
 
 export async function upsertNewsletterSubscriber(
