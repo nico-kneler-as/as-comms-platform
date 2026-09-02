@@ -6,7 +6,12 @@ import {
   automatedEmailKindSchema,
   type AutomatedEmailKind,
 } from "@as-comms/contracts";
-import { renderAutomatedEmail } from "@as-comms/domain";
+import {
+  AutomatedEmailRenderError,
+  automatedEmailMergeFieldLabel,
+  buildAutomatedEmailSampleValues,
+  renderAutomatedEmail,
+} from "@as-comms/domain";
 import { z } from "zod";
 
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
@@ -126,18 +131,83 @@ type PreviewData = Readonly<{
   sampleFirstName: string;
 }>;
 
+// Personas only need to carry the fields that should differ between the two
+// preview identities. Everything else — including merge fields added later —
+// comes from the domain catalog via buildAutomatedEmailSampleValues, so no
+// template can fail to preview for want of a sample value.
 const samplePeople = {
   nico: {
     firstName: "Nico",
     lastName: "Ortiz",
     email: "nico.ortiz@gmail.com",
+    volunteerId: "4821",
+    esriUsername: "nortiz_advsci",
   },
   selah: {
     firstName: "Selah",
     lastName: "Whitcomb",
     email: "selah.w@fastmail.com",
+    volunteerId: "5137",
+    esriUsername: "swhitcomb_advsci",
   },
 } as const;
+
+/**
+ * Turns a renderer failure into something an operator can act on without
+ * opening a ticket: which merge field, which link, which block. The generic
+ * sentence is the last resort, not the default (PRD #693 follow-up).
+ */
+function describeRenderFailure(error: unknown): UiError {
+  if (!(error instanceof AutomatedEmailRenderError)) {
+    return errorResult(
+      "draft_render_failed",
+      "This draft cannot be rendered. Check its merge fields and formatting, then try again.",
+    );
+  }
+
+  switch (error.code) {
+    case "malformed_token":
+      return errorResult(
+        "draft_render_malformed_token",
+        "The subject line has an unclosed {{ merge token. Fix the subject and try again.",
+      );
+    case "unknown_token":
+      return errorResult(
+        "draft_render_unknown_token",
+        `The subject line uses {{${error.offender}}}, which is not a merge field. Insert merge fields with the picker instead of typing them.`,
+      );
+    case "missing_value":
+      return errorResult(
+        "draft_render_missing_value",
+        `The preview has no sample value for the ${automatedEmailMergeFieldLabel(error.offender)} merge field. Report this — the preview's sample data needs updating.`,
+      );
+    case "invalid_link": {
+      const linkText =
+        error.context !== null && error.context.trim().length > 0
+          ? `The link on "${error.context.trim()}"`
+          : "A link in this draft";
+      return errorResult(
+        "draft_render_invalid_link",
+        `${linkText} points to ${error.offender}, which is not a supported address. Links must start with http://, https:// or mailto:.`,
+      );
+    }
+    case "unsupported_mark":
+      return errorResult(
+        "draft_render_unsupported_mark",
+        `This draft uses ${error.offender} formatting, which automated emails cannot send. Remove it and try again.`,
+      );
+    case "unsupported_node":
+      return errorResult(
+        "draft_render_unsupported_node",
+        `This draft contains a ${error.offender} block, which automated emails cannot send. Remove it and try again.`,
+      );
+    default:
+      return errorResult(
+        "draft_render_failed",
+        "This draft cannot be rendered. Check its merge fields and formatting, then try again.",
+      );
+  }
+}
 
 function requestId(): string {
   return randomUUID();
@@ -240,12 +310,10 @@ async function renderDraft(input: {
     const rendered = renderAutomatedEmail({
       subjectTemplate: input.draftSubject,
       bodyDoc: input.draftDoc,
-      values: {
-        firstName: person.firstName,
-        lastName: person.lastName,
-        email: person.email,
+      values: buildAutomatedEmailSampleValues({
+        ...person,
         projectName: project.projectName,
-      },
+      }),
       frame: {
         projectName: project.projectName,
         reasonLine: `You're receiving this because you applied to ${project.projectName}.`,
@@ -263,14 +331,8 @@ async function renderDraft(input: {
         sampleFirstName: person.firstName,
       },
     };
-  } catch {
-    return {
-      ok: false,
-      error: errorResult(
-        "draft_render_failed",
-        "This draft cannot be rendered. Check its merge fields and formatting, then try again.",
-      ),
-    };
+  } catch (error) {
+    return { ok: false, error: describeRenderFailure(error) };
   }
 }
 

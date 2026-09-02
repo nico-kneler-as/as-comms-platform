@@ -30,12 +30,24 @@ export type AutomatedEmailRenderErrorCode =
 export class AutomatedEmailRenderError extends Error {
   readonly code: AutomatedEmailRenderErrorCode;
   readonly offender: string;
+  /**
+   * Where in the draft the offender sits, when knowing the value alone is not
+   * enough to find it — currently the visible text of an unsupported link.
+   * Operator-facing messages use it; machine-readable send-log reasons stay on
+   * `code` alone.
+   */
+  readonly context: string | null;
 
-  constructor(code: AutomatedEmailRenderErrorCode, offender: string) {
+  constructor(
+    code: AutomatedEmailRenderErrorCode,
+    offender: string,
+    context: string | null = null,
+  ) {
     super(`${code}: ${offender}`);
     this.name = "AutomatedEmailRenderError";
     this.code = code;
     this.offender = offender;
+    this.context = context;
   }
 }
 
@@ -105,22 +117,29 @@ function renderSubject(
   });
 }
 
-function readSafeLinkHref(mark: Record<string, unknown>): string {
+function readSafeLinkHref(
+  mark: Record<string, unknown>,
+  linkText: string,
+): string {
   const attrs = mark.attrs;
   const href = isRecord(attrs) ? attrs.href : undefined;
   if (typeof href !== "string") {
-    throw new AutomatedEmailRenderError("invalid_link", "(missing href)");
+    throw new AutomatedEmailRenderError(
+      "invalid_link",
+      "(missing href)",
+      linkText,
+    );
   }
 
   let protocol: string;
   try {
     protocol = new URL(href).protocol;
   } catch {
-    throw new AutomatedEmailRenderError("invalid_link", href);
+    throw new AutomatedEmailRenderError("invalid_link", href, linkText);
   }
 
   if (protocol !== "http:" && protocol !== "https:" && protocol !== "mailto:") {
-    throw new AutomatedEmailRenderError("invalid_link", href);
+    throw new AutomatedEmailRenderError("invalid_link", href, linkText);
   }
 
   return href;
@@ -152,7 +171,7 @@ function renderTextNode(node: TipTapNode): RenderedNode {
         html = `<em style="font-style:italic;">${html}</em>`;
         break;
       case "link": {
-        const href = readSafeLinkHref(rawMark);
+        const href = readSafeLinkHref(rawMark, node.text);
         html = `<a href="${escapeHtml(href)}" style="color:#213515;text-decoration:underline;">${html}</a>`;
         text = `${text} (${href})`;
         break;

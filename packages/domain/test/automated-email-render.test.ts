@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUTOMATED_EMAIL_MERGE_FIELDS,
+  buildAutomatedEmailSampleValues,
+} from "../src/automated-email-merge.js";
+import {
   AutomatedEmailRenderError,
   collectAutomatedEmailMergeKeys,
   renderAutomatedEmail,
@@ -413,6 +417,71 @@ describe("renderAutomatedEmail", () => {
     expect(renderAutomatedEmail(baseInput)).toEqual(
       renderAutomatedEmail(baseInput),
     );
+  });
+});
+
+describe("renderAutomatedEmail with catalog sample values", () => {
+  it("renders a draft that uses every catalog merge field", () => {
+    // Regression guard for the 2026-09-02 import: 61 of the 122 Salesforce
+    // drafts referenced volunteerId / esriUsername, which the preview's
+    // hand-written value list did not supply.
+    const result = renderAutomatedEmail({
+      subjectTemplate: "{{projectName}} update for {{firstName}}",
+      bodyDoc: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: AUTOMATED_EMAIL_MERGE_FIELDS.map((field) => ({
+              type: "mergeField",
+              attrs: { key: field.key },
+            })),
+          },
+        ],
+      },
+      values: buildAutomatedEmailSampleValues({ projectName: "Whitebark Pine" }),
+      frame: {
+        projectName: "Whitebark Pine",
+        reasonLine: "You're receiving this because you applied.",
+      },
+    });
+
+    expect(result.subject).toBe("Whitebark Pine update for Alex");
+    expect(result.html).toContain("4821");
+    expect(result.html).toContain("arivera_advsci");
+  });
+
+  it("names the link text on an unsupported href", () => {
+    try {
+      renderAutomatedEmail({
+        ...baseInput,
+        bodyDoc: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Start Training",
+                  marks: [
+                    { type: "link", attrs: { href: "{!$Record.Event_URL__c}" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      });
+      throw new Error("Expected renderAutomatedEmail to throw.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AutomatedEmailRenderError);
+      expect(error).toMatchObject({
+        code: "invalid_link",
+        offender: "{!$Record.Event_URL__c}",
+        context: "Start Training",
+      });
+    }
   });
 });
 

@@ -14,6 +14,14 @@ export interface AutomatedEmailMergeField {
   readonly key: AutomatedEmailMergeFieldKey;
   readonly label: string;
   readonly policy: AutomatedEmailMergeFieldPolicy;
+  /**
+   * Stand-in used when no real Salesforce record is in play — the editor's
+   * preview drawer and test sends. Every field carries one so that previewing
+   * a template can never fail for want of a value: callers build their sample
+   * set by walking this catalog, not by listing keys by hand. Adding a field
+   * to the catalog therefore makes it previewable in the same commit.
+   */
+  readonly sampleValue: string;
 }
 
 /**
@@ -27,33 +35,72 @@ export const AUTOMATED_EMAIL_MERGE_FIELDS = [
     key: "firstName",
     label: "First name",
     policy: { kind: "fallback", value: "there" },
+    sampleValue: "Alex",
   },
   {
     key: "lastName",
     label: "Last name",
     policy: { kind: "fallback", value: "" },
+    sampleValue: "Rivera",
   },
   {
     key: "email",
     label: "Email",
     policy: { kind: "required" },
+    sampleValue: "alex.rivera@example.org",
   },
   {
     key: "projectName",
     label: "Project name",
     policy: { kind: "required" },
+    sampleValue: "Sample Project",
   },
   {
     key: "volunteerId",
     label: "Volunteer ID",
     policy: { kind: "required" },
+    sampleValue: "4821",
   },
   {
     key: "esriUsername",
     label: "Esri username",
     policy: { kind: "required" },
+    sampleValue: "arivera_advsci",
   },
 ] as const satisfies readonly AutomatedEmailMergeField[];
+
+/**
+ * Builds a value set covering EVERY catalog field, for surfaces that render a
+ * template without a Salesforce record behind it (preview, test send).
+ *
+ * Overrides win where supplied; every other key falls back to the field's
+ * `sampleValue`. Because the result is derived from the catalog rather than a
+ * hand-written key list, a template can never fail to preview because a newly
+ * added merge field was forgotten here — the bug that made 61 of the 122
+ * Salesforce-imported drafts unpreviewable on 2026-09-02.
+ */
+export function buildAutomatedEmailSampleValues(
+  overrides: AutomatedEmailMergeValues = {},
+): Record<AutomatedEmailMergeFieldKey, string> {
+  const values = {} as Record<AutomatedEmailMergeFieldKey, string>;
+  for (const field of AUTOMATED_EMAIL_MERGE_FIELDS) {
+    const override = overrides[field.key];
+    values[field.key] =
+      override !== undefined && override.length > 0
+        ? override
+        : field.sampleValue;
+  }
+
+  return values;
+}
+
+/** Human label for a merge key, for operator-facing messages. */
+export function automatedEmailMergeFieldLabel(key: string): string {
+  return (
+    AUTOMATED_EMAIL_MERGE_FIELDS.find((field) => field.key === key)?.label ??
+    key
+  );
+}
 
 export interface AutomatedEmailSalesforceClient {
   queryAll(soql: string): Promise<readonly Record<string, unknown>[]>;

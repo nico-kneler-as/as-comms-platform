@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   AUTOMATED_EMAIL_MERGE_FIELDS,
+  automatedEmailMergeFieldLabel,
+  buildAutomatedEmailSampleValues,
   type AutomatedEmailMergeFieldKey,
   type AutomatedEmailSalesforceClient,
   resolveAutomatedEmailMergeFields,
@@ -39,18 +41,51 @@ describe("resolveAutomatedEmailMergeFields", () => {
   it("publishes the new required fields in the shared picker catalog", () => {
     expect(AUTOMATED_EMAIL_MERGE_FIELDS).toEqual(
       expect.arrayContaining([
-        {
+        expect.objectContaining({
           key: "volunteerId",
           label: "Volunteer ID",
           policy: { kind: "required" },
-        },
-        {
+        }),
+        expect.objectContaining({
           key: "esriUsername",
           label: "Esri username",
           policy: { kind: "required" },
-        },
+        }),
       ]),
     );
+  });
+
+  it("gives every catalog field a non-empty sample value", () => {
+    for (const field of AUTOMATED_EMAIL_MERGE_FIELDS) {
+      expect(
+        field.sampleValue,
+        `${field.key} needs a sampleValue so previews cannot fail on it`,
+      ).not.toBe("");
+    }
+  });
+
+  it("builds a sample set covering every catalog key", () => {
+    const values = buildAutomatedEmailSampleValues();
+
+    expect(Object.keys(values).sort()).toEqual(
+      AUTOMATED_EMAIL_MERGE_FIELDS.map((field) => field.key).sort(),
+    );
+  });
+
+  it("prefers supplied overrides and falls back to catalog samples", () => {
+    const values = buildAutomatedEmailSampleValues({
+      firstName: "Selah",
+      lastName: "",
+    });
+
+    expect(values.firstName).toBe("Selah");
+    expect(values.lastName).toBe("Rivera");
+    expect(values.volunteerId).toBe("4821");
+  });
+
+  it("labels merge keys for operator-facing messages", () => {
+    expect(automatedEmailMergeFieldLabel("volunteerId")).toBe("Volunteer ID");
+    expect(automatedEmailMergeFieldLabel("notAField")).toBe("notAField");
   });
 
   it.each([validFifteenCharacterId, validEighteenCharacterId])(
