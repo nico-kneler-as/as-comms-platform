@@ -18,6 +18,7 @@ import {
   sendNowInputSchema,
 } from "@as-comms/contracts";
 import {
+  buildBroadcastWebVersionUrl,
   buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createCampaignSendOrchestrator,
@@ -27,6 +28,7 @@ import {
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
   renderSmsBroadcast,
+  renderBroadcastWebVersion,
   resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   type SmsBroadcastAudienceMember,
@@ -72,6 +74,10 @@ interface CampaignActionData {
 interface CampaignTestSendData {
   readonly runId: string;
   readonly recipientEmail: string;
+}
+
+interface BroadcastWebVersionActionData {
+  readonly url: string;
 }
 
 interface SmsBroadcastSendNowData {
@@ -214,6 +220,14 @@ function trimNonEmpty(value: string | undefined): string | null {
   return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
 }
 
+function resolveAppUrl(): string {
+  return (
+    trimNonEmpty(process.env.NEXT_PUBLIC_APP_URL) ??
+    trimNonEmpty(process.env.WEB_BASE_URL) ??
+    "http://localhost:3000"
+  );
+}
+
 function createCampaignSendOrchestratorForRepositories(input: {
   readonly campaigns: Stage1WebRuntime["campaigns"];
   readonly repositories: Stage1WebRuntime["repositories"];
@@ -223,10 +237,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
   // Web-side orchestrator only handles freeze/cancel/etc.; the worker
   // does the actual sendBatch. appUrl is still required by the deps
   // interface so unsubscribe-footer wiring stays consistent end-to-end.
-  const appUrl =
-    trimNonEmpty(process.env.NEXT_PUBLIC_APP_URL) ??
-    trimNonEmpty(process.env.WEB_BASE_URL) ??
-    "http://localhost:3000";
+  const appUrl = resolveAppUrl();
 
   return createCampaignSendOrchestrator({
     repositories: {
@@ -819,6 +830,160 @@ async function readRequestOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
+export async function setBroadcastWebVersionPublished(
+  runId: string,
+  published: boolean,
+): Promise<UiSuccess<BroadcastWebVersionActionData> | UiError> {
+  const session = await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const webVersion = await runtime.campaigns.broadcastWebVersions.findByRunId(
+      runId,
+    );
+    if (webVersion === null) {
+      return errorResult(
+        "campaign_web_version_missing",
+        "This broadcast does not have a public page to update.",
+      );
+    }
+    if (webVersion.renderedHtml === null) {
+      return errorResult(
+        "campaign_web_version_not_rendered",
+        "This public page cannot be updated until it has rendered.",
+      );
+    }
+
+    await runtime.campaigns.broadcastWebVersions.setPublished(runId, {
+      published,
+      userId: session.id,
+    });
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: session.id,
+      action: published
+        ? "campaign_run.web_version_published"
+        : "campaign_run.web_version_unpublished",
+      runId,
+      detail: published
+        ? "Published the broadcast web version."
+        : "Unpublished the broadcast web version.",
+      auditEvidence: runtime.repositories.auditEvidence,
+    });
+
+    return {
+      ok: true,
+      data: {
+        url: buildBroadcastWebVersionUrl({
+          appUrl: resolveAppUrl(),
+          token: webVersion.publicToken,
+        }),
+      },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_web_version_update_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to update the public page.",
+      true,
+    );
+  }
+}
+
+export async function publishBroadcastWebVersionNow(
+  runId: string,
+): Promise<UiSuccess<BroadcastWebVersionActionData> | UiError> {
+  const session = await requireSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) {
+      return errorResult("campaign_not_found", "Broadcast run was not found.");
+    }
+
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    if (!snapshots.some((snapshot) => snapshot.deliveryStatus !== "pending")) {
+      return errorResult(
+        "campaign_web_version_not_sent",
+        "A public page can be published only after this broadcast has sent.",
+      );
+    }
+
+    const webVersion = await runtime.campaigns.broadcastWebVersions.ensure(run.id);
+    const url = buildBroadcastWebVersionUrl({
+      appUrl: resolveAppUrl(),
+      token: webVersion.publicToken,
+    });
+    if (webVersion.renderedHtml !== null) {
+      return {
+        ok: true,
+        data: { url },
+        requestId: newRequestId(),
+      };
+    }
+
+    const orgSettings = await runtime.campaigns.orgSettings.read();
+    const project =
+      run.projectId === null
+        ? null
+        : await runtime.settings.projects.findById(run.projectId);
+    const senderAliasEmail = normalizeAliasEmail(
+      run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? null,
+    );
+    const signature =
+      senderAliasEmail === null
+        ? null
+        : (
+            await runtime.settings.aliases.findByAlias(senderAliasEmail)
+          )?.signature ?? null;
+    const subscribeUrl =
+      trimNonEmpty(process.env.NEWSLETTER_SUBSCRIBE_PAGE_URL) ??
+      "https://www.adventurescientists.org";
+    const rendered = renderBroadcastWebVersion({
+      launchType: run.launchType,
+      kind: run.kind,
+      subject: run.subjectTemplate ?? "",
+      bodyHtmlTemplate: run.bodyHtmlTemplate ?? "",
+      projectName: project?.projectName ?? null,
+      projectAlias: project?.projectAlias ?? null,
+      senderEmail: run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? "",
+      signature,
+      footerAddress: formatOrgAddress(orgSettings),
+      pageUrl: url,
+      subscribeUrl,
+    });
+    await runtime.campaigns.broadcastWebVersions.storeRendered(run.id, {
+      html: rendered.html,
+      title: rendered.title,
+    });
+    await appendCampaignAudit({
+      actorType: "user",
+      actorId: session.id,
+      action: "campaign_run.web_version_published",
+      runId: run.id,
+      detail: "Published the broadcast web version retroactively.",
+      auditEvidence: runtime.repositories.auditEvidence,
+    });
+
+    return {
+      ok: true,
+      data: { url },
+      requestId: newRequestId(),
+    };
+  } catch (error) {
+    return errorResult(
+      "campaign_web_version_publish_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to publish the public page.",
+      true,
+    );
+  }
+}
+
 function filterAudienceMembersBySelectedContacts<
   T extends { readonly contactId: string | null },
 >(rows: readonly T[], contactIds: readonly string[]): readonly T[] {
@@ -1358,6 +1523,13 @@ export async function testSend(
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
     });
+    const webVersion = await runtime.campaigns.broadcastWebVersions.ensure(
+      run.id,
+    );
+    const webVersionUrl = buildBroadcastWebVersionUrl({
+      appUrl: origin,
+      token: webVersion.publicToken,
+    });
     const composed = renderBroadcastEmail({
       launchType: run.launchType,
       kind: run.kind,
@@ -1371,6 +1543,7 @@ export async function testSend(
       scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail: fromEmail,
+      webVersionHref: webVersionUrl,
     });
     const mergeRenderer = createMergeRenderer();
     const rendered = mergeRenderer.render(
@@ -1383,7 +1556,7 @@ export async function testSend(
         firstName: sample.frozenFirstName,
         projectName: sample.frozenProjectName,
         aliasEmail: sample.frozenAliasEmail,
-        viewInBrowserUrl: null,
+        viewInBrowserUrl: webVersionUrl,
       },
     );
 

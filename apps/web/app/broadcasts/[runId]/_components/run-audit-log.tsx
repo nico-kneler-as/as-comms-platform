@@ -19,6 +19,10 @@ function labelForAction(action: string): string {
       return "Cancelled";
     case "campaign_run.finalized":
       return "Finalized";
+    case "campaign_run.web_version_published":
+      return "Web version published";
+    case "campaign_run.web_version_unpublished":
+      return "Web version unpublished";
     default:
       return action;
   }

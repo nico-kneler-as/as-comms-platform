@@ -19,6 +19,7 @@ import {
   type PostmarkSenderStatus,
 } from "@as-comms/contracts";
 import {
+  buildBroadcastWebVersionUrl,
   buildBroadcastUnsubscribeUrls,
   createAudienceResolver,
   createMergeRenderer,
@@ -1673,6 +1674,20 @@ export async function loadComposePreviewAction(input: {
       audience.length;
     const sample = audience[normalizedSampleIndex] ?? audience[0];
     const origin = await readRequestOrigin();
+    const persistedRun = await runtime.campaigns.campaignRuns.findById(
+      input.runId,
+    );
+    const webVersionUrl =
+      persistedRun === null
+        ? null
+        : buildBroadcastWebVersionUrl({
+            appUrl: origin,
+            token: (
+              await runtime.campaigns.broadcastWebVersions.ensure(
+                persistedRun.id,
+              )
+            ).publicToken,
+          });
     const projectId =
       input.criteria.projectId ?? input.criteria.projectIds[0] ?? null;
     const projectAlias =
@@ -1706,6 +1721,7 @@ export async function loadComposePreviewAction(input: {
         input.fromEmail ??
         sample?.frozenAliasEmail ??
         "preview@example.invalid",
+      ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });
     const rendered = mergeRenderer.render(
       {
@@ -1717,7 +1733,7 @@ export async function loadComposePreviewAction(input: {
         firstName: sample?.frozenFirstName ?? null,
         projectName: sample?.frozenProjectName ?? null,
         aliasEmail: sample?.frozenAliasEmail ?? null,
-        viewInBrowserUrl: null,
+        viewInBrowserUrl: webVersionUrl,
       },
     );
 
