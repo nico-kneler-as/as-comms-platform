@@ -85,6 +85,39 @@ describe("Salesforce flow email conversion", () => {
     ).not.toThrow();
   });
 
+  it("reports links whose Salesforce href the renderer would reject", () => {
+    // Observed in the 2026-09-02 import: three PNW event emails linked to
+    // href="{!$Record.Event_URL__c}". The text survives; the destination is
+    // lost, so the report has to say so.
+    const converted = convertSalesforceHtmlToTipTap(
+      '<p>See the <a href="{!$Record.Event_URL__c}" target="_blank"><strong>{!$Record.Event_Location__c} Day-Of Information</strong></a> and the <a href="https://adventurescientists.org">handbook</a>.</p>',
+    );
+
+    expect(converted.droppedLinks).toEqual([
+      {
+        text: "{!$Record.Event_Location__c} Day-Of Information",
+        href: "{!$Record.Event_URL__c}",
+      },
+    ]);
+    assertOnlyRendererNodes(converted.doc);
+    expect(() =>
+      renderAutomatedEmail({
+        subjectTemplate: "Subject",
+        bodyDoc: converted.doc,
+        values: {},
+        frame: { projectName: "PNW", reasonLine: "Reason" },
+      }),
+    ).not.toThrow();
+  });
+
+  it("reports no dropped links when every href is supported", () => {
+    const converted = convertSalesforceHtmlToTipTap(
+      '<p><a href="https://adventurescientists.org">web</a> <a href="mailto:pnw@adventurescientists.org">mail</a></p>',
+    );
+
+    expect(converted.droppedLinks).toEqual([]);
+  });
+
   it("converts mapped placeholders into inline pills and exposes unmapped Salesforce paths", () => {
     const converted = convertSalesforceHtmlToTipTap(
       "<p>Hi {!Contact__r.FirstName} {!Esri_Username__c} {!Unknown__c}&nbsp;done</p>",

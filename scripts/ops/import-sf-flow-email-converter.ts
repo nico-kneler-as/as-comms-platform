@@ -44,6 +44,19 @@ export type SalesforceHtmlConversion = {
   readonly flattenedHeadings: number;
   readonly droppedImages: number;
   readonly unmappedPlaceholders: readonly string[];
+  /**
+   * Anchor targets the renderer would reject — in practice Salesforce merge
+   * expressions used as an href, e.g. `href="{!$Record.Event_URL__c}"`. The
+   * visible link text survives the import; the destination does not, so these
+   * are the links a human has to re-add by hand. Reported rather than
+   * silently swallowed.
+   */
+  readonly droppedLinks: readonly SalesforceDroppedLink[];
+};
+
+export type SalesforceDroppedLink = {
+  readonly text: string;
+  readonly href: string;
 };
 
 const voidTags = new Set(["br", "img", "hr", "meta", "link", "input"]);
@@ -230,6 +243,16 @@ function addTextWithMergeFields(
   appendText(target, value.slice(cursor), marks);
 }
 
+/** Visible text of an element, whitespace-collapsed, for reporting only. */
+function readPlainText(node: HtmlNode): string {
+  if (node.kind === "text") return node.value;
+  return node.children
+    .map((child) => readPlainText(child))
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function safeLink(href: string | undefined): string | null {
   if (href === undefined) return null;
   try {
@@ -246,6 +269,7 @@ function safeLink(href: string | undefined): string | null {
 
 type ConversionState = {
   readonly unmapped: Set<string>;
+  readonly droppedLinks: SalesforceDroppedLink[];
   flattenedHeadings: number;
   droppedImages: number;
 };
@@ -271,9 +295,16 @@ function convertInline(
   } else if (node.name === "em" || node.name === "i") {
     nextMarks = [...marks, { type: "italic" }];
   } else if (node.name === "a") {
-    const href = safeLink(node.attributes.href);
-    if (href !== null)
+    const rawHref = node.attributes.href;
+    const href = safeLink(rawHref);
+    if (href !== null) {
       nextMarks = [...marks, { type: "link", attrs: { href } }];
+    } else if (rawHref !== undefined && rawHref.trim().length > 0) {
+      state.droppedLinks.push({
+        text: readPlainText(node),
+        href: rawHref.trim(),
+      });
+    }
   }
   return node.children.flatMap((child) =>
     convertInline(child, state, nextMarks),
@@ -383,6 +414,7 @@ export function convertSalesforceHtmlToTipTap(
 ): SalesforceHtmlConversion {
   const state: ConversionState = {
     unmapped: new Set(),
+    droppedLinks: [],
     flattenedHeadings: 0,
     droppedImages: 0,
   };
@@ -394,6 +426,7 @@ export function convertSalesforceHtmlToTipTap(
     unmappedPlaceholders: [...state.unmapped].sort((left, right) =>
       left.localeCompare(right),
     ),
+    droppedLinks: state.droppedLinks,
   };
 }
 
