@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AutomatedEmailRenderError,
+  collectAutomatedEmailMergeKeys,
   renderAutomatedEmail,
   type AutomatedEmailRenderInput,
 } from "../src/automated-email-render.js";
@@ -412,5 +413,34 @@ describe("renderAutomatedEmail", () => {
     expect(renderAutomatedEmail(baseInput)).toEqual(
       renderAutomatedEmail(baseInput),
     );
+  });
+});
+
+describe("collectAutomatedEmailMergeKeys", () => {
+  it("returns subject tokens then body pills, de-duplicated, in encounter order", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [
+          { type: "text", text: "Hi " },
+          { type: "mergeField", attrs: { key: "firstName" } },
+        ]},
+        { type: "bulletList", content: [
+          { type: "listItem", content: [{ type: "paragraph", content: [
+            { type: "mergeField", attrs: { key: "volunteerId" } },
+            { type: "mergeField", attrs: { key: "firstName" } },
+          ]}]},
+        ]},
+      ],
+    };
+    expect(collectAutomatedEmailMergeKeys("Welcome to {{projectName}}", doc)).toEqual([
+      "projectName",
+      "firstName",
+      "volunteerId",
+    ]);
+  });
+
+  it("returns an empty list for templates without merge fields", () => {
+    expect(collectAutomatedEmailMergeKeys("Plain subject", { type: "doc", content: [] })).toEqual([]);
   });
 });
