@@ -24,7 +24,11 @@ vi.mock("@/src/server/auth/session", () => ({
   requireSession: requireSessionMock,
 }));
 
-import { testSend } from "../../app/broadcasts/actions";
+import {
+  publishBroadcastWebVersionNow,
+  setBroadcastWebVersionPublished,
+  testSend,
+} from "../../app/broadcasts/actions";
 import {
   createOrgSenderForTests,
   createStage1WebTestRuntime,
@@ -196,4 +200,104 @@ describe("campaign org-sender actions", () => {
       });
     },
   );
+
+  it("unpublishes and republishes a rendered web version with the current user", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterRun(runtime, {
+      launchType: "html_email",
+      runId: "web-version-toggle",
+    });
+    const version = await runtime.runtime.campaigns.broadcastWebVersions.ensure(
+      "web-version-toggle",
+    );
+    await runtime.runtime.campaigns.broadcastWebVersions.storeRendered(
+      "web-version-toggle",
+      { html: "<p>Rendered</p>", title: "Rendered" },
+    );
+
+    expect(
+      await setBroadcastWebVersionPublished("web-version-toggle", false),
+    ).toMatchObject({ ok: true });
+    let stored = await runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
+      "web-version-toggle",
+    );
+    expect(stored?.unpublishedAt).not.toBeNull();
+    expect(stored?.publishChangedByUserId).toBe("user:operator");
+
+    expect(
+      await setBroadcastWebVersionPublished("web-version-toggle", true),
+    ).toMatchObject({ ok: true });
+    stored = await runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
+      "web-version-toggle",
+    );
+    expect(stored?.unpublishedAt).toBeNull();
+    expect(stored?.publicToken).toBe(version.publicToken);
+    const audits = await runtime.context.repositories.auditEvidence.listByEntity({
+      entityType: "campaign_run",
+      entityId: "web-version-toggle",
+    });
+    expect(audits.map((entry) => entry.action)).toEqual([
+      "campaign_run.web_version_unpublished",
+      "campaign_run.web_version_published",
+    ]);
+  });
+
+  it("back-publishes a sent run once and refuses a run that never sent", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterRun(runtime, {
+      launchType: "html_email",
+      runId: "web-version-back-publish",
+    });
+    await runtime.runtime.campaigns.audienceSnapshots.bulkInsert(
+      "web-version-back-publish",
+      [
+        {
+          id: "web-version-snapshot",
+          contactId: null,
+          newsletterSubscriberId: null,
+          frozenEmail: "reader@example.org",
+          frozenFirstName: "Reader",
+          frozenProjectName: null,
+          frozenProjectId: null,
+          frozenAliasEmail: "info@adventurescientists.org",
+          unsubscribeToken: "web-version-unsubscribe",
+          deliveryStatus: "sent",
+          providerMessageId: "web-version-message",
+        },
+      ],
+    );
+
+    const first = await publishBroadcastWebVersionNow("web-version-back-publish");
+    expect(first).toMatchObject({ ok: true });
+    const stored = await runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
+      "web-version-back-publish",
+    );
+    expect(stored?.renderedHtml).toContain("Hello friend");
+    expect(first.ok ? first.data.url : "").toContain(`/b/${stored?.publicToken ?? ""}`);
+    const renderedHtml = stored?.renderedHtml;
+
+    const second = await publishBroadcastWebVersionNow("web-version-back-publish");
+    expect(second).toMatchObject({ ok: true });
+    expect(
+      (
+        await runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
+          "web-version-back-publish",
+        )
+      )?.renderedHtml,
+    ).toBe(renderedHtml);
+
+    await seedNewsletterRun(runtime, {
+      launchType: "html_email",
+      runId: "web-version-never-sent",
+    });
+    expect(
+      await publishBroadcastWebVersionNow("web-version-never-sent"),
+    ).toMatchObject({ ok: false, code: "campaign_web_version_not_sent" });
+  });
 });

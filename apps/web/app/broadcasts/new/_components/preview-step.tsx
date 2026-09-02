@@ -327,6 +327,9 @@ export function PreviewStep({
             : sample === null
               ? "Preview loads once the audience resolves."
               : `Resolves merge tokens for ${sample.name}. Cycle through samples to spot-check different recipients.`}
+          {isSmsLaunch ? null : (
+            <span className="ml-1">The browser link works once the broadcast sends.</span>
+          )}
         </div>
       </div>
 

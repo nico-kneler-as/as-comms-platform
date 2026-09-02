@@ -8,7 +8,10 @@ import type {
   RunState,
 } from "@as-comms/contracts";
 import { audienceCriteriaSchema } from "@as-comms/contracts";
-import { createCampaignRunProjectionReader } from "@as-comms/domain";
+import {
+  buildBroadcastWebVersionUrl,
+  createCampaignRunProjectionReader,
+} from "@as-comms/domain";
 
 import {
   aggregateBroadcastLinkClicksForRun,
@@ -144,6 +147,25 @@ export interface RunDetailModel {
   readonly canStopUnsent: boolean;
   readonly canDuplicate: boolean;
   readonly isAdmin: boolean;
+  readonly webVersion: {
+    readonly url: string | null;
+    readonly state: "none" | "pending" | "published" | "unpublished";
+    readonly canPublish: boolean;
+    readonly renderedAt: string | null;
+  } | null;
+}
+
+function trimNonEmpty(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? null : trimmed;
+}
+
+function resolveAppUrl(): string {
+  return (
+    trimNonEmpty(process.env.NEXT_PUBLIC_APP_URL) ??
+    trimNonEmpty(process.env.WEB_BASE_URL) ??
+    "http://localhost:3000"
+  );
 }
 
 export interface SubjectVariantBreakdown {
@@ -920,6 +942,44 @@ export async function getRunDetailModel(input: {
     now: new Date(),
   });
 
+  // Reading a run detail must never mint a public token for a draft. Tokens are
+  // created only by send, persisted-run preview/test-send, or back-publish.
+  const webVersion =
+    provider === "mailchimp" || channel === "sms"
+      ? null
+      : await (async () => {
+          const record = await runtime.campaigns.broadcastWebVersions.findByRunId(
+            run.id,
+          );
+          if (record === null) {
+            return {
+              url: null,
+              state: "none" as const,
+              canPublish: sentCount > 0,
+              renderedAt: null,
+            };
+          }
+
+          const state: "pending" | "published" | "unpublished" =
+            record.renderedHtml === null
+              ? "pending"
+              : record.unpublishedAt === null
+                ? "published"
+                : "unpublished";
+          return {
+            url: buildBroadcastWebVersionUrl({
+              appUrl: resolveAppUrl(),
+              token: record.publicToken,
+            }),
+            state,
+            canPublish: false,
+            renderedAt:
+              record.renderedAt === null
+                ? null
+                : requireIsoTimestamp(record.renderedAt),
+          };
+        })();
+
   const audits =
     provider === "mailchimp"
       ? []
@@ -977,5 +1037,6 @@ export async function getRunDetailModel(input: {
         run.state === "finalized" ||
         run.state === "cancelled"),
     isAdmin: input.isAdmin,
+    webVersion,
   };
 }

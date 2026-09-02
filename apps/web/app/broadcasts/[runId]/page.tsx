@@ -6,6 +6,7 @@ import { requireSession } from "@/src/server/auth/session";
 import { RecipientsTable } from "./_components/recipients-table";
 import { RepliesInInboxPanel } from "./_components/replies-in-inbox-panel";
 import { RunAuditLog } from "./_components/run-audit-log";
+import { WebVersionPanel } from "./_components/web-version-panel";
 import {
   AudienceCriteriaPanel,
   BotActivityPanel,
@@ -105,6 +106,7 @@ async function RightRailSection({
         showInboxLink={model.provider !== "mailchimp"}
       />
       <SendDetailsPanel model={model} />
+      <WebVersionPanel runId={model.run.id} webVersion={model.webVersion} />
       <AudienceCriteriaPanel model={model} />
       {model.provider === "mailchimp" ? null : (
         <RunAuditLog entries={model.auditEntries} />

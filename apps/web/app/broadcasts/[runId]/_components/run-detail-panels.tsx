@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { RunDetailModel } from "../_lib/run-detail";
 import { LocalDateTime } from "./local-date-time";
 
-function Panel({
+export function Panel({
   title,
   children,
 }: {

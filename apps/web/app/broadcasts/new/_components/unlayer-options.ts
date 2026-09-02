@@ -144,6 +144,11 @@ export const UNLAYER_OPTIONS = {
       value: "{{aliasEmail}}",
       sample: "forests@adventurescientists.org",
     },
+    viewInBrowser: {
+      name: "View in browser",
+      value: "{{viewInBrowser}}",
+      sample: "https://example.org/b/preview",
+    },
   },
   features: {
     preview: false,

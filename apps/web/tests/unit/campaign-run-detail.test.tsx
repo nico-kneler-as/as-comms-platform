@@ -80,6 +80,10 @@ vi.mock("../../app/broadcasts/actions", () => ({
       data: { runId: "dup" },
       requestId: "req",
     }),
+  publishBroadcastWebVersionNow: () =>
+    Promise.resolve({ ok: true, data: { url: "https://example.org/b/token" }, requestId: "req" }),
+  setBroadcastWebVersionPublished: () =>
+    Promise.resolve({ ok: true, data: { url: "https://example.org/b/token" }, requestId: "req" }),
   listCampaignRecipients: () =>
     Promise.resolve({
       ok: true,
@@ -100,6 +104,7 @@ import { MetricTiles } from "../../app/broadcasts/[runId]/_components/metric-til
 import { RecipientsTable } from "../../app/broadcasts/[runId]/_components/recipients-table";
 import { RepliesInInboxPanel } from "../../app/broadcasts/[runId]/_components/replies-in-inbox-panel";
 import { RunAuditLog } from "../../app/broadcasts/[runId]/_components/run-audit-log";
+import { WebVersionPanel } from "../../app/broadcasts/[runId]/_components/web-version-panel";
 import {
   AudienceCriteriaPanel,
   BotActivityPanel,
@@ -122,6 +127,7 @@ function buildPostmarkModel(
     readonly botActivity?: RunDetailModel["botActivity"];
     readonly linkClicks?: RunDetailModel["linkClicks"];
     readonly subjectVariantBreakdown?: RunDetailModel["subjectVariantBreakdown"];
+    readonly webVersion?: RunDetailModel["webVersion"];
     readonly run?: Partial<RunDetailModel["run"]>;
   } = {},
 ): RunDetailModel {
@@ -319,6 +325,7 @@ function buildPostmarkModel(
     canDuplicate:
       state === "complete" || state === "cancelled" || state === "finalized",
     isAdmin: true,
+    webVersion: overrides.webVersion ?? null,
   };
 }
 
@@ -419,6 +426,7 @@ function buildMailchimpModel(): RunDetailModel {
       opens: { human: 0, bot: 0, hasEventData: false },
       clicks: { human: 0, bot: 0, hasEventData: false },
     },
+    webVersion: null,
     linkClicks: [],
     subjectVariantBreakdown: null,
     audienceCriteria: {
@@ -558,6 +566,7 @@ function buildSmsModel(
     canStopUnsent: false,
     canDuplicate: true,
     isAdmin: true,
+    webVersion: null,
   };
 }
 
@@ -697,6 +706,164 @@ async function seedSmsSenderForRunTests(
 }
 
 describe("broadcast run detail", () => {
+  it("reports web-version state without ever minting a token for a run", async () => {
+    const runtime = await createStage1WebTestRuntime();
+
+    try {
+      const campaigns = runtime.runtime.campaigns;
+      await seedProjectForRunTests(runtime);
+      const run = await campaigns.campaignRuns.create({
+        id: "run-detail-web-version",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: "project-1",
+        name: null,
+        fromEmail: "project-one@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "project-one@adventurescientists.org",
+        subjectTemplate: "Field update",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 0,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+
+      const withoutRow = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+      expect(withoutRow?.webVersion).toMatchObject({
+        state: "none",
+        url: null,
+        canPublish: false,
+      });
+      // Loading the page must not create a public token for a run that has
+      // not sent — otherwise every draft view would mint one.
+      await expect(
+        campaigns.broadcastWebVersions.findByRunId(run.id),
+      ).resolves.toBeNull();
+
+      const version = await campaigns.broadcastWebVersions.ensure(run.id);
+      const pending = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+      expect(pending?.webVersion?.state).toBe("pending");
+      expect(pending?.webVersion?.url).toContain(`/b/${version.publicToken}`);
+
+      await campaigns.broadcastWebVersions.storeRendered(run.id, {
+        html: "<p>Rendered</p>",
+        title: "Field update",
+      });
+      const published = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+      expect(published?.webVersion?.state).toBe("published");
+      expect(published?.webVersion?.renderedAt).not.toBeNull();
+
+      await campaigns.broadcastWebVersions.setPublished(run.id, {
+        published: false,
+        userId: null,
+      });
+      const unpublished = await getRunDetailModel({
+        runId: run.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+      expect(unpublished?.webVersion?.state).toBe("unpublished");
+    } finally {
+      await runtime.dispose();
+    }
+  });
+
+  it("renders the expected web-version controls for each supported state", () => {
+    const published = buildPostmarkModel("complete", {
+      webVersion: {
+        url: "https://example.org/b/published",
+        state: "published",
+        canPublish: false,
+        renderedAt: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    const pending = buildPostmarkModel("sending", {
+      webVersion: {
+        url: "https://example.org/b/pending",
+        state: "pending",
+        canPublish: false,
+        renderedAt: null,
+      },
+    });
+    const missing = buildPostmarkModel("complete", {
+      webVersion: {
+        url: null,
+        state: "none",
+        canPublish: true,
+        renderedAt: null,
+      },
+    });
+
+    const publishedMarkup = renderToStaticMarkup(
+      <WebVersionPanel runId={published.run.id} webVersion={published.webVersion} />,
+    );
+    expect(publishedMarkup).toContain("Copy link");
+    expect(publishedMarkup).toContain("Open");
+    expect(publishedMarkup).toContain("Unpublish");
+
+    const pendingMarkup = renderToStaticMarkup(
+      <WebVersionPanel runId={pending.run.id} webVersion={pending.webVersion} />,
+    );
+    expect(pendingMarkup).toContain("Goes live when this broadcast sends.");
+    expect(pendingMarkup).not.toContain("Unpublish");
+
+    const missingMarkup = renderToStaticMarkup(
+      <WebVersionPanel runId={missing.run.id} webVersion={missing.webVersion} />,
+    );
+    expect(missingMarkup).toContain("Publish web version");
+
+    const unpublished = buildPostmarkModel("complete", {
+      webVersion: {
+        url: "https://example.org/b/unpublished",
+        state: "unpublished",
+        canPublish: false,
+        renderedAt: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    const unpublishedMarkup = renderToStaticMarkup(
+      <WebVersionPanel
+        runId={unpublished.run.id}
+        webVersion={unpublished.webVersion}
+      />,
+    );
+    expect(unpublishedMarkup).toContain("Republish");
+    expect(unpublishedMarkup).toContain("https://example.org/b/unpublished");
+    expect(unpublishedMarkup).not.toContain("Copy link");
+    expect(
+      renderToStaticMarkup(
+        <WebVersionPanel runId={published.run.id} webVersion={null} />,
+      ),
+    ).toBe("");
+  });
+
   it("uses human headline counts and exposes bot activity when event data exists", async () => {
     const runtime = await createStage1WebTestRuntime();
 
