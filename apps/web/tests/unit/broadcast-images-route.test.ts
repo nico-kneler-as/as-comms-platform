@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const requireApiSession = vi.hoisted(() => vi.fn());
+const classifyBroadcastUpload = vi.hoisted(() => vi.fn());
 const optimizeBroadcastImage = vi.hoisted(() => vi.fn());
 const uploadBroadcastImageToObjectStore = vi.hoisted(() => vi.fn());
 const createBroadcastMediaAssetRecord = vi.hoisted(() => vi.fn());
@@ -13,6 +14,13 @@ vi.mock("@/src/server/auth/api", () => ({
 vi.mock("@/src/server/broadcasts/optimize-broadcast-image", () => ({
   optimizeBroadcastImage,
 }));
+
+vi.mock("@/src/server/broadcasts/classify-broadcast-upload", async () => {
+  const actual = await vi.importActual<{
+    getBroadcastUploadCandidate: (input: { declaredType: string; filename: string }) => string | null;
+  }>("@/src/server/broadcasts/classify-broadcast-upload");
+  return { ...actual, classifyBroadcastUpload };
+});
 
 vi.mock("@/src/server/broadcasts/object-store-runtime", () => ({
   uploadBroadcastImageToObjectStore,
@@ -35,7 +43,7 @@ function buildMultipartRequest(file: File) {
   });
 }
 
-describe("broadcast images upload route", () => {
+describe("broadcast hosted-files upload route", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
@@ -79,7 +87,7 @@ describe("broadcast images upload route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      message: "Unsupported image type. Allowed: PNG, JPEG, GIF, WEBP.",
+      message: "Unsupported file type. Allowed: PNG, JPEG, GIF, WEBP, MP3, M4A, WAV, PDF.",
     });
     expect(uploadBroadcastImageToObjectStore).not.toHaveBeenCalled();
     expect(createBroadcastMediaAssetRecord).not.toHaveBeenCalled();
@@ -102,7 +110,7 @@ describe("broadcast images upload route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      message: "Image must be 10 MB or smaller.",
+      message: "Images must be 10 MB or smaller.",
     });
     expect(uploadBroadcastImageToObjectStore).not.toHaveBeenCalled();
     expect(createBroadcastMediaAssetRecord).not.toHaveBeenCalled();
@@ -116,6 +124,12 @@ describe("broadcast images upload route", () => {
     optimizeBroadcastImage.mockResolvedValue({
       bytes: Buffer.from("tiny"),
       contentType: "image/png",
+    });
+    classifyBroadcastUpload.mockResolvedValue({
+      ok: true,
+      kind: "image",
+      contentType: "image/png",
+      maxBytes: 10 * 1024 * 1024,
     });
     uploadBroadcastImageToObjectStore.mockResolvedValue({
       url: "https://cdn.example.org/images/uploaded-hero.png",
@@ -173,6 +187,65 @@ describe("broadcast images upload route", () => {
     );
   });
 
+  it("stores MP3 files under audio without image optimization", async () => {
+    requireApiSession.mockResolvedValue({ ok: true, user: { id: "user:operator", role: "operator" } });
+    classifyBroadcastUpload.mockResolvedValue({ ok: true, kind: "audio", contentType: "audio/mpeg", maxBytes: 25 * 1024 * 1024 });
+    uploadBroadcastImageToObjectStore.mockResolvedValue({ url: "https://cdn.example.org/audio/recording.mp3" });
+    createBroadcastMediaAssetRecord.mockResolvedValue({ id: "asset-mp3", publicUrl: "https://cdn.example.org/audio/recording.mp3" });
+
+    const response = await POST(buildMultipartRequest(new File([new Uint8Array([0x49, 0x44, 0x33])], "recording.mp3", { type: "audio/mpeg" })));
+
+    expect(response.status).toBe(200);
+    expect(optimizeBroadcastImage).not.toHaveBeenCalled();
+    const uploadCall = uploadBroadcastImageToObjectStore.mock.calls.at(0)?.[0] as
+      | { readonly key: string; readonly contentType: string }
+      | undefined;
+    expect(uploadCall?.key).toMatch(/^audio\//);
+    expect(uploadCall?.contentType).toBe("audio/mpeg");
+    expect(createBroadcastMediaAssetRecord.mock.calls.at(0)?.[0]).toMatchObject({ contentType: "audio/mpeg" });
+  });
+
+  it("stores PDFs under files without image optimization", async () => {
+    requireApiSession.mockResolvedValue({ ok: true, user: { id: "user:operator", role: "operator" } });
+    classifyBroadcastUpload.mockResolvedValue({ ok: true, kind: "document", contentType: "application/pdf", maxBytes: 25 * 1024 * 1024 });
+    uploadBroadcastImageToObjectStore.mockResolvedValue({ url: "https://cdn.example.org/files/guide.pdf" });
+    createBroadcastMediaAssetRecord.mockResolvedValue({ id: "asset-pdf", publicUrl: "https://cdn.example.org/files/guide.pdf" });
+
+    const response = await POST(buildMultipartRequest(new File(["%PDF-1.4"], "guide.pdf", { type: "application/pdf" })));
+
+    expect(response.status).toBe(200);
+    expect(optimizeBroadcastImage).not.toHaveBeenCalled();
+    const uploadCall = uploadBroadcastImageToObjectStore.mock.calls.at(0)?.[0] as
+      | { readonly key: string; readonly contentType: string }
+      | undefined;
+    expect(uploadCall?.key).toMatch(/^files\//);
+    expect(uploadCall?.contentType).toBe("application/pdf");
+    expect(createBroadcastMediaAssetRecord.mock.calls.at(0)?.[0]).toMatchObject({ contentType: "application/pdf" });
+  });
+
+  it("allows audio beyond the image cap up to its 25 MB cap", async () => {
+    requireApiSession.mockResolvedValue({ ok: true, user: { id: "user:operator", role: "operator" } });
+    const file = new File([new Uint8Array(11 * 1024 * 1024)], "recording.mp3", { type: "audio/mpeg" });
+    classifyBroadcastUpload.mockResolvedValue({ ok: true, kind: "audio", contentType: "audio/mpeg", maxBytes: 25 * 1024 * 1024 });
+    uploadBroadcastImageToObjectStore.mockResolvedValue({ url: "https://cdn.example.org/audio/recording.mp3" });
+    createBroadcastMediaAssetRecord.mockResolvedValue({ id: "asset-mp3", publicUrl: "https://cdn.example.org/audio/recording.mp3" });
+
+    expect((await POST(buildMultipartRequest(file))).status).toBe(200);
+  });
+
+  it("rejects audio over the 25 MB cap before buffering it", async () => {
+    requireApiSession.mockResolvedValue({ ok: true, user: { id: "user:operator", role: "operator" } });
+    const response = await POST(
+      buildMultipartRequest(
+        new File([new Uint8Array(25 * 1024 * 1024 + 1)], "recording.mp3", { type: "audio/mpeg" }),
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ ok: false, message: "Audio and PDF files must be 25 MB or smaller." });
+    expect(classifyBroadcastUpload).not.toHaveBeenCalled();
+  });
+
   it("returns 401 from the list endpoint without a session", async () => {
     requireApiSession.mockResolvedValue({
       ok: false,
@@ -202,6 +275,8 @@ describe("broadcast images upload route", () => {
           publicUrl: "https://cdn.example.org/images/newer.png",
           filename: "newer.png",
           contentType: "image/png",
+          kind: "image",
+          typeLabel: "PNG image",
           sizeBytes: 24576,
           createdAt: "2026-06-27T18:00:00.000Z",
         },
@@ -210,6 +285,8 @@ describe("broadcast images upload route", () => {
           publicUrl: "https://cdn.example.org/images/older.png",
           filename: "older.png",
           contentType: "image/png",
+          kind: "image",
+          typeLabel: "PNG image",
           sizeBytes: 1024,
           createdAt: "2026-06-26T10:30:00.000Z",
         },
@@ -235,6 +312,8 @@ describe("broadcast images upload route", () => {
           url: "https://cdn.example.org/images/newer.png",
           filename: "newer.png",
           contentType: "image/png",
+          kind: "image",
+          typeLabel: "PNG image",
           sizeBytes: 24576,
           createdAt: "2026-06-27T18:00:00.000Z",
         },
@@ -243,6 +322,8 @@ describe("broadcast images upload route", () => {
           url: "https://cdn.example.org/images/older.png",
           filename: "older.png",
           contentType: "image/png",
+          kind: "image",
+          typeLabel: "PNG image",
           sizeBytes: 1024,
           createdAt: "2026-06-26T10:30:00.000Z",
         },

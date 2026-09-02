@@ -3,7 +3,7 @@
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, ExternalLink, ImagePlus, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, FileAudio2, FileText, ImagePlus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -74,7 +74,7 @@ export function BroadcastMediaLibrary({
   // Re-sync the grid when the server re-renders with fresh data (e.g. after
   // router.refresh() following an upload or delete). Without this, the client
   // state seeded once from the initial props would shadow the refreshed list,
-  // so new images would not appear and deleted ones would not disappear.
+  // so new files would not appear and deleted ones would not disappear.
   useEffect(() => {
     setAssets(initialAssets);
     setNextCursor(initialNextCursor);
@@ -104,7 +104,7 @@ export function BroadcastMediaLibrary({
         }
 
         setCopiedAssetId(null);
-        setFeedback("Image uploaded.");
+        setFeedback("File uploaded.");
         router.refresh();
       } catch {
         setFeedback("Upload failed.");
@@ -136,7 +136,7 @@ export function BroadcastMediaLibrary({
         }
 
         setCopiedAssetId((current) => (current === assetId ? null : current));
-        setFeedback("Image deleted.");
+        setFeedback("File deleted.");
         router.refresh();
       } catch {
         setFeedback("Delete failed.");
@@ -188,6 +188,8 @@ export function BroadcastMediaLibrary({
           url: string;
           filename: string;
           contentType: string;
+          kind: "image" | "audio" | "document";
+          typeLabel: string;
           sizeBytes: number;
           createdAt: string;
         }[];
@@ -214,9 +216,9 @@ export function BroadcastMediaLibrary({
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900">Hosted images</h2>
+          <h2 className="text-sm font-semibold text-slate-900">Hosted files</h2>
           <p className="mt-0.5 text-sm text-slate-500">
-            Upload once, then paste the hosted URL into broadcast HTML.
+            Upload once, then paste the hosted URL into broadcast content — images, audio, and PDFs.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -227,13 +229,13 @@ export function BroadcastMediaLibrary({
             onClick={triggerFilePicker}
           >
             <ImagePlus className="size-4" aria-hidden="true" />
-            {pendingAction?.kind === "upload" ? "Uploading..." : "Upload image"}
+            {pendingAction?.kind === "upload" ? "Uploading..." : "Upload file"}
           </Button>
         </div>
         <input
           ref={inputRef}
           type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
+          accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/mp4,audio/wav,application/pdf,.mp3,.m4a,.wav,.pdf"
           className="sr-only"
           onChange={handleFileSelection}
         />
@@ -258,11 +260,11 @@ export function BroadcastMediaLibrary({
         <EmptyState
           size="lg"
           icon={emptyStateIcon}
-          title="No images yet"
+          title="No files yet"
           description="Upload one to get started."
           action={
             <Button type="button" onClick={triggerFilePicker}>
-              Upload image
+              Upload file
             </Button>
           }
           className="min-h-[360px]"
@@ -280,20 +282,19 @@ export function BroadcastMediaLibrary({
                   key={asset.id}
                   className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
                 >
-                  <a
-                    href={asset.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block aspect-[16/10] overflow-hidden bg-slate-100"
-                  >
-                    {/* Arbitrary hosted asset URLs are not guaranteed to be in Next image config. */}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={asset.url}
-                      alt={asset.filename}
-                      className="h-full w-full object-cover"
-                    />
-                  </a>
+                  {asset.kind === "image" ? (
+                    <a href={asset.url} target="_blank" rel="noreferrer" className="block aspect-[16/10] overflow-hidden bg-slate-100">
+                      {/* Arbitrary hosted asset URLs are not guaranteed to be in Next image config. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={asset.url} alt={asset.filename} className="h-full w-full object-cover" />
+                    </a>
+                  ) : (
+                    <div className="flex aspect-[16/10] flex-col items-center justify-center gap-3 bg-slate-100 p-4 text-slate-600">
+                      {asset.kind === "audio" ? <FileAudio2 className="size-9" aria-hidden="true" /> : <FileText className="size-9" aria-hidden="true" />}
+                      <span className="text-sm font-medium">{asset.typeLabel}</span>
+                      {asset.kind === "audio" ? <audio controls preload="none" src={asset.url} className="w-full" /> : null}
+                    </div>
+                  )}
                   <div className="flex flex-col gap-4 p-4">
                     <div className="min-w-0">
                       <p
@@ -304,7 +305,7 @@ export function BroadcastMediaLibrary({
                       </p>
                       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs text-slate-500">
                         <dt>Type</dt>
-                        <dd className="truncate">{asset.contentType}</dd>
+                        <dd className="truncate">{asset.typeLabel}</dd>
                         <dt>Size</dt>
                         <dd>{formatBytes(asset.sizeBytes)}</dd>
                         <dt>Added</dt>
