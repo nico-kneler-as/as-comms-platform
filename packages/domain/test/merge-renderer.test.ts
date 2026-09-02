@@ -32,6 +32,7 @@ describe("createMergeRenderer", () => {
         firstName: "Taylor",
         projectName: "Forests",
         aliasEmail: "forests@example.org",
+        viewInBrowserUrl: null,
       },
     );
 
@@ -40,6 +41,32 @@ describe("createMergeRenderer", () => {
       html: "<p>Taylor / Forests / forests@example.org</p>",
       text: "Taylor / Forests / forests@example.org",
     });
+  });
+
+  it("renders viewInBrowser and never reports it as missing", () => {
+    const rendered = renderer.render(
+      {
+        subject: "{{viewInBrowser}}",
+        bodyHtml: "<a href=\"{{viewInBrowser}}\">link</a>",
+        bodyText: "{{viewInBrowser}}",
+      },
+      {
+        firstName: null,
+        projectName: null,
+        aliasEmail: null,
+        viewInBrowserUrl: "https://app.example.test/b/token",
+      },
+    );
+
+    expect(rendered.subject).toBe("https://app.example.test/b/token");
+    expect(rendered.html).toContain("https://app.example.test/b/token");
+    expect(rendered.text).toBe("https://app.example.test/b/token");
+    expect(
+      renderer.validateTokens(
+        { subject: "{{viewInBrowser}}", bodyHtml: "{{viewInBrowser}}" },
+        [buildMember()],
+      ),
+    ).toEqual({});
   });
 
   it("renders missing tokens as empty strings and reports them during validation", () => {
@@ -53,6 +80,7 @@ describe("createMergeRenderer", () => {
         firstName: null,
         projectName: "Forests",
         aliasEmail: "forests@example.org",
+        viewInBrowserUrl: null,
       },
     );
 
@@ -86,6 +114,7 @@ describe("createMergeRenderer", () => {
         firstName: xss,
         projectName: null,
         aliasEmail: null,
+        viewInBrowserUrl: null,
       },
     );
 
@@ -108,6 +137,7 @@ describe("createMergeRenderer", () => {
           firstName: "Taylor",
           projectName: null,
           aliasEmail: null,
+          viewInBrowserUrl: null,
         },
       ),
     ).toEqual({
@@ -140,6 +170,7 @@ describe("createMergeRenderer", () => {
         firstName: null,
         projectName: "Rivers",
         aliasEmail: null,
+        viewInBrowserUrl: null,
       },
     );
 

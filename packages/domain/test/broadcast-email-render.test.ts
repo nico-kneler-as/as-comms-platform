@@ -134,6 +134,21 @@ describe("renderBroadcastEmail", () => {
     expect(footerIdx).toBeGreaterThan(signatureIdx);
   });
 
+  it("adds the web-version line after the preheader and before the body", () => {
+    const result = renderBroadcastEmail({
+      ...baseInput,
+      webVersionHref: 'https://app.example.com/b/token?x="quoted"',
+    });
+
+    const preheaderIdx = result.bodyHtml.indexOf("Field season starts");
+    const webVersionIdx = result.bodyHtml.indexOf("Having trouble viewing");
+    const bodyIdx = result.bodyHtml.indexOf("Hello {{firstName}}");
+    expect(webVersionIdx).toBeGreaterThan(preheaderIdx);
+    expect(webVersionIdx).toBeLessThan(bodyIdx);
+    expect(result.bodyHtml).toContain("x=&quot;quoted&quot;");
+    expect(result.bodyText.startsWith("View in browser: https://app.example.com/b/token")).toBe(true);
+  });
+
   it("emits the Adventure Scientists From header with the project alias", () => {
     expect(renderBroadcastEmail(baseInput).fromHeader).toBe(
       '"Adventure Scientists – PNW Biodiversity" <pnwbio@adventurescientists.org>',

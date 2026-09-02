@@ -1717,6 +1717,7 @@ export async function loadComposePreviewAction(input: {
         firstName: sample?.frozenFirstName ?? null,
         projectName: sample?.frozenProjectName ?? null,
         aliasEmail: sample?.frozenAliasEmail ?? null,
+        viewInBrowserUrl: null,
       },
     );
 

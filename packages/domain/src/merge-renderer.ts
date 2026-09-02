@@ -11,6 +11,7 @@ const supportedTokens = new Set<MergeToken>([
   "firstName",
   "projectName",
   "aliasEmail",
+  "viewInBrowser",
 ]);
 
 export interface MergeRenderer {
@@ -35,6 +36,8 @@ function readTokenValue(
       return context.projectName;
     case "aliasEmail":
       return context.aliasEmail;
+    case "viewInBrowser":
+      return context.viewInBrowserUrl;
     default:
       return null;
   }
@@ -81,6 +84,7 @@ function toMergeContext(member: AudienceMember): MergeContext {
     firstName: member.frozenFirstName,
     projectName: member.frozenProjectName,
     aliasEmail: member.frozenAliasEmail,
+    viewInBrowserUrl: null,
   };
 }
 
@@ -116,6 +120,10 @@ export function createMergeRenderer(): MergeRenderer {
           }
 
           if (!supportedTokens.has(token as MergeToken)) {
+            continue;
+          }
+
+          if (token === "viewInBrowser") {
             continue;
           }
 

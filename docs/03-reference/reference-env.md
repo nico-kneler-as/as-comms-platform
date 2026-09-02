@@ -66,6 +66,7 @@ Single ops-alert sender in the worker emails the architect when first-party fail
 | `INTEGRATION_HEALTH_ALERT_RECIPIENT` | `worker` | no | Legacy from `D-038`. Still honored and takes precedence over `OPS_ALERT_RECIPIENT` for the `integration_health` category only. Default falls through to `OPS_ALERT_RECIPIENT`, then to the hard default. |
 | `INTEGRATION_HEALTH_ALERT_FROM_ALIAS` | `worker` | no | Legacy from `D-038`. Category-scoped override for `integration_health`; falls through to `OPS_ALERT_FROM_ALIAS`. |
 | `INTEGRATION_HEALTH_ALERT_SETTINGS_URL` | `worker` | no | Legacy from `D-038`. Explicit deep-link URL into Settings → Integrations rendered in the alert body; falls back to `NEXT_PUBLIC_APP_URL` / `APP_BASE_URL` / `WEB_BASE_URL` / `INBOX_REVALIDATE_BASE_URL` + `/settings/integrations`. |
+| `NEWSLETTER_SUBSCRIBE_PAGE_URL` | `worker` | no | Public newsletter subscribe page used in immutable broadcast web-version footers; defaults to `https://www.adventurescientists.org`. |
 
 Underlying Gmail OAuth credentials live under their own env family — `GMAIL_LIVE_ACCOUNT`, `GMAIL_GOOGLE_OAUTH_CLIENT_ID`, `GMAIL_GOOGLE_OAUTH_CLIENT_SECRET`, `GMAIL_GOOGLE_OAUTH_REFRESH_TOKEN`, optional `GMAIL_GOOGLE_TOKEN_URI`, optional `GMAIL_SEND_TIMEOUT_MS`. The ops-alert sender reads them at construction time; missing creds return `kind: "auth_error"` without throwing, so a misconfig cannot crash the worker.
 

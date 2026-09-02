@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateDraftInput } from "@as-comms/contracts";
 import {
@@ -237,6 +237,12 @@ function createOrchestrator(
         settingsProjects: context.settings.projects,
         settingsAliases: context.settings.aliases,
         orgSettings: campaigns.orgSettings,
+        broadcastWebVersions: {
+          ensure: (runId) => campaigns.broadcastWebVersions.ensure(runId),
+          async storeRendered(runId, rendered) {
+            await campaigns.broadcastWebVersions.storeRendered(runId, rendered);
+          },
+        },
       },
       audienceResolver: createAudienceResolver({
         repositories: {
@@ -296,9 +302,14 @@ describe("Campaign send orchestrator", () => {
     contexts.push(context);
     await seedProject(context);
     await seedAudience(context, 50);
+    const sentMessages: { readonly HtmlBody?: string; readonly TextBody?: string }[] = [];
     const { campaigns, orchestrator } = createOrchestrator(
       context,
-      createMockPostmarkClient({}),
+      createMockPostmarkClient({
+        onBatch(messages) {
+          sentMessages.push(...messages);
+        },
+      }),
     );
     const run = await campaigns.campaignRuns.create(
       buildDraftInput({ id: "run-happy-path" }),
@@ -320,6 +331,16 @@ describe("Campaign send orchestrator", () => {
       true,
     );
     expect(refreshedRun?.state).toBe("complete");
+    const webVersion = await campaigns.broadcastWebVersions.findByRunId(run.id);
+    expect(webVersion?.renderedHtml).not.toBeNull();
+    expect(sentMessages).toHaveLength(50);
+    expect(
+      sentMessages.every(
+        (message) =>
+          message.HtmlBody?.includes(`/b/${webVersion?.publicToken ?? ""}`) &&
+          message.TextBody?.includes(`/b/${webVersion?.publicToken ?? ""}`),
+      ),
+    ).toBe(true);
   });
 
   it("assigns deterministic A/B subject variants at freeze and leaves non-A/B runs null", async () => {
@@ -549,6 +570,11 @@ describe("Campaign send orchestrator", () => {
       ),
     ).toHaveLength(30);
 
+    const storeRendered = vi.spyOn(
+      runtime.campaigns.broadcastWebVersions,
+      "storeRendered",
+    );
+
     await runtime.orchestrator.processSendRequest(run.id);
 
     const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
@@ -558,6 +584,7 @@ describe("Campaign send orchestrator", () => {
       true,
     );
     expect(refreshedRun?.state).toBe("complete");
+    expect(storeRendered).not.toHaveBeenCalled();
   });
 
   it("re-checks exclusions at delivery time and suppresses opted-out recipients", async () => {

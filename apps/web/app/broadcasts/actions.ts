@@ -235,6 +235,12 @@ function createCampaignSendOrchestratorForRepositories(input: {
       settingsProjects: input.settings.projects,
       settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
+      broadcastWebVersions: {
+        ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
+        async storeRendered(runId, rendered) {
+          await input.campaigns.broadcastWebVersions.storeRendered(runId, rendered);
+        },
+      },
       auditEvidence: input.repositories.auditEvidence,
     },
     audienceResolver: createAudienceResolver({
@@ -1377,6 +1383,7 @@ export async function testSend(
         firstName: sample.frozenFirstName,
         projectName: sample.frozenProjectName,
         aliasEmail: sample.frozenAliasEmail,
+        viewInBrowserUrl: null,
       },
     );
 

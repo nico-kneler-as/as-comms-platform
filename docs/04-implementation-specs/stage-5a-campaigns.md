@@ -78,6 +78,7 @@ Eight deep modules + their package homes. Repo shape is locked (`D-021`); these 
 | `apps/worker/src/jobs/poll-postmark-sender-status/` cron | `apps/worker` | A2 |
 | `apps/web/app/broadcasts/` route tree | `apps/web` | A4-A6, A8 |
 | `apps/web/app/u/[token]/` public unsubscribe route | `apps/web` | A7 |
+| `apps/web/app/b/[token]/` public broadcast web-version route | `apps/web` | PRD #703 |
 
 ### Decision: `contact_consent` table vs extending `consent_records`
 

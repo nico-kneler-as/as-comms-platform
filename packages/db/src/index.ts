@@ -3,6 +3,7 @@ export * from "./automated-email-sends-repository.js";
 export * from "./automated-email-templates-repository.js";
 export * from "./broadcast-link-clicks-repository.js";
 export * from "./broadcast-opens-repository.js";
+export * from "./broadcast-web-versions-repository.js";
 export * from "./broadcast-uploaded-recipients-repository.js";
 export * from "./client.js";
 export * from "./composer-drafts-repository.js";
