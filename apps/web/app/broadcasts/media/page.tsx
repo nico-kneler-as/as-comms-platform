@@ -37,8 +37,7 @@ export default async function BroadcastMediaLibraryPage() {
                 </span>
               </div>
               <p className="mt-0.5 text-sm text-pretty text-slate-500">
-                Upload hosted broadcast images and copy the public URL into HTML
-                email content.
+                Upload hosted files — images, audio, PDFs — and copy the public URL into broadcast content.
               </p>
             </div>
             <Button asChild size="sm" variant="outline">

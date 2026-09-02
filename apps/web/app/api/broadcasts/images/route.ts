@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { requireApiSession } from "@/src/server/auth/api";
+import {
+  classifyBroadcastUpload,
+  getBroadcastUploadCandidate,
+  maxBytesForBroadcastUpload,
+} from "@/src/server/broadcasts/classify-broadcast-upload";
 import { optimizeBroadcastImage } from "@/src/server/broadcasts/optimize-broadcast-image";
 import { uploadBroadcastImageToObjectStore } from "@/src/server/broadcasts/object-store-runtime";
 import {
@@ -11,14 +16,6 @@ import {
 import { toMediaLibraryItem } from "../../../broadcasts/media/_lib/media-library-item";
 
 export const dynamic = "force-dynamic";
-
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_CONTENT_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-]);
 
 function badRequest(message: string) {
   return Response.json(
@@ -32,14 +29,14 @@ function badRequest(message: string) {
 
 function sanitizeFilename(filename: string): string {
   const trimmed = filename.trim();
-  const normalized = trimmed.length > 0 ? trimmed : "image";
+  const normalized = trimmed.length > 0 ? trimmed : "file";
 
   const sanitized = normalized
     .replaceAll(/[/\\]/g, "-")
     .replaceAll(/\s+/g, "-")
     .replaceAll(/[^A-Za-z0-9._-]/g, "");
 
-  return sanitized.length > 0 ? sanitized : "image";
+  return sanitized.length > 0 ? sanitized : "file";
 }
 
 function parseLimit(raw: string | null): number {
@@ -81,7 +78,7 @@ export async function POST(request: Request) {
 
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
-    return badRequest("Expected multipart/form-data with one image file.");
+    return badRequest("Expected multipart/form-data with one file.");
   }
 
   let formData: FormData;
@@ -96,37 +93,57 @@ export async function POST(request: Request) {
   );
 
   if (files.length !== 1) {
-    return badRequest("Provide exactly one image file.");
+    return badRequest("Provide exactly one file.");
   }
 
   const [file] = files;
   if (file === undefined) {
-    return badRequest("Provide exactly one image file.");
+    return badRequest("Provide exactly one file.");
   }
 
-  if (!ALLOWED_CONTENT_TYPES.has(file.type)) {
-    return badRequest("Unsupported image type. Allowed: PNG, JPEG, GIF, WEBP.");
+  const candidate = getBroadcastUploadCandidate({
+    declaredType: file.type,
+    filename: file.name,
+  });
+  if (!candidate) {
+    return badRequest("Unsupported file type. Allowed: PNG, JPEG, GIF, WEBP, MP3, M4A, WAV, PDF.");
   }
 
-  if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    return badRequest("Image must be 10 MB or smaller.");
+  const isImage = candidate.startsWith("image/");
+  const maxBytes = maxBytesForBroadcastUpload(candidate);
+  if (file.size > maxBytes) {
+    return badRequest(
+      isImage
+        ? "Images must be 10 MB or smaller."
+        : "Audio and PDF files must be 25 MB or smaller.",
+    );
   }
 
-  const storageKey = `images/${randomUUID()}-${sanitizeFilename(file.name)}`;
   const bytes = Buffer.from(await file.arrayBuffer());
-  const optimized = await optimizeBroadcastImage(bytes, file.type);
+  const classification = await classifyBroadcastUpload({
+    bytes,
+    declaredType: file.type,
+    filename: file.name,
+  });
+  if (!classification.ok) return badRequest(classification.message);
+
+  const prefix = classification.kind === "image" ? "images" : classification.kind === "audio" ? "audio" : "files";
+  const storageKey = `${prefix}/${randomUUID()}-${sanitizeFilename(file.name)}`;
+  const upload = classification.kind === "image"
+    ? await optimizeBroadcastImage(bytes, classification.contentType)
+    : { bytes, contentType: classification.contentType };
   const uploaded = await uploadBroadcastImageToObjectStore({
     key: storageKey,
-    bytes: optimized.bytes,
-    contentType: optimized.contentType,
+    bytes: upload.bytes,
+    contentType: upload.contentType,
   });
   const record = await createBroadcastMediaAssetRecord({
     uploaderId: session.user.id,
     storageKey,
     publicUrl: uploaded.url,
     filename: file.name,
-    contentType: optimized.contentType,
-    sizeBytes: optimized.bytes.byteLength,
+    contentType: upload.contentType,
+    sizeBytes: upload.bytes.byteLength,
   });
 
   return Response.json({
