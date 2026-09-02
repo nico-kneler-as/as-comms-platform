@@ -11,6 +11,7 @@ import { audienceCriteriaSchema } from "@as-comms/contracts";
 import {
   buildBroadcastWebVersionUrl,
   createCampaignRunProjectionReader,
+  isBroadcastWebVersionEligible,
 } from "@as-comms/domain";
 
 import {
@@ -952,6 +953,12 @@ export async function getRunDetailModel(input: {
             run.id,
           );
           if (record === null) {
+            // Ineligible runs (plain typed emails) never get a page, so the
+            // panel is hidden entirely rather than offering a dead button.
+            if (!isBroadcastWebVersionEligible(run)) {
+              return null;
+            }
+
             return {
               url: null,
               state: "none" as const,
@@ -966,6 +973,10 @@ export async function getRunDetailModel(input: {
               : record.unpublishedAt === null
                 ? "published"
                 : "unpublished";
+          if (state === "pending" && !isBroadcastWebVersionEligible(run)) {
+            return null;
+          }
+
           return {
             url: buildBroadcastWebVersionUrl({
               appUrl: resolveAppUrl(),

@@ -312,7 +312,7 @@ describe("Campaign send orchestrator", () => {
       }),
     );
     const run = await campaigns.campaignRuns.create(
-      buildDraftInput({ id: "run-happy-path" }),
+      buildDraftInput({ id: "run-happy-path", launchType: "html_email" }),
     );
 
     await expect(
@@ -339,6 +339,48 @@ describe("Campaign send orchestrator", () => {
         (message) =>
           message.HtmlBody?.includes(`/b/${webVersion?.publicToken ?? ""}`) &&
           message.TextBody?.includes(`/b/${webVersion?.publicToken ?? ""}`),
+      ),
+    ).toBe(true);
+  });
+
+  it("gives a plain typed email no web version and no browser link", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 3);
+    const sentMessages: {
+      readonly HtmlBody?: string;
+      readonly TextBody?: string;
+    }[] = [];
+    const { campaigns, orchestrator } = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          sentMessages.push(...messages);
+        },
+      }),
+    );
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-plain-email",
+        kind: "project",
+        launchType: "normal_email",
+      }),
+    );
+
+    await orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await orchestrator.processSendRequest(run.id);
+
+    await expect(
+      campaigns.broadcastWebVersions.findByRunId(run.id),
+    ).resolves.toBeNull();
+    expect(sentMessages).toHaveLength(3);
+    expect(
+      sentMessages.every(
+        (message) =>
+          message.HtmlBody?.includes("/b/") !== true &&
+          message.HtmlBody?.includes("View it in your browser") !== true &&
+          message.TextBody?.includes("View in browser:") !== true,
       ),
     ).toBe(true);
   });
@@ -553,7 +595,7 @@ describe("Campaign send orchestrator", () => {
       20,
     );
     const run = await runtime.campaigns.campaignRuns.create(
-      buildDraftInput({ id: "run-worker-restart" }),
+      buildDraftInput({ id: "run-worker-restart", launchType: "html_email" }),
     );
 
     await runtime.orchestrator.freeze(

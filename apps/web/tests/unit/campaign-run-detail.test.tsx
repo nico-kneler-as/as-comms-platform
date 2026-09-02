@@ -715,7 +715,7 @@ describe("broadcast run detail", () => {
       const run = await campaigns.campaignRuns.create({
         id: "run-detail-web-version",
         kind: "project",
-        launchType: "normal_email",
+        launchType: "html_email",
         projectId: "project-1",
         name: null,
         fromEmail: "project-one@adventurescientists.org",
@@ -791,6 +791,46 @@ describe("broadcast run detail", () => {
         isAdmin: true,
       });
       expect(unpublished?.webVersion?.state).toBe("unpublished");
+
+      // A plain typed email is not eligible for a public page, so the panel is
+      // absent rather than showing a dead publish button.
+      const plainRun = await campaigns.campaignRuns.create({
+        id: "run-detail-plain-email",
+        kind: "project",
+        launchType: "normal_email",
+        projectId: "project-1",
+        name: null,
+        fromEmail: "project-one@adventurescientists.org",
+        fromName: "Adventure Scientists",
+        replyToEmail: "project-one@adventurescientists.org",
+        subjectTemplate: "Meet at the trailhead",
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: "<p>Hello</p>",
+        bodyTextTemplate: "Hello",
+        bodyDesignJson: null,
+        preheader: null,
+        audienceCriteria: {
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+        audienceSize: 0,
+        createdByUserId: null,
+        lastEditedByUserId: null,
+      });
+      const plain = await getRunDetailModel({
+        runId: plainRun.id,
+        provider: "postmark",
+        isAdmin: true,
+      });
+      expect(plain?.webVersion).toBeNull();
     } finally {
       await runtime.dispose();
     }

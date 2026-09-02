@@ -625,6 +625,7 @@ function buildComposePreviewData(
     audienceSize: 2,
     sampleIndex: 0,
     sampleCount: 1,
+    hasWebVersion: false,
     sample: {
       contactId: "contact-1",
       name: "Alice Example",

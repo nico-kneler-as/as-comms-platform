@@ -20,6 +20,7 @@ import {
 import {
   buildBroadcastWebVersionUrl,
   buildBroadcastUnsubscribeUrls,
+  isBroadcastWebVersionEligible,
   createAudienceResolver,
   createCampaignSendOrchestrator,
   createExclusionFilter,
@@ -904,6 +905,13 @@ export async function publishBroadcastWebVersionNow(
       return errorResult("campaign_not_found", "Broadcast run was not found.");
     }
 
+    if (!isBroadcastWebVersionEligible(run)) {
+      return errorResult(
+        "campaign_web_version_not_eligible",
+        "Public pages are available for newsletters and HTML broadcasts, not plain emails.",
+      );
+    }
+
     const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
     if (!snapshots.some((snapshot) => snapshot.deliveryStatus !== "pending")) {
       return errorResult(
@@ -1523,13 +1531,14 @@ export async function testSend(
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
     });
-    const webVersion = await runtime.campaigns.broadcastWebVersions.ensure(
-      run.id,
-    );
-    const webVersionUrl = buildBroadcastWebVersionUrl({
-      appUrl: origin,
-      token: webVersion.publicToken,
-    });
+    const webVersionUrl = isBroadcastWebVersionEligible(run)
+      ? buildBroadcastWebVersionUrl({
+          appUrl: origin,
+          token: (
+            await runtime.campaigns.broadcastWebVersions.ensure(run.id)
+          ).publicToken,
+        })
+      : null;
     const composed = renderBroadcastEmail({
       launchType: run.launchType,
       kind: run.kind,
@@ -1543,7 +1552,7 @@ export async function testSend(
       scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail: fromEmail,
-      webVersionHref: webVersionUrl,
+      ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });
     const mergeRenderer = createMergeRenderer();
     const rendered = mergeRenderer.render(

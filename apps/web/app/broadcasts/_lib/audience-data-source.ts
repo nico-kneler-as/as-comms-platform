@@ -21,6 +21,7 @@ import {
 import {
   buildBroadcastWebVersionUrl,
   buildBroadcastUnsubscribeUrls,
+  isBroadcastWebVersionEligible,
   createAudienceResolver,
   createMergeRenderer,
   formatOrgAddress,
@@ -227,6 +228,8 @@ export interface ComposePreviewData {
   readonly warningCount: number;
   readonly affectedContacts: readonly ComposePreviewWarningContact[];
   readonly footerAddress: string | null;
+  /** True when this broadcast gets a public web version, so the preview can say so. */
+  readonly hasWebVersion: boolean;
 }
 
 export async function loadSelectedAliasSignatureAction(input: {
@@ -1644,6 +1647,7 @@ export async function loadComposePreviewAction(input: {
         sampleIndex: 0,
         sampleCount: 0,
         sample: null,
+        hasWebVersion: false,
         warningCount: 0,
         affectedContacts: [],
         footerAddress,
@@ -1674,9 +1678,12 @@ export async function loadComposePreviewAction(input: {
       audience.length;
     const sample = audience[normalizedSampleIndex] ?? audience[0];
     const origin = await readRequestOrigin();
-    const persistedRun = await runtime.campaigns.campaignRuns.findById(
-      input.runId,
-    );
+    const persistedRun = isBroadcastWebVersionEligible({
+      kind: input.kind,
+      launchType: input.launchType,
+    })
+      ? await runtime.campaigns.campaignRuns.findById(input.runId)
+      : null;
     const webVersionUrl =
       persistedRun === null
         ? null
@@ -1772,6 +1779,7 @@ export async function loadComposePreviewAction(input: {
             missingByRecipient.get(readAudienceRecipientKey(member)) ?? [],
         })),
       footerAddress,
+      hasWebVersion: webVersionUrl !== null,
     });
   } catch (error) {
     return errorResult(

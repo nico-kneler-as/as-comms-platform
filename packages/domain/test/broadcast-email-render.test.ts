@@ -147,6 +147,9 @@ describe("renderBroadcastEmail", () => {
     expect(webVersionIdx).toBeLessThan(bodyIdx);
     expect(result.bodyHtml).toContain("x=&quot;quoted&quot;");
     expect(result.bodyText.startsWith("View in browser: https://app.example.com/b/token")).toBe(true);
+    // Excluded from Postmark link tracking so it cannot inflate click metrics
+    // or add a non-content row to the broadcast link map.
+    expect(result.bodyHtml).toContain("<a data-pm-no-track href=");
   });
 
   it("emits the Adventure Scientists From header with the project alias", () => {

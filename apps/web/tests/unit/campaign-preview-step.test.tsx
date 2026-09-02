@@ -68,6 +68,7 @@ const baseProps: React.ComponentProps<typeof PreviewStep> = {
     audienceSize: 24,
     sampleIndex: 0,
     sampleCount: 24,
+    hasWebVersion: false,
     warningCount: 0,
     footerAddress: "123 Research Way, Bozeman, MT, 59715, USA",
     affectedContacts: [],
