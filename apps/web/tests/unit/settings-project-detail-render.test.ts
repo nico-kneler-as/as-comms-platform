@@ -2,6 +2,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock(
+  "@/app/settings/projects/[projectId]/automated-emails/_components/template-list",
+  () => ({
+    AutomatedEmailTemplateList: () => null,
+  }),
+);
+
 vi.mock("next/link", () => ({
   default: ({ children }: { readonly children: unknown }) => children,
 }));

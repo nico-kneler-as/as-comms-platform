@@ -48,6 +48,8 @@ import {
 } from "../_lib/project-alias-signature";
 import { PostmarkSenderStatusSection } from "./postmark-sender-status";
 import { ProjectAiKnowledgeSection } from "./project-ai-knowledge-section";
+import { AutomatedEmailTemplateList } from "@/app/settings/projects/[projectId]/automated-emails/_components/template-list";
+import type { AutomatedEmailListViewModel } from "@/src/server/automated-email/selectors";
 import { ProjectConnectedProjectsSection } from "./project-connected-projects-section";
 
 interface FeedbackState {
@@ -55,7 +57,7 @@ interface FeedbackState {
   readonly message: string;
 }
 
-type TabId = "overview" | "ai-knowledge" | "danger-zone";
+type TabId = "overview" | "ai-knowledge" | "automated-emails" | "danger-zone";
 
 function hasActivationRequirements(input: {
   readonly projectAlias: string | null;
@@ -205,8 +207,12 @@ function buildSubtitleParts({
 
 export function ProjectDetail({
   project,
+  automatedEmails,
+  initialTab,
 }: {
   readonly project: ProjectSettingsDetailViewModel;
+  readonly automatedEmails?: AutomatedEmailListViewModel | null;
+  readonly initialTab?: TabId | undefined;
 }) {
   const signatureTextareaRefs = useRef<
     Record<string, HTMLTextAreaElement | null>
@@ -244,7 +250,7 @@ export function ProjectDetail({
   const [signaturePending, startSignatureTransition] = useTransition();
   const [activationPending, startActivationTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? "overview");
 
   function announce(message: string, kind: FeedbackState["kind"] = "success") {
     setFeedback({ kind, message });
@@ -615,6 +621,7 @@ export function ProjectDetail({
   const tabs: readonly { readonly id: TabId; readonly label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "ai-knowledge", label: "AI knowledge" },
+    { id: "automated-emails", label: "Automated emails" },
     ...(dangerZoneAvailable
       ? ([{ id: "danger-zone", label: "Danger zone" }] as const)
       : []),
@@ -1093,42 +1100,6 @@ export function ProjectDetail({
           initialStatus={project.postmarkSenderStatus}
         />
 
-        <SettingsCard
-          title="Automated emails"
-          description="Lifecycle email copy and its independent sending controls."
-          action={
-            <Button asChild type="button" size="sm" variant="outline">
-              <Link
-                href={`/settings/projects/${encodeURIComponent(
-                  project.projectId,
-                )}/automated-emails`}
-              >
-                Manage automated emails
-              </Link>
-            </Button>
-          }
-        >
-          <div className="flex flex-wrap items-center gap-6 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
-            <div>
-              <p className={cn(TYPE.label, "text-slate-500")}>Templates</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                {String(project.automatedEmailSummary.templateCount)}
-              </p>
-            </div>
-            <div className="h-8 w-px bg-slate-200" aria-hidden="true" />
-            <div>
-              <p className={cn(TYPE.label, "text-slate-500")}>Active</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
-                {String(project.automatedEmailSummary.activeCount)}
-              </p>
-            </div>
-            <p className={cn(TYPE.caption, "ml-auto max-w-sm text-slate-500")}>
-              Shells stay inactive until their copy is published and you turn
-              sending on.
-            </p>
-          </div>
-        </SettingsCard>
-
         {isHost ? (
           <SettingsCard
             title="Connected projects"
@@ -1185,6 +1156,18 @@ export function ProjectDetail({
             aiKnowledgeSynthesisStale={project.aiKnowledgeSynthesisStale}
           />
         )}
+      </div>
+
+      <div
+        role="tabpanel"
+        id="project-tabpanel-automated-emails"
+        aria-labelledby="project-tab-automated-emails"
+        hidden={activeTab !== "automated-emails"}
+        className={cn(activeTab === "automated-emails" && "flex flex-col gap-5")}
+      >
+        {automatedEmails != null ? (
+          <AutomatedEmailTemplateList data={automatedEmails} />
+        ) : null}
       </div>
 
       <div
