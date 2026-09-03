@@ -19,6 +19,7 @@ import {
 
 import {
   convertSalesforceHtmlToTipTap,
+  type SalesforceDroppedLink,
   convertSalesforceSubject,
 } from "./import-sf-flow-email-converter.js";
 
@@ -87,6 +88,12 @@ export type FlowEmailImportTemplate = {
   readonly unresolvableReferences: readonly string[];
   readonly flattenedHeadings: number;
   readonly droppedImages: number;
+  /**
+   * Links whose Salesforce href the renderer cannot accept (merge expressions
+   * such as `{!$Record.Event_URL__c}`). The text survives, the destination
+   * does not — someone has to re-add these by hand, so they are reported.
+   */
+  readonly droppedLinks: readonly SalesforceDroppedLink[];
 };
 
 export type FlowEmailImportSummary = {
@@ -486,6 +493,7 @@ function prepareTemplates(
         unresolvableReferences: action.unresolvableReferences,
         flattenedHeadings: body.flattenedHeadings,
         droppedImages: body.droppedImages,
+        droppedLinks: body.droppedLinks,
         draftSubject: subject.subject,
         draftDoc: body.doc,
       });
@@ -649,6 +657,10 @@ export function renderFlowEmailImportSummary(
         `- [${template.status}] ${template.projectName}: ${template.name} (${template.kind})`,
         `  mapped=${template.mappedFields.join(", ") || "none"}; unmapped=${template.unmappedPlaceholders.join(", ") || "none"}; flattened_headings=${template.flattenedHeadings}; dropped_images=${template.droppedImages}`,
         `  flow=${template.sourceFlowLabel}; action=${template.sourceActionLabel}; subject_resource=${template.subjectResourceName ?? "none"}; body_resource=${template.bodyResourceName ?? "none"}; unresolvable=${template.unresolvableReferences.join(", ") || "none"}`,
+        ...template.droppedLinks.map(
+          (link) =>
+            `  dropped_link: "${link.text}" -> ${link.href} (re-add the destination by hand)`,
+        ),
       ].join("\n"),
     ),
   ].join("\n");
