@@ -19,7 +19,17 @@ export const COMPOSER_LINK_SCHEMES = [
 export const COMPOSER_LINK_SCHEME_PREFIXES_REGEX =
   /^(https?:\/\/|mailto:|sms:|tel:)/iu;
 
-export function isAllowedComposerLinkHref(value: string): boolean {
+/**
+ * Tiptap calls this through `isAllowedUri` with whatever the mark carries, and
+ * a link mark whose `attrs` were lost has no href at all — so this receives
+ * `null` at runtime despite the parameter type. Guarding here turns an
+ * unopenable editor page into a link that simply fails validation.
+ */
+export function isAllowedComposerLinkHref(value: string | null | undefined): boolean {
+  if (typeof value !== "string") {
+    return false;
+  }
+
   const trimmed = value.trim();
   return (
     trimmed.length > 0 && COMPOSER_LINK_SCHEME_PREFIXES_REGEX.test(trimmed)

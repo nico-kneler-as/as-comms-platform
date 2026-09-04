@@ -11,7 +11,10 @@ vi.mock("@/src/server/auth/session", () => ({ requireSession }));
 
 import { AUTOMATED_EMAIL_MERGE_FIELDS } from "@as-comms/domain";
 
-import { renderPreviewAction } from "../../app/settings/projects/[projectId]/automated-emails/actions";
+import {
+  renderPreviewAction,
+  saveDraftAction,
+} from "../../app/settings/projects/[projectId]/automated-emails/actions";
 import {
   createStage1WebTestRuntime,
   type Stage1WebTestRuntime,
@@ -128,6 +131,72 @@ describe("automated email preview", () => {
     expect(result.code).toBe("draft_render_invalid_link");
     expect(result.message).toContain('The link on "Start Training"');
     expect(result.message).toContain("{!$Record.Event_URL__c}");
+  });
+
+  it("refuses a document whose attrs failed to serialize", async () => {
+    // ProseMirror attrs are null-prototype objects; handing them straight to a
+    // server action serializes each as the string "$T", which silently strips
+    // merge-field keys and link hrefs. The boundary must reject, not persist.
+    const templateId = await createTemplate();
+    const baseline = new Date().toISOString();
+
+    const result = await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "Training",
+      draftDoc: {
+        type: "doc",
+        content: [
+          paragraph([
+            { type: "mergeField", attrs: "$T" },
+            {
+              type: "text",
+              text: "Start",
+              marks: [{ type: "link", attrs: "$T" }],
+            },
+          ]),
+        ],
+      },
+      baselineUpdatedAt: baseline,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("validation_error");
+  });
+
+  it("accepts a document whose attrs are ordinary objects", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    const template =
+      await runtime.runtime.automatedEmails.getTemplateById(templateId);
+    if (template === null) throw new Error("Expected template");
+
+    const result = await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "Training",
+      draftDoc: {
+        type: "doc",
+        content: [
+          paragraph([
+            { type: "mergeField", attrs: { key: "volunteerId" } },
+            {
+              type: "text",
+              text: "Start",
+              marks: [
+                { type: "link", attrs: { href: "https://adventurescientists.org" } },
+              ],
+            },
+          ]),
+        ],
+      },
+      baselineUpdatedAt: template.updatedAt,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(JSON.stringify(result.data)).toContain("volunteerId");
   });
 
   it("names the offending block for an unsupported node", async () => {

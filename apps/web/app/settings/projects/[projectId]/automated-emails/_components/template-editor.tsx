@@ -107,6 +107,21 @@ function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * ProseMirror builds every `node.attrs` / `mark.attrs` with `Object.create(null)`.
+ * React's Server Action serializer does not treat a null-prototype object as
+ * plain, so it replaces each one with a temporary reference (`"$T"`) — the
+ * merge-field `key` and link `href` never reach the server, and the draft is
+ * persisted with its pills and links hollowed out.
+ *
+ * Round-tripping through JSON rebuilds the same shape with ordinary object
+ * prototypes. Do this once, where editor output enters React state, so every
+ * action downstream (save, publish, preview, test send) sends plain data.
+ */
+function toPlainDoc(doc: JSONContent): JSONContent {
+  return JSON.parse(JSON.stringify(doc)) as JSONContent;
+}
+
 function initialDoc(doc: unknown): JSONContent {
   if (
     doc !== null &&
@@ -694,7 +709,7 @@ export function AutomatedEmailTemplateEditor({
       },
     },
     onUpdate: ({ editor: instance }) => {
-      setDraftDoc(instance.getJSON());
+      setDraftDoc(toPlainDoc(instance.getJSON()));
     },
   });
 
