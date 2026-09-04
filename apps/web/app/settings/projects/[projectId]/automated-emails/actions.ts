@@ -371,6 +371,69 @@ async function renderDraft(input: {
   }
 }
 
+/** True when the document holds anything a recipient would actually see. */
+function hasVisibleContent(node: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.some(hasVisibleContent);
+  }
+
+  if (!isPlainObject(node)) {
+    return false;
+  }
+
+  if (node.type === "mergeField") {
+    return true;
+  }
+
+  if (node.type === "text") {
+    return typeof node.text === "string" && node.text.trim().length > 0;
+  }
+
+  return hasVisibleContent(node.content);
+}
+
+/**
+ * Publishing is the gate between "someone is drafting" and "Salesforce can
+ * make this reach a volunteer", so it is the right place to refuse an email
+ * nobody would want sent. Rendering the draft here catches every renderer
+ * rejection — unsupported blocks, links the renderer will not accept — in the
+ * editor, rather than as a `failed / render_*` row in the send log later.
+ */
+function validateDraftForPublish(input: {
+  readonly draftSubject: string;
+  readonly draftDoc: unknown;
+  readonly projectName: string;
+}): UiError | null {
+  if (input.draftSubject.trim().length === 0) {
+    return errorResult(
+      "publish_empty_subject",
+      "Add a subject line before publishing — it is what the volunteer sees in their inbox.",
+    );
+  }
+
+  if (!hasVisibleContent(input.draftDoc)) {
+    return errorResult(
+      "publish_empty_body",
+      "Add some body copy before publishing — this email is currently empty.",
+    );
+  }
+
+  try {
+    renderAutomatedEmail({
+      subjectTemplate: input.draftSubject,
+      bodyDoc: input.draftDoc,
+      values: buildAutomatedEmailSampleValues({
+        projectName: input.projectName,
+      }),
+      frame: { projectName: input.projectName, reasonLine: "" },
+    });
+  } catch (error) {
+    return describeRenderFailure(error);
+  }
+
+  return null;
+}
+
 export async function createFromKindsAction(input: {
   readonly projectId: string;
   readonly kinds: readonly AutomatedEmailKind[];
@@ -680,6 +743,18 @@ export async function publishTemplateAction(input: {
       "template_not_found",
       "That automated email was not found.",
     );
+  }
+
+  const project = await owned.runtime.settings.projects.findById(
+    parsed.data.projectId,
+  );
+  const invalid = validateDraftForPublish({
+    draftSubject: owned.template.draftSubject,
+    draftDoc: owned.template.draftDoc,
+    projectName: project?.projectName ?? "this project",
+  });
+  if (invalid !== null) {
+    return invalid;
   }
 
   try {

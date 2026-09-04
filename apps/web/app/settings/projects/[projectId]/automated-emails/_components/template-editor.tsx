@@ -6,7 +6,14 @@ import StarterKit from "@tiptap/starter-kit";
 import { AUTOMATED_EMAIL_MERGE_FIELDS } from "@as-comms/domain/automated-email-merge";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import type { ReactNode } from "react";
 import {
   AlertCircle,
@@ -38,10 +45,11 @@ import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { cn } from "@/lib/utils";
 import {
-  COMPOSER_LINK_SCHEMES,
-  COMPOSER_LINK_SCHEME_PREFIXES_REGEX,
-  isAllowedComposerLinkHref,
+  AUTOMATED_EMAIL_LINK_SCHEMES,
+  AUTOMATED_EMAIL_LINK_SCHEME_PREFIXES_REGEX,
+  isAllowedAutomatedEmailLinkHref,
 } from "@/src/lib/composer-link-schemes";
+import { sameCanonicalJson } from "@/src/lib/canonical-json";
 import type { AutomatedEmailEditorViewModel } from "@/src/server/automated-email/selectors";
 
 import {
@@ -76,7 +84,7 @@ function promptForLinkUrl(): string | null {
   if (trimmed.length === 0) {
     return null;
   }
-  if (COMPOSER_LINK_SCHEME_PREFIXES_REGEX.test(trimmed)) {
+  if (AUTOMATED_EMAIL_LINK_SCHEME_PREFIXES_REGEX.test(trimmed)) {
     return trimmed;
   }
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) {
@@ -87,7 +95,7 @@ function promptForLinkUrl(): string | null {
   }
 
   window.alert(
-    `"${trimmed}" doesn't look like a valid URL. Use https://, http://, mailto:, sms:, or tel:.`,
+    `"${trimmed}" doesn't look like a valid URL. Automated email links must start with https://, http:// or mailto:.`,
   );
   return null;
 }
@@ -104,7 +112,7 @@ function relativeTime(value: string | null): string | null {
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return sameCanonicalJson(left, right);
 }
 
 /**
@@ -429,6 +437,8 @@ function PreviewDrawer({
   const [testMessage, setTestMessage] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [testPending, startTestTransition] = useTransition();
+  const panelRef = useRef<HTMLElement | null>(null);
+  const headingId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -436,6 +446,51 @@ function PreviewDrawer({
     setTestMessage(null);
     setSent(false);
   }, [mode, open]);
+
+  // A drawer that covers the page has to behave like a dialog: Escape closes
+  // it, Tab stays inside it, and focus returns to whatever opened it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const focusables = (): readonly HTMLElement[] =>
+      [
+        ...(panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? []),
+      ].filter((element) => element.offsetParent !== null);
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusables();
+      const first = items[0];
+      const last = items.at(-1);
+      if (first === undefined || last === undefined) return;
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    focusables()[0]?.focus();
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      opener?.focus();
+    };
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -482,10 +537,11 @@ function PreviewDrawer({
     });
   }
 
-  if (!open) return null;
   const preview = rendered?.ok ? rendered.data : null;
   const renderError =
     rendered !== null && !rendered.ok ? rendered.message : null;
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -495,10 +551,19 @@ function PreviewDrawer({
         className="absolute inset-0 bg-slate-950/25"
         onClick={onClose}
       />
-      <aside className="absolute right-0 top-0 flex h-full w-[600px] flex-col bg-white shadow-2xl ring-1 ring-slate-200">
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={headingId}
+        className="absolute right-0 top-0 flex h-full w-[600px] flex-col bg-white shadow-2xl ring-1 ring-slate-200"
+      >
         <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-3.5">
           <div className="min-w-0">
-            <h2 className="text-[14px] font-semibold text-slate-900">
+            <h2
+              id={headingId}
+              className="text-[14px] font-semibold text-slate-900"
+            >
               Preview
             </h2>
             <p className="mt-0.5 text-[12px] text-slate-500">
@@ -511,6 +576,7 @@ function PreviewDrawer({
                 <button
                   key={sample.id}
                   type="button"
+                  aria-pressed={person === sample.id}
                   onClick={() => {
                     setPerson(sample.id);
                   }}
@@ -690,9 +756,9 @@ export function AutomatedEmailTemplateEditor({
       }),
       LinkExtension.configure({
         openOnClick: false,
-        protocols: [...COMPOSER_LINK_SCHEMES],
+        protocols: [...AUTOMATED_EMAIL_LINK_SCHEMES],
         isAllowedUri: (url, { defaultValidate }) =>
-          isAllowedComposerLinkHref(url) && defaultValidate(url),
+          isAllowedAutomatedEmailLinkHref(url) && defaultValidate(url),
         HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
       }),
       MergeFieldExtension,
@@ -737,6 +803,52 @@ export function AutomatedEmailTemplateEditor({
   const draftChanged =
     draftSubject !== template.draftSubject ||
     !sameJson(draftDoc, template.draftDoc);
+
+  // Losing a rewritten email to a stray click on the breadcrumb is the most
+  // expensive mistake this screen can cause, so unsaved work gets the same
+  // browser-level guard the broadcast composer uses.
+  useEffect(() => {
+    if (!draftChanged) return undefined;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [draftChanged]);
+
+  // `beforeunload` never fires for an in-app route change, and the breadcrumb
+  // out of this editor is a client-side link — intercept those in the capture
+  // phase so the operator gets the same chance to stay.
+  useEffect(() => {
+    if (!draftChanged) return undefined;
+    const handler = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      const target = event.target;
+      const anchor =
+        target instanceof Element ? target.closest("a") : null;
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      if (anchor.href === window.location.href) return;
+      if (
+        window.confirm(
+          "This automated email has unsaved changes. Leave without saving?",
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("click", handler, true);
+    return () => {
+      document.removeEventListener("click", handler, true);
+    };
+  }, [draftChanged]);
 
   const insertMergeField = useCallback(
     (key: string) => {
@@ -901,7 +1013,14 @@ export function AutomatedEmailTemplateEditor({
                 }}
                 className="h-auto min-w-0 flex-1 border-transparent bg-transparent px-1.5 py-0.5 text-[17px] font-semibold shadow-none hover:border-slate-200 focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-slate-300"
               />
-              {hasUnpublishedChanges ? (
+              {!hasPublishedCopy ? (
+                <StatusBadge
+                  label="Not published"
+                  variant="soft"
+                  colorClasses="shrink-0 rounded bg-slate-100 text-slate-600 ring-slate-200"
+                />
+              ) : null}
+              {hasPublishedCopy && hasUnpublishedChanges ? (
                 <StatusBadge
                   label="Unpublished changes"
                   variant="soft"

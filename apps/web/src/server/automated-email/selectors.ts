@@ -8,6 +8,11 @@ import type {
 import { getCurrentUser } from "../auth/session";
 import { getStage1WebRuntime } from "../stage1-runtime";
 
+export type AutomatedEmailPublishState =
+  | "never_published"
+  | "edited_since_publish"
+  | "published";
+
 export interface AutomatedEmailKindSourceViewModel {
   readonly kind: AutomatedEmailKind;
   readonly sourceProjectName: string | null;
@@ -19,6 +24,7 @@ export interface AutomatedEmailTemplateListItemViewModel {
   readonly name: string;
   readonly isActive: boolean;
   readonly hasUnpublishedChanges: boolean;
+  readonly publishState: AutomatedEmailPublishState;
   readonly lastReceivedAt: string | null;
 }
 
@@ -35,6 +41,7 @@ export interface AutomatedEmailTemplateViewModel {
   readonly isActive: boolean;
   readonly updatedAt: string;
   readonly hasUnpublishedChanges: boolean;
+  readonly publishState: AutomatedEmailPublishState;
 }
 
 export interface AutomatedEmailSendCountsViewModel {
@@ -94,14 +101,18 @@ const lifecycleKinds = [
   "post_trip",
 ] as const satisfies readonly Exclude<AutomatedEmailKind, "custom">[];
 
+function isPublished(template: AutomatedEmailTemplateRecord): boolean {
+  return (
+    template.publishedSubject !== null &&
+    template.publishedDoc !== null &&
+    template.publishedAt !== null
+  );
+}
+
 function hasUnpublishedChanges(
   template: AutomatedEmailTemplateRecord,
 ): boolean {
-  if (
-    template.publishedSubject === null ||
-    template.publishedDoc === null ||
-    template.publishedAt === null
-  ) {
+  if (!isPublished(template)) {
     return true;
   }
 
@@ -109,6 +120,23 @@ function hasUnpublishedChanges(
     template.draftSubject !== template.publishedSubject ||
     JSON.stringify(template.draftDoc) !== JSON.stringify(template.publishedDoc)
   );
+}
+
+/**
+ * "Never published" and "published, then edited" both leave a draft ahead of
+ * what Salesforce would send, but they need different work: the first has to
+ * be written and published at all, the second only re-published. Every one of
+ * the 122 imported templates sits in the first state, so a single "Unpublished
+ * changes" badge across the whole list carried no signal.
+ */
+function toPublishState(
+  template: AutomatedEmailTemplateRecord,
+): AutomatedEmailPublishState {
+  if (!isPublished(template)) {
+    return "never_published";
+  }
+
+  return hasUnpublishedChanges(template) ? "edited_since_publish" : "published";
 }
 
 function toTemplateListItem(
@@ -121,6 +149,7 @@ function toTemplateListItem(
     name: template.name,
     isActive: template.isActive,
     hasUnpublishedChanges: hasUnpublishedChanges(template),
+    publishState: toPublishState(template),
     lastReceivedAt,
   };
 }
@@ -141,6 +170,7 @@ function toTemplateViewModel(
     isActive: template.isActive,
     updatedAt: template.updatedAt,
     hasUnpublishedChanges: hasUnpublishedChanges(template),
+    publishState: toPublishState(template),
   };
 }
 
