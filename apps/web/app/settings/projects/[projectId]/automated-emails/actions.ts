@@ -813,6 +813,70 @@ export async function setTemplateActiveAction(input: {
   }
 }
 
+export async function deleteTemplateAction(input: {
+  readonly projectId: string;
+  readonly templateId: string;
+}): Promise<UiSuccess<{ readonly deletedId: string }> | UiError> {
+  await requireSession();
+  const parsed = templateTargetSchema.safeParse(input);
+  if (!parsed.success) {
+    return errorResult(
+      "validation_error",
+      "That automated email could not be deleted.",
+    );
+  }
+  const owned = await loadOwnedTemplate(
+    parsed.data.projectId,
+    parsed.data.templateId,
+  );
+  if (owned === null) {
+    return errorResult(
+      "template_not_found",
+      "That automated email was not found.",
+    );
+  }
+
+  try {
+    const result = await owned.runtime.automatedEmails.deleteTemplate(
+      parsed.data.templateId,
+    );
+    if (result.outcome === "not_found") {
+      return errorResult(
+        "template_not_found",
+        "That automated email was not found.",
+      );
+    }
+    if (result.outcome === "blocked") {
+      return errorResult(
+        `delete_blocked_${result.reason}`,
+        deleteBlockedMessage(result.reason),
+      );
+    }
+
+    revalidateAutomatedEmailViews(parsed.data.projectId);
+    return success({ deletedId: parsed.data.templateId });
+  } catch {
+    return errorResult(
+      "delete_failed",
+      "That automated email could not be deleted. Try again.",
+      true,
+    );
+  }
+}
+
+function deleteBlockedMessage(
+  reason: "active" | "published" | "has_sends",
+): string {
+  switch (reason) {
+    case "active":
+      return "Switch sending off before deleting this automated email.";
+    case "published":
+      return "This automated email has been published, so a Salesforce flow may already point at it. Switch sending off and leave it in place rather than deleting it.";
+    case "has_sends":
+      return "This automated email has already been sent at least once. Its send log is a record of what volunteers received, so it cannot be deleted.";
+  }
+}
+
 export async function renderPreviewAction(input: {
   readonly projectId: string;
   readonly templateId: string;

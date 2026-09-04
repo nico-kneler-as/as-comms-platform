@@ -12,9 +12,11 @@ vi.mock("@/src/server/auth/session", () => ({ requireSession }));
 import { AUTOMATED_EMAIL_MERGE_FIELDS } from "@as-comms/domain";
 
 import {
+  deleteTemplateAction,
   publishTemplateAction,
   renderPreviewAction,
   saveDraftAction,
+  setTemplateActiveAction,
 } from "../../app/settings/projects/[projectId]/automated-emails/actions";
 import {
   createStage1WebTestRuntime,
@@ -290,6 +292,85 @@ describe("automated email preview", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.data.publishedAt).not.toBeNull();
+  });
+
+  it("deletes a template that has no history", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+
+    const result = await deleteTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(true);
+    await expect(
+      runtime.runtime.automatedEmails.getTemplateById(templateId),
+    ).resolves.toBeNull();
+  });
+
+  it("refuses to delete a template that is switched on", async () => {
+    const templateId = await createTemplate();
+    await setTemplateActiveAction({ projectId, templateId, isActive: true });
+
+    const result = await deleteTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("delete_blocked_active");
+  });
+
+  it("refuses to delete a template that has been published", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    const template =
+      await runtime.runtime.automatedEmails.getTemplateById(templateId);
+    if (template === null) throw new Error("Expected template");
+    await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "Welcome",
+      draftDoc: {
+        type: "doc",
+        content: [paragraph([{ type: "text", text: "Hello there" }])],
+      },
+      baselineUpdatedAt: template.updatedAt,
+    });
+    await publishTemplateAction({ projectId, templateId });
+
+    const result = await deleteTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("delete_blocked_published");
+  });
+
+  it("refuses to delete a template that has already sent", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    await runtime.runtime.automatedEmails.createSendLogRow({
+      templateId,
+      projectId,
+      expeditionMemberId: "a0B000000000001",
+      contactId: null,
+      payload: { flow: "test" },
+    });
+
+    const result = await deleteTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("delete_blocked_has_sends");
+  });
+
+  it("refuses to delete a template belonging to another project", async () => {
+    const templateId = await createTemplate();
+
+    const result = await deleteTemplateAction({
+      projectId: "project:someone-else",
+      templateId,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("template_not_found");
   });
 
   it("names the offending block for an unsupported node", async () => {

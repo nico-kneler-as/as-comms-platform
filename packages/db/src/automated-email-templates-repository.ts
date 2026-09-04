@@ -12,7 +12,10 @@ import {
   type AutomatedEmailTemplateRow,
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
-import { automatedEmailTemplates } from "./schema/index.js";
+import {
+  automatedEmailSends,
+  automatedEmailTemplates,
+} from "./schema/index.js";
 
 type AutomatedEmailTemplatesDatabase = PgDatabase<
   PgQueryResultHKT,
@@ -37,6 +40,18 @@ export interface UpdateAutomatedEmailDraftInput {
 export type UpdateAutomatedEmailDraftResult =
   | AutomatedEmailTemplateRecord
   | Readonly<{ conflict: true }>;
+
+/**
+ * Deleting an automated email is irreversible and the template id is what
+ * Salesforce flows point at, so it is refused for anything with a history:
+ * a template that is switched on, that has ever been published, or that any
+ * webhook has already reached. Those need deactivating or superseding, not
+ * removing.
+ */
+export type DeleteAutomatedEmailTemplateResult =
+  | Readonly<{ outcome: "deleted" }>
+  | Readonly<{ outcome: "not_found" }>
+  | Readonly<{ outcome: "blocked"; reason: "active" | "published" | "has_sends" }>;
 
 function toAutomatedEmailTemplateRow(
   row: typeof automatedEmailTemplates.$inferSelect,
@@ -238,4 +253,37 @@ export async function findLatestPublishedByKind(
     .limit(1);
 
   return row === undefined ? null : mapTemplate(row);
+}
+
+export async function deleteTemplate(
+  db: AutomatedEmailTemplatesDatabase,
+  id: string,
+): Promise<DeleteAutomatedEmailTemplateResult> {
+  const template = await getTemplateById(db, id);
+  if (template === null) {
+    return { outcome: "not_found" };
+  }
+
+  if (template.isActive) {
+    return { outcome: "blocked", reason: "active" };
+  }
+
+  if (template.publishedAt !== null) {
+    return { outcome: "blocked", reason: "published" };
+  }
+
+  const [send] = await db
+    .select({ id: automatedEmailSends.id })
+    .from(automatedEmailSends)
+    .where(eq(automatedEmailSends.templateId, id))
+    .limit(1);
+  if (send !== undefined) {
+    return { outcome: "blocked", reason: "has_sends" };
+  }
+
+  await db
+    .delete(automatedEmailTemplates)
+    .where(eq(automatedEmailTemplates.id, id));
+
+  return { outcome: "deleted" };
 }
