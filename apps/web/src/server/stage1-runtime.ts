@@ -34,6 +34,7 @@ import {
   createStage2RepositoryBundleFromConnection,
   setOrgSenderEnabled,
   setTemplateActive,
+  deleteTemplate,
   sessions,
   softDeleteMediaAsset,
   updateDraft,
@@ -174,6 +175,7 @@ export function createAutomatedEmailWebRepository(
       publishTemplate(db, id, publishedBy),
     setTemplateActive: (id: string, isActive: boolean) =>
       setTemplateActive(db, id, isActive),
+    deleteTemplate: (id: string) => deleteTemplate(db, id),
     findLatestPublishedByKind: (
       kind: Parameters<typeof findLatestPublishedByKind>[1],
       options?: Parameters<typeof findLatestPublishedByKind>[2],

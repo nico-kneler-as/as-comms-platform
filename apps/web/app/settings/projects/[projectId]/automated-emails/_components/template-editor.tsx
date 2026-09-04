@@ -29,6 +29,7 @@ import {
   Link2,
   List,
   Quote,
+  Trash2,
   RefreshCw,
   Send,
   X,
@@ -53,6 +54,7 @@ import { sameCanonicalJson } from "@/src/lib/canonical-json";
 import type { AutomatedEmailEditorViewModel } from "@/src/server/automated-email/selectors";
 
 import {
+  deleteTemplateAction,
   publishTemplateAction,
   renameTemplateAction,
   renderPreviewAction,
@@ -953,6 +955,41 @@ export function AutomatedEmailTemplateEditor({
     });
   }
 
+  // Only a template with no history at all: never switched on, never
+  // published, and no webhook has ever produced a send-log row for it.
+  const sendCount =
+    data.sendCounts.received +
+    data.sendCounts.sent +
+    data.sendCounts.duplicate +
+    data.sendCounts.held +
+    data.sendCounts.failed;
+  const canDelete =
+    !template.isActive && template.publishedAt === null && sendCount === 0;
+
+  function handleDelete() {
+    if (
+      !window.confirm(
+        `Delete "${template.name}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    startTransition(async () => {
+      const result = await deleteTemplateAction({
+        projectId: data.projectId,
+        templateId: template.id,
+      });
+      if (!result.ok) {
+        setSaveMessage(result.message);
+        return;
+      }
+      router.push(
+        `/settings/projects/${encodeURIComponent(data.projectId)}?tab=automated-emails`,
+      );
+      router.refresh();
+    });
+  }
+
   function handleNameBlur() {
     const normalized = name.trim();
     if (normalized.length === 0 || normalized === template.name) {
@@ -1340,6 +1377,31 @@ export function AutomatedEmailTemplateEditor({
               mergeFieldLabel(field.key),
             ).join(", ")}
           </p>
+          {canDelete ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-[13px] font-semibold text-slate-900">
+                    Delete this automated email
+                  </h2>
+                  <p className="mt-0.5 text-[12px] text-slate-500">
+                    It has never been published and nothing has been sent from
+                    it, so removing it loses no record. This cannot be undone.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={pending}
+                  className="shrink-0 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-3.5" /> Delete
+                </Button>
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
 
