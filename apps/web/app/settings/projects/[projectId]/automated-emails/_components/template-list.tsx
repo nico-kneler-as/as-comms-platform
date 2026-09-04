@@ -181,7 +181,14 @@ function TemplateListRow({
             <span className="truncate text-[13.5px] font-medium text-slate-900">
               {template.name}
             </span>
-            {template.hasUnpublishedChanges ? (
+            {template.publishState === "never_published" ? (
+              <StatusBadge
+                label="Not published"
+                variant="soft"
+                colorClasses="shrink-0 rounded bg-slate-100 text-slate-600 ring-slate-200"
+              />
+            ) : null}
+            {template.publishState === "edited_since_publish" ? (
               <StatusBadge
                 label="Unpublished changes"
                 variant="soft"

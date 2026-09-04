@@ -12,6 +12,7 @@ vi.mock("@/src/server/auth/session", () => ({ requireSession }));
 import { AUTOMATED_EMAIL_MERGE_FIELDS } from "@as-comms/domain";
 
 import {
+  publishTemplateAction,
   renderPreviewAction,
   saveDraftAction,
 } from "../../app/settings/projects/[projectId]/automated-emails/actions";
@@ -197,6 +198,98 @@ describe("automated email preview", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(JSON.stringify(result.data)).toContain("volunteerId");
+  });
+
+  it("refuses to publish a template with no subject", async () => {
+    const templateId = await createTemplate();
+
+    const result = await publishTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("publish_empty_subject");
+  });
+
+  it("refuses to publish a template with no body", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    const template =
+      await runtime.runtime.automatedEmails.getTemplateById(templateId);
+    if (template === null) throw new Error("Expected template");
+    await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "A subject with nothing under it",
+      draftDoc: { type: "doc", content: [] },
+      baselineUpdatedAt: template.updatedAt,
+    });
+
+    const result = await publishTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("publish_empty_body");
+  });
+
+  it("refuses to publish a draft the renderer would reject", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    const template =
+      await runtime.runtime.automatedEmails.getTemplateById(templateId);
+    if (template === null) throw new Error("Expected template");
+    await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "Training",
+      draftDoc: {
+        type: "doc",
+        content: [
+          paragraph([
+            {
+              type: "text",
+              text: "Start Training",
+              marks: [{ type: "link", attrs: { href: "tel:+14062891988" } }],
+            },
+          ]),
+        ],
+      },
+      baselineUpdatedAt: template.updatedAt,
+    });
+
+    const result = await publishTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("draft_render_invalid_link");
+  });
+
+  it("publishes a draft that has a subject and real copy", async () => {
+    if (runtime === null) throw new Error("Expected test runtime");
+    const templateId = await createTemplate();
+    const template =
+      await runtime.runtime.automatedEmails.getTemplateById(templateId);
+    if (template === null) throw new Error("Expected template");
+    await saveDraftAction({
+      projectId,
+      templateId,
+      draftSubject: "Training reminder for {{firstName}}",
+      draftDoc: {
+        type: "doc",
+        content: [
+          paragraph([
+            { type: "text", text: "Hi " },
+            { type: "mergeField", attrs: { key: "firstName" } },
+          ]),
+        ],
+      },
+      baselineUpdatedAt: template.updatedAt,
+    });
+
+    const result = await publishTemplateAction({ projectId, templateId });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.publishedAt).not.toBeNull();
   });
 
   it("names the offending block for an unsupported node", async () => {
