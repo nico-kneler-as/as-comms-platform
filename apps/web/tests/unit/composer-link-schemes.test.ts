@@ -34,4 +34,17 @@ describe("composer link schemes", () => {
     expect(isAllowedComposerLinkHref("data:text/html,hi")).toBe(false);
     expect(isAllowedComposerLinkHref("file:///tmp/test")).toBe(false);
   });
+
+  it("rejects a missing href instead of throwing", () => {
+    // Tiptap calls this through isAllowedUri with whatever the mark holds; a
+    // link mark that lost its attrs supplies null, which used to crash the
+    // whole automated-email editor page on load.
+    expect(() =>
+      isAllowedComposerLinkHref(null as unknown as string),
+    ).not.toThrow();
+    expect(isAllowedComposerLinkHref(null as unknown as string)).toBe(false);
+    expect(isAllowedComposerLinkHref(undefined as unknown as string)).toBe(
+      false,
+    );
+  });
 });

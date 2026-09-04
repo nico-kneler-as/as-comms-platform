@@ -58,12 +58,47 @@ const templateTargetSchema = z.object({
   templateId: z.string().uuid(),
 });
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Every `attrs` in the document must be an object.
+ *
+ * A client that hands React a ProseMirror node verbatim serializes its
+ * null-prototype `attrs` as the string `"$T"` (a temporary reference), which
+ * silently strips merge-field keys and link hrefs. `z.unknown()` waved that
+ * through and the corruption reached the database, so the boundary now rejects
+ * any document whose attributes are not objects rather than storing it.
+ */
+function hasWellFormedAttributes(node: unknown): boolean {
+  if (Array.isArray(node)) {
+    return node.every(hasWellFormedAttributes);
+  }
+
+  if (!isPlainObject(node)) {
+    return true;
+  }
+
+  if (node.attrs !== undefined && node.attrs !== null && !isPlainObject(node.attrs)) {
+    return false;
+  }
+
+  return (
+    hasWellFormedAttributes(node.content) && hasWellFormedAttributes(node.marks)
+  );
+}
+
 const automatedEmailDocumentSchema = z
   .object({
     type: z.literal("doc"),
     content: z.array(z.unknown()).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine(hasWellFormedAttributes, {
+    message:
+      "Document contains a node whose attributes could not be serialized.",
+  });
 
 const projectTargetSchema = z.object({
   projectId: z.string().trim().min(1),
@@ -584,7 +619,11 @@ export async function saveDraftAction(input: {
   await requireSession();
   const parsed = saveDraftSchema.safeParse(input);
   if (!parsed.success) {
-    return errorResult("validation_error", "The draft could not be saved.");
+    return errorResult(
+      "validation_error",
+      "The draft could not be saved. Your changes are still on screen — try again.",
+      true,
+    );
   }
   const owned = await loadOwnedTemplate(
     parsed.data.projectId,
