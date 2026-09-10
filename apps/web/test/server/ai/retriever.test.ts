@@ -225,6 +225,46 @@ describe("retrieveGrounding", () => {
     expect(bundle.grounding.some((entry) => entry.tier === 2)).toBe(true);
   });
 
+  it("retrieves host tier-3 examples when the project is a connected sub", async () => {
+    if (!runtime || seededInboundId === null) {
+      throw new Error("Expected runtime and seeded inbound.");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "host:forests",
+      projectName: "Forests",
+      projectAlias: "Forests",
+      source: "salesforce",
+      isActive: true,
+    });
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark",
+      projectName: "Whitebark Pines",
+      projectAlias: "Whitebark",
+      source: "salesforce",
+      isActive: true,
+      connectedToProjectId: "host:forests",
+    });
+    await seedProjectKnowledge(runtime, {
+      id: "knowledge:forests:field-kit",
+      projectId: "host:forests",
+      questionSummary: "Current field kit list",
+      issueType: "Trip planning",
+    });
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: seededInboundId,
+    });
+
+    expect(bundle.tier3Entries.map((entry) => entry.id)).toEqual([
+      "knowledge:forests:field-kit",
+    ]);
+    expect(bundle.grounding.some((entry) => entry.tier === 3)).toBe(true);
+  });
+
   it("handles an empty database without throwing", async () => {
     const emptyRuntime = await createStage1WebTestRuntime();
 

@@ -222,6 +222,21 @@ function normalizedPhoneExpression(column: unknown): SQL<string | null> {
 
 export type Stage1Database = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
 
+async function findConnectedHostProjectId(
+  db: Stage1Database,
+  projectId: string,
+): Promise<string | null> {
+  const [projectRow] = await db
+    .select({
+      connectedToProjectId: projectDimensions.connectedToProjectId,
+    })
+    .from(projectDimensions)
+    .where(eq(projectDimensions.projectId, projectId))
+    .limit(1);
+
+  return projectRow?.connectedToProjectId ?? null;
+}
+
 export interface MailchimpCampaignTailStateRecord {
   readonly campaignId: string;
   readonly audienceId: string;
@@ -2344,14 +2359,7 @@ function createStage1RepositoriesInternal(
         // host's curated grounding when a thread is tagged with a connected
         // sub-project's id (sub.ai_knowledge_url is null by Settings invariant
         // — see PR #388).
-        const [projectRow] = await db
-          .select({
-            connectedToProjectId: projectDimensions.connectedToProjectId,
-          })
-          .from(projectDimensions)
-          .where(eq(projectDimensions.projectId, projectId))
-          .limit(1);
-        const hostProjectId = projectRow?.connectedToProjectId ?? null;
+        const hostProjectId = await findConnectedHostProjectId(db, projectId);
         const effectiveScopeKey = hostProjectId ?? projectId;
 
         if (hostProjectId !== null) {
@@ -2575,18 +2583,42 @@ function createStage1RepositoriesInternal(
       },
 
       async getForRetrieval(input) {
+        const hostProjectId = await findConnectedHostProjectId(
+          db,
+          input.projectId,
+        );
+        const projectPredicate =
+          hostProjectId === null
+            ? eq(projectKnowledgeEntries.projectId, input.projectId)
+            : inArray(projectKnowledgeEntries.projectId, [
+                input.projectId,
+                hostProjectId,
+              ]);
+
         const rows = await db
           .select()
           .from(projectKnowledgeEntries)
           .where(
             and(
-              eq(projectKnowledgeEntries.projectId, input.projectId),
+              projectPredicate,
               eq(projectKnowledgeEntries.approvedForAi, true),
             ),
           )
           .orderBy(desc(projectKnowledgeEntries.updatedAt));
 
         const records = rows.map(mapProjectKnowledgeEntryRow);
+        if (
+          hostProjectId !== null &&
+          records.some((record) => record.projectId === hostProjectId)
+        ) {
+          console.debug(
+            JSON.stringify({
+              event: "project_knowledge.fallback",
+              subProjectId: input.projectId,
+              hostProjectId,
+            }),
+          );
+        }
         const rankedByKind = new Map<
           (typeof PROJECT_KNOWLEDGE_KINDS)[number],
           readonly (typeof records)[number][]
@@ -2604,10 +2636,13 @@ function createStage1RepositoriesInternal(
                   issueTypeHint: input.issueTypeHint,
                   keywordsLower: input.keywordsLower,
                 }),
+                isRequestedProject: record.projectId === input.projectId,
               }))
               .sort(
                 (left, right) =>
                   right.score - left.score ||
+                  Number(right.isRequestedProject) -
+                    Number(left.isRequestedProject) ||
                   right.record.updatedAt.localeCompare(left.record.updatedAt) ||
                   left.record.questionSummary.localeCompare(
                     right.record.questionSummary,

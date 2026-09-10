@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { eq } from "drizzle-orm";
 
 import { projectKnowledgeEntries } from "../src/index.js";
-import { createTestStage1Context } from "./helpers.js";
+import { createTestStage1Context, type TestStage1Context } from "./helpers.js";
 
 function buildEntry(input: {
   readonly id: string;
@@ -12,6 +12,8 @@ function buildEntry(input: {
   readonly questionSummary?: string;
   readonly issueType?: string | null;
   readonly approvedForAi?: boolean;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
 }) {
   const now = "2026-04-24T12:00:00.000Z";
 
@@ -31,9 +33,29 @@ function buildEntry(input: {
     sourceEventId: null,
     metadataJson: {},
     lastReviewedAt: null,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
   };
+}
+
+async function seedConnectedProjects(
+  context: TestStage1Context,
+): Promise<void> {
+  await context.repositories.projectDimensions.upsert({
+    projectId: "project:host",
+    projectName: "Host project",
+    projectAlias: "Host",
+    source: "salesforce",
+    isActive: true,
+  });
+  await context.repositories.projectDimensions.upsert({
+    projectId: "project:sub",
+    projectName: "Connected sub-project",
+    projectAlias: null,
+    source: "salesforce",
+    isActive: true,
+    connectedToProjectId: "project:host",
+  });
 }
 
 describe("project_knowledge_entries repository", () => {
@@ -142,6 +164,187 @@ describe("project_knowledge_entries repository", () => {
         "knowledge:snippet",
       ]);
     } finally {
+      await context.dispose();
+    }
+  });
+
+  it("retrieves host rows when a connected sub-project has none of its own", async () => {
+    const context = await createTestStage1Context();
+    const debugSpy = vi
+      .spyOn(console, "debug")
+      .mockImplementation(() => undefined);
+
+    try {
+      await seedConnectedProjects(context);
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:host-only",
+          projectId: "project:host",
+          questionSummary: "Host field kit guidance",
+        }),
+      );
+
+      const rows = await context.repositories.projectKnowledge.getForRetrieval({
+        projectId: "project:sub",
+        issueTypeHint: null,
+        keywordsLower: [],
+        limitPerKind: 3,
+      });
+
+      expect(rows.map((row) => row.id)).toEqual(["knowledge:host-only"]);
+      expect(debugSpy).toHaveBeenCalledWith(
+        '{"event":"project_knowledge.fallback","subProjectId":"project:sub","hostProjectId":"project:host"}',
+      );
+    } finally {
+      debugSpy.mockRestore();
+      await context.dispose();
+    }
+  });
+
+  it("prefers equally relevant sub-project rows over host rows", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await seedConnectedProjects(context);
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:host-equal",
+          projectId: "project:host",
+          questionSummary: "Alpha host guidance",
+          updatedAt: "2026-04-25T12:00:00.000Z",
+        }),
+      );
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:sub-equal",
+          projectId: "project:sub",
+          questionSummary: "Zebra sub-project guidance",
+        }),
+      );
+
+      const rows = await context.repositories.projectKnowledge.getForRetrieval({
+        projectId: "project:sub",
+        issueTypeHint: null,
+        keywordsLower: [],
+        limitPerKind: 3,
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([
+        "knowledge:sub-equal",
+        "knowledge:host-equal",
+      ]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("keeps a more relevant host row ahead of a lower-scoring sub-project row", async () => {
+    const context = await createTestStage1Context();
+
+    try {
+      await seedConnectedProjects(context);
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:host-relevant",
+          projectId: "project:host",
+          issueType: "Training",
+          questionSummary: "Training checklist guidance",
+        }),
+      );
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:sub-lower-score",
+          projectId: "project:sub",
+          questionSummary: "General welcome message",
+        }),
+      );
+
+      const rows = await context.repositories.projectKnowledge.getForRetrieval({
+        projectId: "project:sub",
+        issueTypeHint: "Training",
+        keywordsLower: ["training"],
+        limitPerKind: 3,
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([
+        "knowledge:host-relevant",
+        "knowledge:sub-lower-score",
+      ]);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("preserves host-project retrieval and limits each kind across combined rows", async () => {
+    const context = await createTestStage1Context();
+    const debugSpy = vi
+      .spyOn(console, "debug")
+      .mockImplementation(() => undefined);
+
+    try {
+      await context.repositories.projectDimensions.upsert({
+        projectId: "project:host",
+        projectName: "Host project",
+        projectAlias: "Host",
+        source: "salesforce",
+        isActive: true,
+      });
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:host-one",
+          projectId: "project:host",
+          questionSummary: "Host one",
+        }),
+      );
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:host-two",
+          projectId: "project:host",
+          questionSummary: "Host two",
+        }),
+      );
+
+      const hostRows =
+        await context.repositories.projectKnowledge.getForRetrieval({
+          projectId: "project:host",
+          issueTypeHint: null,
+          keywordsLower: [],
+          limitPerKind: 1,
+        });
+
+      expect(hostRows.map((row) => row.id)).toEqual(["knowledge:host-one"]);
+      expect(debugSpy).not.toHaveBeenCalled();
+
+      await seedConnectedProjects(context);
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:sub-one",
+          projectId: "project:sub",
+          questionSummary: "Sub one",
+        }),
+      );
+      await context.repositories.projectKnowledge.upsert(
+        buildEntry({
+          id: "knowledge:sub-two",
+          projectId: "project:sub",
+          questionSummary: "Sub two",
+        }),
+      );
+
+      const combinedRows =
+        await context.repositories.projectKnowledge.getForRetrieval({
+          projectId: "project:sub",
+          issueTypeHint: null,
+          keywordsLower: [],
+          limitPerKind: 2,
+        });
+
+      expect(combinedRows.map((row) => row.id)).toEqual([
+        "knowledge:sub-one",
+        "knowledge:sub-two",
+      ]);
+    } finally {
+      debugSpy.mockRestore();
       await context.dispose();
     }
   });
