@@ -13,9 +13,10 @@ function renderContextSection(
   content: string | null,
   fallbackLabel: string,
 ): string {
-  return [`[${title}]`, content?.trim().length ? content.trim() : fallbackLabel].join(
-    "\n",
-  );
+  return [
+    `[${title}]`,
+    content?.trim().length ? content.trim() : fallbackLabel,
+  ].join("\n");
 }
 
 function renderRecentEvents(bundle: GroundingBundle): string {
@@ -49,8 +50,12 @@ function renderTier3Entries(bundle: GroundingBundle): string {
       ].filter((value): value is string => value !== null);
       const detailParts = [
         headingParts.join(" "),
-        entry.replyStrategy === null ? null : `  Strategy: ${entry.replyStrategy}`,
-        entry.maskedExample === null ? null : `  Example: ${entry.maskedExample}`,
+        entry.replyStrategy === null
+          ? null
+          : `  Strategy: ${entry.replyStrategy}`,
+        entry.maskedExample === null
+          ? null
+          : `  Example: ${entry.maskedExample}`,
       ].filter((value): value is string => value !== null);
 
       return `• ${detailParts.join("\n")}`;
@@ -62,18 +67,21 @@ function renderChannelInstructionBlock(input: {
   readonly channel: AiDraftRequest["channel"];
   readonly intent: GroundingBundle["intent"];
 }): string {
+  const styleConstraints =
+    "Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.";
+
   if (input.channel === "sms") {
     if (input.intent === "new") {
-      return "Write a brand-new outbound SMS. The operator is starting a new conversation, not replying to anything — do NOT phrase this as a reply. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown. Open with the volunteer's first name when natural. No signature unless the operator asked. Don't include 'Reply STOP to opt out' — Twilio appends compliance language automatically.";
+      return `Write a brand-new outbound SMS. The operator is starting a new conversation, not replying to anything; do NOT phrase this as a reply. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown. Open with the volunteer's first name when natural. No signature unless the operator asked. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${styleConstraints}`;
     }
-    return "Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out' — Twilio appends compliance language automatically.";
+    return `Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${styleConstraints}`;
   }
 
   if (input.intent === "new") {
-    return "You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation — do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Use only the information above and the operator's directive (if any). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.";
+    return `You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation; do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the operator's directive (if any). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
   }
 
-  return "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.";
+  return `You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
 }
 
 function buildSystemPrompt(
@@ -172,8 +180,8 @@ export function buildFillPrompt(
 ): BuiltPrompt {
   const expansionInstruction =
     bundle.intent === "new"
-    ? "Expand the operator's directive into a complete outbound message in the voice and context above. This is a new conversation, not a reply. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X]."
-    : "Expand the operator's directive into a complete reply in the voice and context above. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X].";
+      ? "Expand the operator's directive into a complete outbound message in the voice and context above. This is a new conversation, not a reply. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X]."
+      : "Expand the operator's directive into a complete reply in the voice and context above. If the directive contradicts the project context, produce the draft as directed AND emit a clear marker that the operator should reconfirm. Example marker: [NOTE: directive may conflict with project context, please verify X].";
 
   return {
     system: buildSystemPrompt(bundle, input),

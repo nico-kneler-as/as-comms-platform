@@ -202,9 +202,9 @@ describe("generateAiDraft", () => {
     });
 
     expect(result.mode).toBe("generated");
-    expect(result.warnings.some((warning) => warning.code === "grounding_empty")).toBe(
-      true,
-    );
+    expect(
+      result.warnings.some((warning) => warning.code === "grounding_empty"),
+    ).toBe(true);
   });
 
   it("emits budget_warn without blocking the draft", async () => {
@@ -228,9 +228,95 @@ describe("generateAiDraft", () => {
     );
 
     expect(result.mode).toBe("generated");
-    expect(result.warnings.some((warning) => warning.code === "budget_warn")).toBe(
-      true,
+    expect(
+      result.warnings.some((warning) => warning.code === "budget_warn"),
+    ).toBe(true);
+  });
+
+  it("applies style corrections and reports one advisory warning", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const result = await generateAiDraft(
+      createDeps(runtime, {
+        invokeModel: vi.fn().mockResolvedValue({
+          text: "Here is the field kit — it’s ready.",
+          usage: { inputTokens: 1000, outputTokens: 200 },
+          stopReason: "end_turn",
+          model: "claude-sonnet-4-6",
+        }),
+      }),
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:thread-1-inbound",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
     );
+
+    expect(result.mode).toBe("generated");
+    expect(result.draft).toBe("Here is the field kit, it's ready.");
+    expect(
+      result.warnings.some((warning) => warning.code === "style_adjusted"),
+    ).toBe(true);
+  });
+
+  it("does not emit a style warning for a clean draft", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const result = await generateAiDraft(createDeps(runtime), {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: "event:thread-1-inbound",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+
+    expect(result.mode).toBe("generated");
+    expect(
+      result.warnings.some((warning) => warning.code === "style_adjusted"),
+    ).toBe(false);
+  });
+
+  it("keeps flag-only style findings out of the fallback path", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const result = await generateAiDraft(
+      createDeps(runtime, {
+        invokeModel: vi.fn().mockResolvedValue({
+          text: "Ultimately, this has the logistics detail you need.",
+          usage: { inputTokens: 1000, outputTokens: 200 },
+          stopReason: "end_turn",
+          model: "claude-sonnet-4-6",
+        }),
+      }),
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:thread-1-inbound",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+
+    expect(result.mode).toBe("generated");
+    expect(result.providerStatus).toBe("ready");
+    expect(result.draft).toContain("Ultimately,");
+    expect(
+      result.warnings.some((warning) => warning.code === "style_adjusted"),
+    ).toBe(true);
   });
 
   it("falls back when validation fails", async () => {

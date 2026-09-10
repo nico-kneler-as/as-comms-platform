@@ -22,6 +22,7 @@ export const aiDraftWarningCodeSchema = z.enum([
   "grounding_empty",
   "budget_warn",
   "grounding_contradiction",
+  "style_adjusted",
 ]);
 export type AiDraftWarningCode = z.infer<typeof aiDraftWarningCodeSchema>;
 
