@@ -107,11 +107,12 @@ describe("prompt builder", () => {
 
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
 
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
+      You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.",
       }
     `);
+    expect(prompt.system).toContain("You are drafting a reply to a volunteer.");
     expect(prompt.system).toContain(
-      "You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts.",
+      "Use only the information above and the inbound message (if present). Never invent facts.",
     );
   });
 
@@ -159,7 +160,7 @@ describe("prompt builder", () => {
 
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
 
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
+      You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.",
       }
     `);
   });
@@ -212,7 +213,7 @@ describe("prompt builder", () => {
 
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
 
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
+      You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.",
       }
     `);
   });
@@ -262,7 +263,7 @@ describe("prompt builder", () => {
 
       The examples above are pattern support, not templates. Never copy any example verbatim. Adapt the style and structure to the current volunteer and project context.
 
-      You are drafting a reply to a volunteer. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line — the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body.",
+      You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.",
       }
     `);
   });
@@ -280,7 +281,8 @@ describe("prompt builder", () => {
               issueType: "Trip planning",
               volunteerStage: null,
               questionSummary: "Current field kit list",
-              replyStrategy: "Confirm the latest kit source and invite follow-up.",
+              replyStrategy:
+                "Confirm the latest kit source and invite follow-up.",
               maskedExample:
                 "Hi {NAME}, the latest kit list is in the volunteer portal.",
               sourceKind: "hand_authored",
@@ -371,5 +373,31 @@ describe("prompt builder", () => {
     expect(prompt.system).toContain("target ~140 characters");
     expect(prompt.system).toContain("never exceed 320");
     expect(prompt.system).toContain("Don't include 'Reply STOP to opt out'");
+    expect(prompt.system).toContain("Never use em dashes or en dashes");
+    expect(prompt.system).toContain("Use straight quotes and apostrophes");
+  });
+
+  it("reinforces email concision and style constraints in the final instruction", () => {
+    const prompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+
+    expect(prompt.system).toContain(
+      "Aim for roughly 600 characters across two or three short paragraphs",
+    );
+    expect(prompt.system).toContain("treat roughly 900 as too long");
+    expect(prompt.system).toContain(
+      "genuinely complex logistics answer run longer",
+    );
+    expect(prompt.system).toContain("Never use em dashes or en dashes");
+    expect(prompt.system).toContain("Do not open with 'Great question!'");
+    expect(prompt.system).toContain("Do not use 'It is worth noting that'");
+    expect(prompt.system).toContain("Use straight quotes and apostrophes");
   });
 });

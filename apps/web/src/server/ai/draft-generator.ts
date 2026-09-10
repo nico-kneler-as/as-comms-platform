@@ -13,6 +13,7 @@ import {
   type AiDraftWarning,
 } from "./types";
 import { validateDraft } from "./validator";
+import { applyStylePass } from "./style-pass";
 
 interface ModelDraftResult {
   readonly text: string;
@@ -59,7 +60,10 @@ export interface GenerateAiDraftDeps {
   readonly now?: () => Date;
 }
 
-function buildWarning(code: AiDraftWarning["code"], message: string): AiDraftWarning {
+function buildWarning(
+  code: AiDraftWarning["code"],
+  message: string,
+): AiDraftWarning {
   return {
     code,
     message,
@@ -219,6 +223,31 @@ export async function generateAiDraft(
       });
     }
 
+    const stylePass = applyStylePass(contradiction.cleanedDraft, {
+      targetChars: parsedRequest.channel === "sms" ? 140 : 600,
+      ceilingChars: parsedRequest.channel === "sms" ? 320 : 900,
+    });
+
+    if (stylePass.violations.length > 0) {
+      const countsByCategory = new Map<string, number>();
+
+      for (const violation of stylePass.violations) {
+        countsByCategory.set(
+          violation.category,
+          (countsByCategory.get(violation.category) ?? 0) + 1,
+        );
+      }
+
+      warnings.push(
+        buildWarning(
+          "style_adjusted",
+          `Style pass: ${[...countsByCategory]
+            .map(([category, count]) => `${category} (${String(count)})`)
+            .join(", ")}.`,
+        ),
+      );
+    }
+
     const costEstimateUsd = deps.estimateCostUsd(
       modelResult.usage,
       modelResult.model,
@@ -246,7 +275,7 @@ export async function generateAiDraft(
     }
 
     return {
-      draft: contradiction.cleanedDraft,
+      draft: stylePass.text,
       requestMode: parsedRequest.mode,
       mode: "generated",
       grounding: bundle.grounding,
