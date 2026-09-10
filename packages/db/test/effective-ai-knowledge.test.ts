@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTestStage1Context } from "./helpers.js";
 
@@ -52,6 +52,9 @@ describe("effective AI knowledge accessors", () => {
 
     it("falls back to the host's content when called against a connected sub with no own content", async () => {
       const context = await createTestStage1Context();
+      const debugSpy = vi
+        .spyOn(console, "debug")
+        .mockImplementation(() => undefined);
       try {
         await context.repositories.projectDimensions.upsert({
           projectId: "host:forests",
@@ -95,7 +98,11 @@ describe("effective AI knowledge accessors", () => {
         // walked the connection rather than returning null because the sub's
         // own scope_key has no row.
         expect(entry?.scopeKey).toBe("host:forests");
+        expect(debugSpy).toHaveBeenCalledWith(
+          '{"event":"ai_knowledge.fallback","subProjectId":"sub:beech","hostProjectId":"host:forests"}',
+        );
       } finally {
+        debugSpy.mockRestore();
         await context.dispose();
       }
     });

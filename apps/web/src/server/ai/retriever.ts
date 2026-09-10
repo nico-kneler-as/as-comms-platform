@@ -151,7 +151,8 @@ export async function retrieveGrounding(
           // ai_knowledge_url and inherit the host's bundle. The "effective"
           // lookup transparently hops sub→host so the draft pipeline picks
           // up the curated grounding even when the thread is tagged with
-          // the sub's project_id.
+          // the sub's project_id. Tier-3 past-reply retrieval keeps that raw
+          // id too; its repository lookup applies the same host resolution.
           repositories.aiKnowledge.findEffectiveProjectNotionContent(
             input.projectId,
           ),
