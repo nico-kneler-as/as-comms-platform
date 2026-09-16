@@ -4,6 +4,7 @@ import {
   aiKnowledgeEntrySchema,
   contactSchema,
   projectKnowledgeEntrySchema,
+  volunteerLinkSchema,
 } from "@as-comms/contracts";
 
 export const aiDraftRequestModeSchema = z.enum([
@@ -105,10 +106,22 @@ export const aiThreadContextEventSchema = z.object({
 });
 export type AiThreadContextEvent = z.infer<typeof aiThreadContextEventSchema>;
 
+export const projectDraftFactsSchema = z.object({
+  projectId: z.string().min(1),
+  resolvedFromProjectId: z.string().min(1),
+  projectName: z.string().min(1),
+  projectAlias: z.string().nullable(),
+  senderEmail: z.string().nullable(),
+  operatingContext: z.string(),
+  volunteerLinks: z.array(volunteerLinkSchema),
+});
+export type ProjectDraftFacts = z.infer<typeof projectDraftFactsSchema>;
+
 export const groundingBundleSchema = z.object({
   contact: contactSchema.nullable(),
   generalTraining: aiKnowledgeEntrySchema.nullable(),
   projectContext: aiKnowledgeEntrySchema.nullable(),
+  projectFacts: projectDraftFactsSchema.nullable(),
   tier3Entries: z.array(projectKnowledgeEntrySchema),
   intent: z.enum(["reply", "new"]),
   targetInbound: aiThreadContextEventSchema.nullable(),

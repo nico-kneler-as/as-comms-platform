@@ -24,6 +24,7 @@ import type {
   InboxUnifiedSearchRow,
   InternalNoteRecord,
   PendingComposerOutboundRecord,
+  ProjectDraftFacts,
   ProjectAliasRecord,
   SourceEvidenceCollisionEntry,
   Stage1RepositoryBundle,
@@ -36,7 +37,7 @@ import {
   defineStage2RepositoryBundle,
 } from "@as-comms/domain";
 import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
-import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
+import { aiKnowledgeSourcesSchema, volunteerLinksSchema } from "@as-comms/contracts";
 import {
   audienceCriteriaSchema,
   audienceSnapshotRecordSchema,
@@ -3819,6 +3820,83 @@ function createStage1RepositoriesInternal(
         };
       },
 
+      async findProjectFactsForDraft(
+        projectId,
+      ): Promise<ProjectDraftFacts | null> {
+        const hostProjectId = await findConnectedHostProjectId(db, projectId);
+        const projectIds =
+          hostProjectId === null ? [projectId] : [projectId, hostProjectId];
+        const rows = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            projectName: projectDimensions.projectName,
+            projectAlias: projectDimensions.projectAlias,
+            operatingContext: projectDimensions.aiOperatingContext,
+            volunteerLinks: projectDimensions.volunteerLinks,
+            senderEmail: projectAliases.alias,
+          })
+          .from(projectDimensions)
+          .leftJoin(
+            projectAliases,
+            eq(projectAliases.projectId, projectDimensions.projectId),
+          )
+          .where(inArray(projectDimensions.projectId, projectIds))
+          .orderBy(asc(projectAliases.alias));
+
+        const ownRows = rows.filter((row) => row.projectId === projectId);
+        const own = ownRows[0];
+        if (own === undefined) {
+          return null;
+        }
+
+        const hostRows = rows.filter(
+          (row) => row.projectId === hostProjectId,
+        );
+        const host = hostRows[0];
+        const firstSenderEmail = (
+          projectRows: readonly (typeof rows)[number][],
+        ): string | null =>
+          projectRows.find((row) => row.senderEmail !== null)?.senderEmail ??
+          null;
+        const parseVolunteerLinks = (value: unknown) =>
+          volunteerLinksSchema.safeParse(value).data ?? [];
+
+        const ownLinks = parseVolunteerLinks(own.volunteerLinks);
+        const hostLinks = host === undefined ? [] : parseVolunteerLinks(host.volunteerLinks);
+        const ownSenderEmail = firstSenderEmail(ownRows);
+        const hostSenderEmail = firstSenderEmail(hostRows);
+
+        const fallsBackToHostAlias =
+          own.projectAlias === null && host?.projectAlias !== null && host !== undefined;
+        const fallsBackToHostContext =
+          own.operatingContext === "" &&
+          host !== undefined &&
+          host.operatingContext !== "";
+        const fallsBackToHostLinks = ownLinks.length === 0 && hostLinks.length > 0;
+        const fallsBackToHostSender =
+          ownSenderEmail === null && hostSenderEmail !== null;
+        const didFallBack =
+          fallsBackToHostAlias ||
+          fallsBackToHostContext ||
+          fallsBackToHostLinks ||
+          fallsBackToHostSender;
+
+        return {
+          projectId,
+          resolvedFromProjectId:
+            didFallBack && hostProjectId !== null ? hostProjectId : projectId,
+          projectName: own.projectName,
+          projectAlias: fallsBackToHostAlias
+            ? host.projectAlias
+            : own.projectAlias,
+          senderEmail: fallsBackToHostSender ? hostSenderEmail : ownSenderEmail,
+          operatingContext: fallsBackToHostContext
+            ? host.operatingContext
+            : own.operatingContext,
+          volunteerLinks: fallsBackToHostLinks ? hostLinks : ownLinks,
+        };
+      },
+
       async getAiKnowledgeSources(projectId) {
         const [row] = await db
           .select({
@@ -3927,6 +4005,8 @@ function createStage1RepositoriesInternal(
               aiOperatingContext:
                 values.aiOperatingContext ??
                 projectDimensions.aiOperatingContext,
+              volunteerLinks:
+                values.volunteerLinks ?? projectDimensions.volunteerLinks,
               aiOptimizedSynthesizedAt:
                 values.aiOptimizedSynthesizedAt === undefined
                   ? projectDimensions.aiOptimizedSynthesizedAt

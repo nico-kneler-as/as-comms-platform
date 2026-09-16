@@ -157,6 +157,7 @@ function buildRepositoryBundle(input: {
       listConnectedProjects: () => Promise.resolve([]),
       listAvailableConnectionCandidates: () => Promise.resolve([]),
       findEffectiveAiKnowledge: () => Promise.resolve(null),
+      findProjectFactsForDraft: () => Promise.resolve(null),
       getAiKnowledgeSources: () => Promise.resolve([]),
       setAiKnowledgeSources: () => Promise.resolve(),
       setAiAutoSyncSchedule: () => Promise.resolve(),

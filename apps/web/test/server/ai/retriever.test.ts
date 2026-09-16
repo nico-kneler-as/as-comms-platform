@@ -76,6 +76,78 @@ describe("retrieveGrounding", () => {
     expect(bundle.grounding.some((entry) => entry.tier === 2)).toBe(true);
   });
 
+  it("loads project facts alongside the other initial grounding reads", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    await runtime.context.repositories.projectDimensions.upsert({
+      projectId: "project:whitebark",
+      projectName: "Whitebark Pines",
+      projectAlias: "Whitebark",
+      source: "salesforce",
+      isActive: true,
+      aiOperatingContext: "Field season closes October 1.",
+      volunteerLinks: [
+        {
+          role: "trip_planning",
+          label: "Trip-planning map",
+          url: "https://adventurescientists.org/whitebark-trip-planning",
+        },
+      ],
+    });
+    const now = new Date("2026-09-15T12:00:00.000Z");
+    await runtime.context.settings.aliases.create({
+      id: "alias:whitebark",
+      alias: "whitebark@adventurescientists.org",
+      signature: "",
+      projectId: "project:whitebark",
+      createdAt: now,
+      updatedAt: now,
+      createdBy: null,
+      updatedBy: null,
+    });
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: "project:whitebark",
+      intent: "reply",
+      threadCursor: null,
+    });
+
+    expect(bundle.projectFacts).toMatchObject({
+      projectId: "project:whitebark",
+      projectAlias: "Whitebark",
+      senderEmail: "whitebark@adventurescientists.org",
+      operatingContext: "Field season closes October 1.",
+    });
+    expect(bundle.projectFacts?.volunteerLinks).toEqual([
+      {
+        role: "trip_planning",
+        label: "Trip-planning map",
+        url: "https://adventurescientists.org/whitebark-trip-planning",
+      },
+    ]);
+    expect(bundle.grounding.some((entry) => entry.title === "Whitebark")).toBe(
+      false,
+    );
+  });
+
+  it("returns null project facts when there is no project id", async () => {
+    if (!runtime) {
+      throw new Error("Expected runtime.");
+    }
+
+    const bundle = await retrieveGrounding(runtime.context.repositories, {
+      contactId: "contact:maya",
+      projectId: null,
+      intent: "reply",
+      threadCursor: null,
+    });
+
+    expect(bundle.projectFacts).toBeNull();
+  });
+
   it("retrieves approved tier-3 project knowledge when replying to a specific inbound", async () => {
     if (!runtime) {
       throw new Error("Expected runtime.");
@@ -280,6 +352,7 @@ describe("retrieveGrounding", () => {
         contact: null,
         generalTraining: null,
         projectContext: null,
+        projectFacts: null,
         tier3Entries: [],
         intent: "reply",
         targetInbound: null,

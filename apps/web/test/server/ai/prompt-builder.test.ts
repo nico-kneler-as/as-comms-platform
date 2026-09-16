@@ -41,6 +41,7 @@ const baseBundle: GroundingBundle = {
     createdAt: "2026-04-24T12:00:00.000Z",
     updatedAt: "2026-04-24T12:00:00.000Z",
   },
+  projectFacts: null,
   tier3Entries: [],
   intent: "reply",
   targetInbound: {
@@ -69,6 +70,190 @@ const baseBundle: GroundingBundle = {
 };
 
 describe("prompt builder", () => {
+  it("renders project facts after tier 2 and before tier 3", () => {
+    const prompt = buildDraftPrompt(
+      {
+        ...baseBundle,
+        projectFacts: {
+          projectId: "project:whitebark",
+          resolvedFromProjectId: "project:whitebark",
+          projectName: "Whitebark Pines",
+          projectAlias: "Whitebark",
+          senderEmail: "whitebark@adventurescientists.org",
+          operatingContext: "Field season closes October 1.",
+          volunteerLinks: [
+            {
+              role: "trip_planning",
+              label: "Trip-planning map",
+              url: "https://adventurescientists.org/whitebark-trip-planning",
+            },
+          ],
+        },
+      },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:inbound-1",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+
+    expect(prompt.system.indexOf("[Tier 2 Project Context]")).toBeLessThan(
+      prompt.system.indexOf("[Project Facts]"),
+    );
+    expect(prompt.system.indexOf("[Project Facts]")).toBeLessThan(
+      prompt.system.indexOf("[Tier 3 Canonical Examples]"),
+    );
+    expect(prompt.system).toContain("You are drafting as the Whitebark team.");
+    expect(prompt.system).toContain(
+      "This message is sent from whitebark@adventurescientists.org.",
+    );
+    expect(prompt.system).toContain("Current project status: Field season closes October 1.");
+    expect(prompt.system).toContain(
+      "- Trip-planning map: https://adventurescientists.org/whitebark-trip-planning",
+    );
+  });
+
+  it("omits empty project-fact lines and the whole section when no facts can render", () => {
+    const partialPrompt = buildDraftPrompt(
+      {
+        ...baseBundle,
+        projectFacts: {
+          projectId: "project:whitebark",
+          resolvedFromProjectId: "project:whitebark",
+          projectName: "Whitebark Pines",
+          projectAlias: null,
+          senderEmail: null,
+          operatingContext: "",
+          volunteerLinks: [
+            {
+              role: "homepage",
+              label: "Volunteer homepage",
+              url: "https://adventurescientists.org/whitebark",
+            },
+          ],
+        },
+      },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:inbound-1",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+    expect(partialPrompt.system).toContain("Volunteer-facing links:");
+    expect(partialPrompt.system).not.toContain("You are drafting as the");
+    expect(partialPrompt.system).not.toContain("This message is sent from");
+    expect(partialPrompt.system).not.toContain("Current project status:");
+
+    const emptyPrompt = buildDraftPrompt(
+      {
+        ...baseBundle,
+        projectFacts: {
+          projectId: "project:whitebark",
+          resolvedFromProjectId: "project:whitebark",
+          projectName: "Whitebark Pines",
+          projectAlias: null,
+          senderEmail: null,
+          operatingContext: "",
+          volunteerLinks: [],
+        },
+      },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:inbound-1",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+    const noFactsPrompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: null,
+      intent: "reply",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+    expect(emptyPrompt.system).not.toContain("[Project Facts]");
+    expect(noFactsPrompt.system).not.toContain("[Project Facts]");
+  });
+
+  it("adds conditional link and self-referral rules with the real sender address", () => {
+    const facts = {
+      projectId: "project:whitebark",
+      resolvedFromProjectId: "project:whitebark",
+      projectName: "Whitebark Pines",
+      projectAlias: null,
+      senderEmail: "whitebark@adventurescientists.org",
+      operatingContext: "",
+      volunteerLinks: [
+        {
+          role: "homepage" as const,
+          label: "Volunteer homepage",
+          url: "https://adventurescientists.org/whitebark",
+        },
+      ],
+    };
+    const emailPrompt = buildDraftPrompt(
+      { ...baseBundle, projectFacts: facts },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "reply",
+        threadCursor: "event:inbound-1",
+        repromptIndex: 0,
+        channel: "email",
+        mode: "draft",
+      },
+    );
+    const smsPrompt = buildDraftPrompt(
+      { ...baseBundle, projectFacts: facts },
+      {
+        contactId: "contact:maya",
+        projectId: "project:whitebark",
+        intent: "new",
+        threadCursor: null,
+        repromptIndex: 0,
+        channel: "sms",
+        mode: "draft",
+      },
+    );
+    const noRulesPrompt = buildDraftPrompt(baseBundle, {
+      contactId: "contact:maya",
+      projectId: null,
+      intent: "reply",
+      threadCursor: "event:inbound-1",
+      repromptIndex: 0,
+      channel: "email",
+      mode: "draft",
+    });
+
+    expect(emailPrompt.system).toContain(
+      "The project's volunteer-facing links are listed above.",
+    );
+    expect(emailPrompt.system).toContain(
+      "Never tell the volunteer to email whitebark@adventurescientists.org",
+    );
+    expect(emailPrompt.system).not.toContain("{senderEmail}");
+    expect(smsPrompt.system).toContain(
+      "For SMS, include at most one URL and only when the volunteer asked where to find something.",
+    );
+    expect(noRulesPrompt.system).not.toContain(
+      "The project's volunteer-facing links are listed above.",
+    );
+    expect(noRulesPrompt.system).not.toContain("Never tell the volunteer to email");
+  });
+
   it("builds the draft prompt", () => {
     const prompt = buildDraftPrompt(baseBundle, {
       contactId: "contact:maya",
