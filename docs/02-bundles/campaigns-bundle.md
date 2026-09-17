@@ -37,6 +37,8 @@ Add one-to-many messaging inside the same product foundation, with Email first a
     Supersedes the prior D-045 "Phase A → B → C → D=5B" rollout shape. See PRD [#412](https://github.com/nico-kneler-as/as-comms-platform/issues/412) and [stage-5a-campaigns.md](../04-implementation-specs/stage-5a-campaigns.md).
 - Org senders are first-class alongside project aliases (`D-052`, PRD #577): `org_senders` table represents cross-project or org-scoped senders like `newsletter@`. Composer's sender picker gates audience modes by sender type.
 - Broadcast media assets live on Cloudflare R2 (bucket `as-comms-images`; PRD #567). Composer's image upload path optimizes via `sharp` before storing.
+- Media assets also cover MP3/M4A/WAV/PDF, classified by magic bytes rather than the declared MIME type (`D-059`, PR #704); caps are 10 MB images / 25 MB audio-PDF, and non-images bypass the optimizer.
+- Sent newsletters and HTML broadcasts get a public web version at `/b/<token>` (`D-058`, PRD #703). Plain typed emails do not — eligibility flows through the single shared `isBroadcastWebVersionEligible` rule; do not re-derive the condition at a call site.
 - Mailchimp remains historical + transition-period live ingest scope until Stage 5C decommissions it
 - transition-period live Mailchimp ingest is operational for the cutover window; see PRD #283 and the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 

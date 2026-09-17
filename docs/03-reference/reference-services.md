@@ -11,10 +11,10 @@
 | --- | --- | --- |
 | Gmail | one-to-one email history and live one-to-one transport | Inbox, email replies, historical email import |
 | Salesforce | identity anchor, memberships, journey context, outbound communication metadata | identity, routing, project context, lifecycle events |
-| SimpleTexting | one-to-one SMS/MMS history and live SMS/MMS transport | Inbox SMS, compliance events |
+| Twilio | one-to-one SMS history and live SMS transport, plus SMS broadcasts | Inbox SMS, delivery status, consent events |
 | Mailchimp | historical and transition-period broadcast email ingest | transition-period Broadcasts data |
 | Notion | AI instructions and approved knowledge source | AI knowledge sync/cache |
-| OpenAI | request-time draft generation | AI assistant |
+| Anthropic | request-time draft generation (Claude Sonnet) | AI assistant |
 | Postmark | Broadcasts Email delivery provider (Stage 5A) | Email Broadcasts transport, Broadcast Message Streams, Events Webhook |
 | Railway Postgres | durable persistence | canonical state, projections, replay, audit |
 
@@ -41,7 +41,6 @@
 - especially useful donor docs:
   - `service-gmail.md`
   - `service-salesforce.md`
-  - `service-simpletexting.md`
   - `service-mailchimp.md`
   - `service-notion.md`
   - (Postmark: no donor doc — provider is new in Stage 5A per `D-045`)

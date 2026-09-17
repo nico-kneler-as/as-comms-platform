@@ -46,6 +46,9 @@ Make routing, access, integration health, timezone, and AI knowledge configurati
 - users + roles admin (list users, promote/demote admin, deactivate; surfaced under **Settings → Team** as of 2026-05-10)
 - activation wizard (pick project → aliases → signature → AI Knowledge sources → connected projects → review)
 - AI Knowledge multi-source registry per project (add/remove Notion or web URL with optional per-row label, enable/disable per source, set auto-sync schedule, click Resync, see freshness/last-synthesized-at) — operator-managed end-to-end
+- automated-email templates per project (`D-057`): authoring, draft vs published slots, publish, activate, test send, stable copyable template ID, and the per-template send log — routed under `/settings/projects/[projectId]/automated-emails`
+
+Settings is a multi-page `/settings/*` layout (`D-062`), not the single stacked page the 2026-04-20 entry locked. Add routes; do not stack sections.
 
 ### MVP scope (ship thin)
 

@@ -32,6 +32,9 @@ Add grounded draft generation and reusable memory retrieval without surrendering
 - "Send and save for AI" sets `approved_for_ai=true` directly (per `D-032`); when ≥5 approved-for-AI rows accumulate since the last synthesis, an `ai-knowledge-capture-trigger:{projectId}` job is enqueued with `skipIfHashUnchanged=false` (approved replies are the change signal)
 - there is no separate Tier-3 review/edit/delete UI; the deliberate "Send and save for AI" click is the approval
 - connected sub-projects (per `D-044`) inherit AI Knowledge from their host via the alias-host-hop fallback (PR #405); they do not maintain their own cached doc
+- a `[Project Facts]` block renders between Tier 2 and Tier 3 (`D-061`), carrying shareable links from `ai_knowledge_sources` and sender identity from `project_aliases` straight off the project row — synthesis paraphrases URLs away, so these facts must not be routed through it
+- Tier-3 retrieval resolves a connected sub-project to its host as a union with sub-preference, through the same shared helper Tier 2 uses; two copies of that rule is how the tiers drifted apart
+- voice rules are restated at the point of generation because position is what makes them bind, not novelty of the rule
 
 ## Required Interfaces / Concepts
 

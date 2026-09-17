@@ -9,7 +9,7 @@
 
 - Stage 4 is a **human-in-the-loop drafting assistant**, not an autonomous agent.
 - Implementation is a **single backend orchestration service** living in the restart repo, not a separate microservice.
-- **Anthropic (Claude Sonnet 4.6)** is the draft-generation model provider; OpenAI `text-embedding-3-small` is the embedding provider for tier-5 memory similarity (dual-vendor accepted for MVP). The product app owns orchestration, grounding order, safety, fallback, and explainability.
+- **Anthropic (Claude Sonnet 4.6)** is the draft-generation model provider, and the only model vendor in the pipeline. The OpenAI `text-embedding-3-small` embedding path once planned for tier-5 memory similarity was never implemented and is closed (see the 2026-04-27 decision-log entry); retrieval ranking is deterministic in `projectKnowledge.getForRetrieval`. The product app owns orchestration, grounding order, safety, fallback, and explainability.
 - **Strict grounding order** (top wins): general instructions → project-specific instructions → approved knowledge → current conversation/contact/project context → reusable approved-reply memory.
 - **One LLM call** by default; a second only for reprompt or hard cases. Deterministic fallback is required.
 - Visible grounding is a **product contract**, not a nice-to-have.
@@ -196,14 +196,14 @@ Capture happens only once the send succeeds. Send failure does not capture memor
 
 Stage 4 splits durable state across two tables:
 
-- **`ai_knowledge_entries`** (new table, migration `0020`): tier 1–3 cache — general instructions, project instructions, approved knowledge — populated by the Notion background sync job per `D-008`. Keyed by `(source_provider, source_id)`; each row carries a `scope` column (`global` | `project`) and `scope_key` (NULL for global, `project_id` for project). Discovery matches Notion's `Project ID` property to `project_dimensions.project_id` — there is no per-project URL wiring. See brief `.codex-stage4-notion-knowledge-sync-2026-04-21.md`.
+- **`ai_knowledge_entries`** (new table, migration `0020`): tier 1–3 cache — general instructions, project instructions, approved knowledge — populated by the Notion background sync job per `D-008`. Keyed by `(source_provider, source_id)`; each row carries a `scope` column (`global` | `project`) and `scope_key` (NULL for global, `project_id` for project). Discovery matches Notion's `Project ID` property to `project_dimensions.project_id` — there is no per-project URL wiring.
 - **`aiDurableState`** (existing contract — see [interfaces-core.md](../01-core/interfaces-core.md)): tier 5 reusable memory and operator feedback only. Knowledge does NOT live here.
 
 Expected `kind` values on `aiDurableState`:
 
 | Kind | Content | Source | Lifecycle |
 | --- | --- | --- | --- |
-| `resolved_reply_example` | final sent reply + inbound + grounding summary. PII masked: first names → `{NAME}`, full emails → `{EMAIL}`, phones → `{PHONE}`; product and expedition terms preserved. Paired with an OpenAI `text-embedding-3-small` vector for cosine-similarity retrieval. | post-Composer-send memory capture | append-only; humans may later mark as low-quality; dedup via cosine > 0.95 within the same `project_id`; no TTL |
+| `resolved_reply_example` | final sent reply + inbound + grounding summary. PII masked: first names → `{NAME}`, full emails → `{EMAIL}`, phones → `{PHONE}`; product and expedition terms preserved. Ranked deterministically by `projectKnowledge.getForRetrieval` (the planned embedding vector was never implemented). | post-Composer-send memory capture | append-only; humans may later mark as low-quality; dedup within the same `project_id`; no TTL |
 | `assistant_feedback` | operator feedback on a draft (e.g., "reprompt", "discard", "edited 60%") | inline Composer feedback controls | append-only; used for prompt tuning signals |
 
 ## Fallback Contract

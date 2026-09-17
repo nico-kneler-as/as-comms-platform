@@ -9,7 +9,7 @@
 ## Summary
 
 - narrowed launch-scope completion is Gmail + Salesforce only
-- SimpleTexting remains a valid Stage 1 architecture path, but it is deferred for initial launch acceptance
+- Twilio is the live SMS transport; SMS 1:1 went live 2026-07-01 and SMS broadcasts followed (per `D-056`). SimpleTexting was never adopted and is retired from the matrix.
 - Mailchimp is now an active transition-period live-ingest path until Postmark cutover (Stage 5C per `D-046`); see the [Mailchimp decommission runbook](../runbooks/mailchimp-decommission.md)
 - Historical backfill and live ingest must map into the same normalization path.
 - Keep provider scope narrow and explicit.
@@ -111,7 +111,7 @@
 
 - Salesforce Contact ID conflicts with a weaker email- or phone-based link
 - one normalized email or phone matches multiple contacts
-- task metadata duplicates a Gmail or SimpleTexting transport record
+- task metadata duplicates a Gmail or Twilio transport record
 - routing context from memberships conflicts with provider-supplied activity context
 
 ### Historical backfill vs live ingest
@@ -129,14 +129,14 @@
 
 - Salesforce Contact ID is the strongest identity anchor when present
 - Gmail wins for duplicate collapse of the same outbound one-to-one email
-- SimpleTexting wins as the primary source for the same outbound SMS when transport evidence exists there
+- Twilio wins as the primary source for the same outbound SMS when transport evidence exists there
 
-## SimpleTexting
+## Twilio
 
 Launch-scope note:
 
-- live transition path active until Postmark cutover (Stage 5C per `D-046`)
-- decommission sequence: [mailchimp-decommission.md](../runbooks/mailchimp-decommission.md)
+- live SMS transport since 2026-07-01 (A2P 10DLC port approved); 1:1 and broadcast paths both active
+- capture runs through the `apps/sms-capture` service; consent truth is reconciled from Salesforce `Text_Opt_In__c`
 
 ### Required first pass
 
@@ -179,8 +179,8 @@ Launch-scope note:
 
 ### Tie-break and identity-anchor notes
 
-- SimpleTexting is the primary source for official SMS transport and compliance events
-- Salesforce may support provenance or routing context but should not replace SimpleTexting as the primary transport winner
+- Twilio is the primary source for official SMS transport and delivery-status events
+- Salesforce is the source of truth for SMS consent (`Text_Opt_In__c`) and may support provenance or routing context, but does not replace Twilio as the primary transport winner
 - if the phone number resolves uniquely to a Salesforce-anchored contact, attach it there; otherwise open identity review
 
 ## Mailchimp
