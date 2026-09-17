@@ -142,7 +142,7 @@ describe("Stage 1 worker runtime task registration", () => {
     ).toThrow("Gmail live account must be a volunteers@... address.");
   });
 
-  it("builds the Graphile Worker crontab for Gmail and Salesforce live polling", () => {
+  it("omits the Salesforce reconciliation cron when its handler is not registered", () => {
     const config = readWorkerConfig(launchScopeEnv);
 
     expect(config).not.toBeNull();
@@ -150,7 +150,11 @@ describe("Stage 1 worker runtime task registration", () => {
       throw new Error("Expected launch-scope config to be present.");
     }
 
-    expect(buildWorkerCrontab(config)).toBe(
+    const crontabWithoutSalesforceReconciliation = buildWorkerCrontab(config, {
+      reconcileSalesforceStateRegistered: false,
+    });
+
+    expect(crontabWithoutSalesforceReconciliation).toBe(
       [
         `*/1 * * * * ${pollGmailLiveJobName} ?id=gmail-live-poll&max=1`,
         `*/5 * * * * ${pollSalesforceLiveJobName} ?id=salesforce-live-poll&max=1`,
@@ -167,10 +171,17 @@ describe("Stage 1 worker runtime task registration", () => {
         `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
         `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
-        `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
         "0 11 * * 0 reconcile-superseded-projections ?id=superseded-projections-reconcile&max=1",
         `0 13 * * * ${dailyOpsDigestJobName} ?id=daily-ops-digest&max=1`,
       ].join("\n"),
+    );
+
+    expect(
+      buildWorkerCrontab(config, {
+        reconcileSalesforceStateRegistered: true,
+      }),
+    ).toContain(
+      `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
     );
   });
 

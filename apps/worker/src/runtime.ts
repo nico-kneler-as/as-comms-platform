@@ -173,7 +173,12 @@ function toCronMinuteInterval(providerLabel: string, seconds: number): number {
   return seconds / 60;
 }
 
-export function buildWorkerCrontab(config: WorkerConfig): string {
+export function buildWorkerCrontab(
+  config: WorkerConfig,
+  input?: {
+    readonly reconcileSalesforceStateRegistered?: boolean;
+  },
+): string {
   const gmailMinutes = toCronMinuteInterval(
     "Gmail live",
     config.launchScope.gmail.livePollIntervalSeconds,
@@ -199,7 +204,11 @@ export function buildWorkerCrontab(config: WorkerConfig): string {
     `0 10 * * * ${dedupHistoricalLedgerJobName} ?id=dedup-historical-ledger&max=1`,
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
-    `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
+    ...(input?.reconcileSalesforceStateRegistered === false
+      ? []
+      : [
+          `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
+        ]),
     `0 11 * * 0 ${reconcileSupersededProjectionsJobName} ?id=superseded-projections-reconcile&max=1`,
     `0 13 * * * ${dailyOpsDigestJobName} ?id=daily-ops-digest&max=1`,
   ].join("\n");
@@ -357,7 +366,10 @@ function buildCampaignSendDependencies(input: {
         broadcastWebVersions: {
           ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
           async storeRendered(runId, rendered) {
-            await input.campaigns.broadcastWebVersions.storeRendered(runId, rendered);
+            await input.campaigns.broadcastWebVersions.storeRendered(
+              runId,
+              rendered,
+            );
           },
         },
         auditEvidence: input.repositories.auditEvidence,
@@ -417,9 +429,7 @@ function buildAutomatedEmailSendDependencies(input: {
     (key) => !input.env[key]?.trim(),
   )
     ? null
-    : createSalesforceApiClient(
-        readAutomatedEmailSalesforceConfig(input.env),
-      );
+    : createSalesforceApiClient(readAutomatedEmailSalesforceConfig(input.env));
   const postmarkServerToken = readOptionalTrimmedEnv(
     input.env.POSTMARK_SERVER_TOKEN,
   );
@@ -557,9 +567,11 @@ function buildReconcileSalesforceStateDependencies(input: {
     "SALESFORCE_JWT_PRIVATE_KEY",
   ];
 
-  if (requiredEnvs.some((key) => !input.env[key]?.trim())) {
+  const missingEnvKeys = requiredEnvs.filter((key) => !input.env[key]?.trim());
+
+  if (missingEnvKeys.length > 0) {
     console.warn(
-      "Skipping reconcile-salesforce-state wiring — SF env config incomplete.",
+      `Skipping reconcile-salesforce-state wiring — SF env config incomplete: ${missingEnvKeys.join(", ")}.`,
     );
     return undefined;
   }
@@ -1215,13 +1227,16 @@ export async function startWorker(
     return null;
   }
 
-  const runtime = await createStage1WorkerRuntimeServices(config);
+  const runtime = await createStage1WorkerRuntimeServices(config, { env });
 
   try {
     const runner = await run({
       connectionString: config.connectionString,
       concurrency: config.concurrency,
-      crontab: buildWorkerCrontab(config),
+      crontab: buildWorkerCrontab(config, {
+        reconcileSalesforceStateRegistered:
+          reconcileSalesforceStateJobName in runtime.taskList,
+      }),
       noHandleSignals: true,
       pollInterval: 2000,
       taskList: runtime.taskList,

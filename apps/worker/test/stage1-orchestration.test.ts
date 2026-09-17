@@ -12,19 +12,20 @@ import {
   projectionRebuildBatchPayloadSchema,
   replayBatchPayloadSchema,
   salesforceHistoricalCaptureBatchPayloadSchema,
-  salesforceLiveCaptureBatchPayloadSchema
+  salesforceLiveCaptureBatchPayloadSchema,
 } from "@as-comms/contracts";
+import type { CanonicalEventRecord } from "@as-comms/contracts";
 import { importGmailMboxRecords } from "@as-comms/integrations";
 
 import {
   Stage1NonRetryableJobError,
-  Stage1RetryableJobError
+  Stage1RetryableJobError,
 } from "../src/orchestration/index.js";
 import {
   buildCapturedBatch,
   createEmptyCapturePorts,
   createTestWorkerContext,
-  type TestWorkerContext
+  type TestWorkerContext,
 } from "./helpers.js";
 
 const contactId = "contact:salesforce:003-stage1";
@@ -39,7 +40,7 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
       primaryEmail: "volunteer@example.org",
       primaryPhone: "+15555550123",
       createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z"
+      updatedAt: "2026-01-01T00:00:00.000Z",
     },
     identities: [
       {
@@ -49,7 +50,7 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
         normalizedValue: salesforceContactId,
         isPrimary: true,
         source: "salesforce",
-        verifiedAt: "2026-01-01T00:00:00.000Z"
+        verifiedAt: "2026-01-01T00:00:00.000Z",
       },
       {
         id: `identity:${contactId}:email`,
@@ -58,8 +59,8 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
         normalizedValue: "volunteer@example.org",
         isPrimary: true,
         source: "salesforce",
-        verifiedAt: "2026-01-01T00:00:00.000Z"
-      }
+        verifiedAt: "2026-01-01T00:00:00.000Z",
+      },
     ],
     memberships: [
       {
@@ -71,9 +72,9 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
         role: "volunteer",
         status: "active",
         source: "salesforce",
-        createdAt: "2026-01-01T00:00:00.000Z"
-      }
-    ]
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
   });
 }
 
@@ -99,7 +100,7 @@ function buildSalesforceLivePayload(input: {
     windowStart: "2026-01-05T00:00:00.000Z",
     windowEnd: "2026-01-05T00:05:00.000Z",
     recordIds: [],
-    maxRecords: 100
+    maxRecords: 100,
   });
 }
 
@@ -131,7 +132,7 @@ function buildGmailMessageRecord(
       readonly providerRecordId: string;
     }[];
     readonly crossProviderCollapseKey: string | null;
-  }> = {}
+  }> = {},
 ) {
   return {
     recordType: "message" as const,
@@ -159,22 +160,235 @@ function buildGmailMessageRecord(
       {
         provider: "salesforce" as const,
         providerRecordType: "task_communication",
-        providerRecordId: "task-1"
-      }
+        providerRecordId: "task-1",
+      },
     ],
     crossProviderCollapseKey: "collapse:email:1",
-    ...overrides
+    ...overrides,
   };
 }
 
+function buildProjectionCanonicalEvent(input: {
+  readonly id: string;
+  readonly eventType: CanonicalEventRecord["eventType"];
+  readonly occurredAt: string;
+}): CanonicalEventRecord {
+  const direction = input.eventType.endsWith(".inbound")
+    ? "inbound"
+    : input.eventType.endsWith(".outbound") ||
+        input.eventType === "campaign.email.sent"
+      ? "outbound"
+      : null;
+
+  return {
+    id: input.id,
+    contactId,
+    eventType: input.eventType,
+    channel: input.eventType.startsWith("campaign.")
+      ? "campaign_email"
+      : "email",
+    occurredAt: input.occurredAt,
+    contentFingerprint: null,
+    sourceEvidenceId: `source:${input.id}`,
+    idempotencyKey: `canonical:${input.id}`,
+    provenance: {
+      primaryProvider:
+        input.eventType === "campaign.email.sent" ? "mailchimp" : "gmail",
+      primarySourceEvidenceId: `source:${input.id}`,
+      supportingSourceEvidenceIds: [],
+      winnerReason: "single_source",
+      sourceRecordType:
+        input.eventType === "campaign.email.sent"
+          ? "campaign_activity"
+          : "message",
+      sourceRecordId: input.id,
+      messageKind:
+        input.eventType === "campaign.email.sent" ? null : "one_to_one",
+      campaignRef: null,
+      threadRef: null,
+      direction,
+      notes: null,
+    },
+    reviewState: "clear",
+  };
+}
+
+function buildProjectionRebuildPayload(input: {
+  readonly jobId: string;
+  readonly contactIds?: readonly string[];
+}) {
+  return projectionRebuildBatchPayloadSchema.parse({
+    version: 1,
+    jobId: input.jobId,
+    correlationId: `corr:${input.jobId}`,
+    traceId: null,
+    batchId: `batch:${input.jobId}`,
+    syncStateId: `sync:${input.jobId}`,
+    attempt: 1,
+    maxAttempts: 3,
+    jobType: "projection_rebuild",
+    projection: "inbox",
+    contactIds: input.contactIds ?? [contactId],
+    includeReviewOverlayRefresh: true,
+  });
+}
+
+async function seedProjectionEvents(
+  context: TestWorkerContext,
+  events: readonly CanonicalEventRecord[],
+): Promise<void> {
+  for (const event of events) {
+    await context.repositories.sourceEvidence.append({
+      id: event.sourceEvidenceId,
+      provider: event.provenance.primaryProvider,
+      providerRecordType: event.provenance.sourceRecordType ?? "message",
+      providerRecordId: event.provenance.sourceRecordId ?? event.id,
+      receivedAt: event.occurredAt,
+      occurredAt: event.occurredAt,
+      payloadRef: `payloads/${event.id}.json`,
+      idempotencyKey: `source:${event.id}`,
+      checksum: `checksum:${event.id}`,
+    });
+    await context.repositories.canonicalEvents.upsert(event);
+  }
+}
+
 describe("Stage 1 worker orchestration service", () => {
+  it("rebuilds one inbox row with the same fold result as live per-event apply", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts(),
+    });
+
+    try {
+      await seedContact(context);
+      const events = [
+        buildProjectionCanonicalEvent({
+          id: "evt:projection-equivalence-inbound",
+          eventType: "communication.email.inbound",
+          occurredAt: "2026-05-01T09:00:00.000Z",
+        }),
+        buildProjectionCanonicalEvent({
+          id: "evt:projection-equivalence-outbound",
+          eventType: "communication.email.outbound",
+          occurredAt: "2026-05-01T10:00:00.000Z",
+        }),
+        buildProjectionCanonicalEvent({
+          id: "evt:projection-equivalence-campaign",
+          eventType: "campaign.email.sent",
+          occurredAt: "2026-05-01T11:00:00.000Z",
+        }),
+      ];
+
+      await seedProjectionEvents(context, events);
+
+      let expected = null;
+      for (const event of events) {
+        expected = await context.normalization.applyInboxProjection({
+          canonicalEvent: event,
+          snippet:
+            event.eventType === "campaign.email.sent"
+              ? "Campaign email sent"
+              : "",
+        });
+      }
+
+      await context.repositories.inboxProjection.deleteByContactId(contactId);
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        buildProjectionRebuildPayload({ jobId: "projection-equivalence" }),
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      expect(rebuilt.rebuiltInboxRows).toBe(1);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toEqual(expected);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toMatchObject({
+        lastInboundAt: "2026-05-01T09:00:00.000Z",
+        lastOutboundAt: "2026-05-01T11:00:00.000Z",
+        lastEventType: "campaign.email.sent",
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("leaves the existing inbox row unchanged when a projection seed load fails mid-contact", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts(),
+    });
+
+    try {
+      await seedContact(context);
+      const events = [
+        buildProjectionCanonicalEvent({
+          id: "evt:projection-failure-inbound",
+          eventType: "communication.email.inbound",
+          occurredAt: "2026-05-02T09:00:00.000Z",
+        }),
+        buildProjectionCanonicalEvent({
+          id: "evt:projection-failure-outbound",
+          eventType: "communication.email.outbound",
+          occurredAt: "2026-05-02T10:00:00.000Z",
+        }),
+      ];
+      const [firstEvent] = events;
+
+      if (firstEvent === undefined) {
+        throw new Error("Expected at least one seeded projection event.");
+      }
+
+      const existing = {
+        contactId,
+        bucket: "Opened" as const,
+        needsFollowUp: true,
+        hasUnresolved: false,
+        lastInboundAt: "2026-04-01T09:00:00.000Z",
+        lastOutboundAt: "2026-04-01T10:00:00.000Z",
+        lastActivityAt: "2026-04-01T10:00:00.000Z",
+        snippet: "Original projection",
+        archivedAt: null,
+        lastCanonicalEventId: firstEvent.id,
+        lastEventType: "communication.email.inbound" as const,
+      };
+
+      await seedProjectionEvents(context, events);
+      await context.repositories.inboxProjection.upsert(existing);
+
+      const listByEntity = vi.spyOn(
+        context.repositories.auditEvidence,
+        "listByEntity",
+      );
+      listByEntity.mockImplementation((input) => {
+        if (input.entityId === events[1]?.id) {
+          return Promise.reject(new Error("Injected projection seed failure"));
+        }
+
+        return Promise.resolve([]);
+      });
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        buildProjectionRebuildPayload({ jobId: "projection-failure" }),
+      );
+
+      expect(rebuilt.outcome).toBe("failed");
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toEqual(existing);
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("replays Gmail historical mbox-backed records through the same idempotent normalization path", async () => {
     const capture = createEmptyCapturePorts();
     capture.gmail.captureHistoricalBatch = () =>
       Promise.reject(
         new Error(
-          "Gmail historical replay should load .mbox-backed records from payloadRef, not call the capture port."
-        )
+          "Gmail historical replay should load .mbox-backed records from payloadRef, not call the capture port.",
+        ),
       );
 
     const context = await createTestWorkerContext({ capture });
@@ -208,7 +422,7 @@ Second replay proof message.
         liveAccount: "volunteers@adventurescientists.org",
         projectInboxAliases: ["orcas@adventurescientists.org"],
         projectInboxAliasOverride: "orcas@adventurescientists.org",
-        receivedAt: "2026-01-03T00:05:00.000Z"
+        receivedAt: "2026-01-03T00:05:00.000Z",
       });
       const gmailRecord = importedRecords[1];
 
@@ -217,7 +431,8 @@ Second replay proof message.
         throw new Error("Expected a second imported Gmail historical record.");
       }
 
-      const first = await context.ingest.ingestGmailHistoricalRecord(gmailRecord);
+      const first =
+        await context.ingest.ingestGmailHistoricalRecord(gmailRecord);
 
       const replay = await context.orchestration.runReplayBatch(
         replayBatchPayloadSchema.parse({
@@ -239,10 +454,10 @@ Second replay proof message.
           items: [
             {
               providerRecordType: "message",
-              providerRecordId: gmailRecord.recordId
-            }
-          ]
-        })
+              providerRecordId: gmailRecord.recordId,
+            },
+          ],
+        }),
       );
 
       expect(first.outcome).toBe("normalized");
@@ -257,9 +472,15 @@ Second replay proof message.
 
       expect(replay.summary.normalized).toBe(0);
       expect(replay.summary.duplicate).toBe(1);
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
-      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
+      await expect(
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.inboxProjection.countAll(),
+      ).resolves.toBe(1);
     } finally {
       await rm(tempDirectory, { recursive: true, force: true });
       await context.dispose();
@@ -271,17 +492,19 @@ Second replay proof message.
     capture.gmail.captureHistoricalBatch = () =>
       Promise.reject(
         new Error(
-          "Gmail historical replay should load .mbox-backed records from payloadRef, not call the capture port."
-        )
+          "Gmail historical replay should load .mbox-backed records from payloadRef, not call the capture port.",
+        ),
       );
 
     const context = await createTestWorkerContext({
       capture,
       gmailHistoricalReplay: {
-        projectInboxAliases: []
-      }
+        projectInboxAliases: [],
+      },
     });
-    const tempDirectory = await mkdtemp(join(tmpdir(), "stage1-gmail-alias-drift-"));
+    const tempDirectory = await mkdtemp(
+      join(tmpdir(), "stage1-gmail-alias-drift-"),
+    );
     const mboxPath = join(tempDirectory, "alias-drift-proof.mbox");
     const mboxText = `From MAILER-DAEMON Fri Jan 03 00:00:00 2026
 Date: Fri, 03 Jan 2026 00:00:00 +0000
@@ -296,14 +519,16 @@ Alias drift outbound message.
     try {
       await seedContact(context);
       await writeFile(mboxPath, mboxText, "utf8");
-      const importedRecord = (await importGmailMboxRecords({
-        mboxText,
-        mboxPath,
-        capturedMailbox: "volunteers@adventurescientists.org",
-        liveAccount: "volunteers@adventurescientists.org",
-        projectInboxAliases: ["project-antarctica@example.org"],
-        receivedAt: "2026-01-03T00:05:00.000Z"
-      }))[0];
+      const importedRecord = (
+        await importGmailMboxRecords({
+          mboxText,
+          mboxPath,
+          capturedMailbox: "volunteers@adventurescientists.org",
+          liveAccount: "volunteers@adventurescientists.org",
+          projectInboxAliases: ["project-antarctica@example.org"],
+          receivedAt: "2026-01-03T00:05:00.000Z",
+        })
+      )[0];
 
       expect(importedRecord).toBeDefined();
       if (importedRecord === undefined) {
@@ -314,10 +539,11 @@ Alias drift outbound message.
         recordType: "message",
         direction: "outbound",
         normalizedParticipantEmails: ["volunteer@example.org"],
-        projectInboxAlias: "project-antarctica@example.org"
+        projectInboxAlias: "project-antarctica@example.org",
       });
 
-      const first = await context.ingest.ingestGmailHistoricalRecord(importedRecord);
+      const first =
+        await context.ingest.ingestGmailHistoricalRecord(importedRecord);
       const replay = await context.orchestration.runReplayBatch(
         replayBatchPayloadSchema.parse({
           version: 1,
@@ -338,15 +564,17 @@ Alias drift outbound message.
           items: [
             {
               providerRecordType: "message",
-              providerRecordId: importedRecord.recordId
-            }
-          ]
-        })
+              providerRecordId: importedRecord.recordId,
+            },
+          ],
+        }),
       );
 
       expect(first.outcome).toBe("normalized");
       if (first.outcome !== "normalized") {
-        throw new Error("Expected the seeded Gmail historical import to normalize.");
+        throw new Error(
+          "Expected the seeded Gmail historical import to normalize.",
+        );
       }
 
       expect(replay.outcome).toBe("succeeded");
@@ -356,7 +584,9 @@ Alias drift outbound message.
 
       expect(replay.summary.normalized).toBe(0);
       expect(replay.summary.duplicate).toBe(1);
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
+      await expect(
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(1);
     } finally {
       await rm(tempDirectory, { recursive: true, force: true });
       await context.dispose();
@@ -367,7 +597,8 @@ Alias drift outbound message.
     let observedMaxRecords: number | null = null;
     const capture = createEmptyCapturePorts();
     capture.salesforce.captureLiveBatch = (payload) => {
-      const parsedPayload = salesforceLiveCaptureBatchPayloadSchema.parse(payload);
+      const parsedPayload =
+        salesforceLiveCaptureBatchPayloadSchema.parse(payload);
       observedMaxRecords = parsedPayload.maxRecords;
 
       const replayedRecords = [
@@ -389,8 +620,8 @@ Alias drift outbound message.
           routing: {
             required: false,
             projectId: null,
-            expeditionId: null
-          }
+            expeditionId: null,
+          },
         },
         {
           recordType: "lifecycle_milestone" as const,
@@ -411,8 +642,8 @@ Alias drift outbound message.
             projectId: "project-stage1",
             expeditionId: "expedition-stage1",
             projectName: "Project Stage 1",
-            expeditionName: "Expedition Stage 1"
-          }
+            expeditionName: "Expedition Stage 1",
+          },
         },
         {
           recordType: "contact_snapshot" as const,
@@ -434,10 +665,10 @@ Alias drift outbound message.
               expeditionId: "expedition-stage1",
               expeditionName: "Expedition Stage 1",
               role: "volunteer",
-              status: "active"
-            }
-          ]
-        }
+              status: "active",
+            },
+          ],
+        },
       ];
 
       return Promise.resolve(
@@ -446,8 +677,8 @@ Alias drift outbound message.
             parsedPayload.maxRecords < replayedRecords.length
               ? "salesforce:cursor:more"
               : null,
-          checkpoint: "salesforce:checkpoint:replay"
-        })
+          checkpoint: "salesforce:checkpoint:replay",
+        }),
       );
     };
 
@@ -476,10 +707,10 @@ Alias drift outbound message.
           items: [
             {
               providerRecordType: "lifecycle_milestone",
-              providerRecordId: "membership-stage1"
-            }
-          ]
-        })
+              providerRecordId: "membership-stage1",
+            },
+          ],
+        }),
       );
 
       expect(observedMaxRecords).toBe(1000);
@@ -489,7 +720,7 @@ Alias drift outbound message.
       }
 
       await expect(
-        context.repositories.projectDimensions.listByIds(["project-stage1"])
+        context.repositories.projectDimensions.listByIds(["project-stage1"]),
       ).resolves.toEqual([
         {
           projectId: "project-stage1",
@@ -508,23 +739,25 @@ Alias drift outbound message.
           aiOptimizedLastCheckedAt: null,
           aiOptimizedInputHash: null,
           salesforceDeletedAt: null,
-          salesforceReconciledAt: null
-        }
+          salesforceReconciledAt: null,
+        },
       ]);
       await expect(
-        context.repositories.expeditionDimensions.listByIds(["expedition-stage1"])
+        context.repositories.expeditionDimensions.listByIds([
+          "expedition-stage1",
+        ]),
       ).resolves.toEqual([
         {
           expeditionId: "expedition-stage1",
           projectId: "project-stage1",
           expeditionName: "Expedition Stage 1",
-          source: "salesforce"
-        }
+          source: "salesforce",
+        },
       ]);
       await expect(
         context.repositories.salesforceEventContext.listBySourceEvidenceIds([
-          "source-evidence:salesforce:lifecycle_milestone:membership-stage1%3AExpedition_Members__c.CreatedDate"
-        ])
+          "source-evidence:salesforce:lifecycle_milestone:membership-stage1%3AExpedition_Members__c.CreatedDate",
+        ]),
       ).resolves.toEqual([
         {
           sourceEvidenceId:
@@ -532,8 +765,8 @@ Alias drift outbound message.
           salesforceContactId,
           projectId: "project-stage1",
           expeditionId: "expedition-stage1",
-          sourceField: "Expedition_Members__c.CreatedDate"
-        }
+          sourceField: "Expedition_Members__c.CreatedDate",
+        },
       ]);
     } finally {
       await context.dispose();
@@ -551,7 +784,8 @@ Alias drift outbound message.
         buildCapturedBatch([
           {
             recordType: "lifecycle_milestone" as const,
-            recordId: "membership-stage1-fresh:Expedition_Members__c.CreatedDate",
+            recordId:
+              "membership-stage1-fresh:Expedition_Members__c.CreatedDate",
             salesforceContactId: freshSalesforceContactId,
             milestone: "signed_up" as const,
             sourceField: "Expedition_Members__c.CreatedDate" as const,
@@ -568,8 +802,8 @@ Alias drift outbound message.
               projectId: "project-stage1-fresh",
               expeditionId: "expedition-stage1-fresh",
               projectName: "Project Stage 1 Fresh",
-              expeditionName: "Expedition Stage 1 Fresh"
-            }
+              expeditionName: "Expedition Stage 1 Fresh",
+            },
           },
           {
             recordType: "task_communication" as const,
@@ -591,8 +825,8 @@ Alias drift outbound message.
               projectId: "project-stage1-fresh",
               expeditionId: "expedition-stage1-fresh",
               projectName: "Project Stage 1 Fresh",
-              expeditionName: "Expedition Stage 1 Fresh"
-            }
+              expeditionName: "Expedition Stage 1 Fresh",
+            },
           },
           {
             recordType: "contact_snapshot" as const,
@@ -614,11 +848,11 @@ Alias drift outbound message.
                 expeditionId: "expedition-stage1-fresh",
                 expeditionName: "Expedition Stage 1 Fresh",
                 role: null,
-                status: "active"
-              }
-            ]
-          }
-        ])
+                status: "active",
+              },
+            ],
+          },
+        ]),
       );
     };
 
@@ -645,10 +879,10 @@ Alias drift outbound message.
           items: [
             {
               providerRecordType: "lifecycle_milestone",
-              providerRecordId: "membership-stage1-fresh"
-            }
-          ]
-        })
+              providerRecordId: "membership-stage1-fresh",
+            },
+          ],
+        }),
       );
 
       expect(replay.outcome).toBe("succeeded");
@@ -658,30 +892,30 @@ Alias drift outbound message.
 
       await expect(
         context.repositories.contacts.findBySalesforceContactId(
-          freshSalesforceContactId
-        )
+          freshSalesforceContactId,
+        ),
       ).resolves.toMatchObject({
         id: freshContactId,
-        displayName: "Fresh Salesforce Volunteer"
+        displayName: "Fresh Salesforce Volunteer",
       });
       await expect(
-        context.repositories.canonicalEvents.listByContactId(freshContactId)
+        context.repositories.canonicalEvents.listByContactId(freshContactId),
       ).resolves.toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             eventType: "lifecycle.signed_up",
-            contactId: freshContactId
+            contactId: freshContactId,
           }),
           expect.objectContaining({
             eventType: "communication.email.outbound",
-            contactId: freshContactId
-          })
-        ])
+            contactId: freshContactId,
+          }),
+        ]),
       );
       await expect(
         context.repositories.identityResolutionQueue.listOpenByReasonCode(
-          "identity_missing_anchor"
-        )
+          "identity_missing_anchor",
+        ),
       ).resolves.toEqual([]);
     } finally {
       await context.dispose();
@@ -695,8 +929,8 @@ Alias drift outbound message.
       Promise.resolve(
         buildCapturedBatch([gmailRecord], {
           nextCursor: "gmail:cursor:rebuild",
-          checkpoint: "gmail:checkpoint:rebuild"
-        })
+          checkpoint: "gmail:checkpoint:rebuild",
+        }),
       );
 
     const context = await createTestWorkerContext({ capture });
@@ -704,27 +938,28 @@ Alias drift outbound message.
     try {
       await seedContact(context);
 
-      const ingested = await context.orchestration.runGmailHistoricalCaptureBatch(
-        gmailHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:gmail:rebuild-source",
-          correlationId: "corr:gmail:rebuild-source",
-          traceId: null,
-          batchId: "batch:gmail:rebuild-source",
-          syncStateId: "sync:gmail:rebuild-source",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "gmail",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: "2026-01-01T00:00:00.000Z",
-          windowEnd: "2026-01-02T00:00:00.000Z",
-          recordIds: [gmailRecord.recordId],
-          maxRecords: 10
-        })
-      );
+      const ingested =
+        await context.orchestration.runGmailHistoricalCaptureBatch(
+          gmailHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:gmail:rebuild-source",
+            correlationId: "corr:gmail:rebuild-source",
+            traceId: null,
+            batchId: "batch:gmail:rebuild-source",
+            syncStateId: "sync:gmail:rebuild-source",
+            attempt: 1,
+            maxAttempts: 3,
+            provider: "gmail",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: "2026-01-01T00:00:00.000Z",
+            windowEnd: "2026-01-02T00:00:00.000Z",
+            recordIds: [gmailRecord.recordId],
+            maxRecords: 10,
+          }),
+        );
 
       expect(ingested.outcome).toBe("succeeded");
       if (ingested.outcome !== "succeeded") {
@@ -732,10 +967,10 @@ Alias drift outbound message.
       }
 
       await context.client.exec(
-        `delete from contact_timeline_projection where contact_id = '${contactId}'`
+        `delete from contact_timeline_projection where contact_id = '${contactId}'`,
       );
       await context.client.exec(
-        `delete from contact_inbox_projection where contact_id = '${contactId}'`
+        `delete from contact_inbox_projection where contact_id = '${contactId}'`,
       );
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
@@ -751,8 +986,8 @@ Alias drift outbound message.
           jobType: "projection_rebuild",
           projection: "all",
           contactIds: [contactId],
-          includeReviewOverlayRefresh: true
-        })
+          includeReviewOverlayRefresh: true,
+        }),
       );
 
       expect(rebuilt.outcome).toBe("succeeded");
@@ -767,26 +1002,30 @@ Alias drift outbound message.
       expect(rebuilt.syncState.scope).toBe("orchestration");
       expect(rebuilt.syncState.provider).toBeNull();
 
-      const rebuiltAgain = await context.orchestration.runProjectionRebuildBatch(
-        projectionRebuildBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:projection:rebuild:2",
-          correlationId: "corr:projection:rebuild:2",
-          traceId: null,
-          batchId: "batch:projection:rebuild:2",
-          syncStateId: "sync:projection:rebuild:2",
-          attempt: 1,
-          maxAttempts: 3,
-          jobType: "projection_rebuild",
-          projection: "all",
-          contactIds: [contactId],
-          includeReviewOverlayRefresh: true
-        })
-      );
+      const rebuiltAgain =
+        await context.orchestration.runProjectionRebuildBatch(
+          projectionRebuildBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:projection:rebuild:2",
+            correlationId: "corr:projection:rebuild:2",
+            traceId: null,
+            batchId: "batch:projection:rebuild:2",
+            syncStateId: "sync:projection:rebuild:2",
+            attempt: 1,
+            maxAttempts: 3,
+            jobType: "projection_rebuild",
+            projection: "all",
+            contactIds: [contactId],
+            includeReviewOverlayRefresh: true,
+          }),
+        );
 
       expect(rebuiltAgain.outcome).toBe("succeeded");
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
-      const inbox = await context.repositories.inboxProjection.findByContactId(contactId);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(1);
+      const inbox =
+        await context.repositories.inboxProjection.findByContactId(contactId);
       expect(inbox?.snippet).toBe("Following up by email");
       expect(inbox?.bucket).toBe("Opened");
     } finally {
@@ -804,9 +1043,9 @@ Alias drift outbound message.
             ...gmailRecord,
             recordId: "gmail-live-message-1",
             occurredAt: "2026-01-02T00:00:00.000Z",
-            receivedAt: "2026-01-02T00:01:00.000Z"
-          }
-        ])
+            receivedAt: "2026-01-02T00:01:00.000Z",
+          },
+        ]),
       );
 
     const context = await createTestWorkerContext({ capture });
@@ -831,7 +1070,7 @@ Alias drift outbound message.
         windowStart: "2026-01-02T00:00:00.000Z",
         windowEnd: "2026-01-02T00:02:00.000Z",
         recordIds: ["gmail-live-message-1"],
-        maxRecords: 10
+        maxRecords: 10,
       });
 
       expect(result.outcome).toBe("succeeded");
@@ -851,18 +1090,21 @@ Alias drift outbound message.
   it("dead-letters Salesforce live ingest after five consecutive failures and resets after success", async () => {
     const capture = createEmptyCapturePorts();
     capture.salesforce.captureLiveBatch = () => {
-      throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+      throw new Stage1RetryableJobError(
+        "Temporary Salesforce live capture failure.",
+      );
     };
 
     const context = await createTestWorkerContext({ capture });
 
     try {
       for (let attempt = 1; attempt <= 4; attempt += 1) {
-        const result = await context.orchestration.runSalesforceLiveCaptureBatch(
-          buildSalesforceLivePayload({
-            syncStateId: "sync:salesforce:live:consecutive-failures"
-          })
-        );
+        const result =
+          await context.orchestration.runSalesforceLiveCaptureBatch(
+            buildSalesforceLivePayload({
+              syncStateId: "sync:salesforce:live:consecutive-failures",
+            }),
+          );
 
         expect(result.outcome).toBe("failed");
         if (result.outcome !== "failed") {
@@ -875,15 +1117,18 @@ Alias drift outbound message.
         expect(result.syncState.deadLetterCount).toBe(0);
       }
 
-      const deadLettered = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:consecutive-failures"
-        })
-      );
+      const deadLettered =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:consecutive-failures",
+          }),
+        );
 
       expect(deadLettered.outcome).toBe("failed");
       if (deadLettered.outcome !== "failed") {
-        throw new Error("Expected fifth Salesforce live failure to dead-letter.");
+        throw new Error(
+          "Expected fifth Salesforce live failure to dead-letter.",
+        );
       }
 
       expect(deadLettered.failure.disposition).toBe("dead_letter");
@@ -891,12 +1136,14 @@ Alias drift outbound message.
       expect(deadLettered.syncState.consecutiveFailureCount).toBe(5);
       expect(deadLettered.syncState.deadLetterCount).toBe(1);
 
-      capture.salesforce.captureLiveBatch = () => Promise.resolve(buildCapturedBatch([]));
-      const recovered = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:reset-after-success"
-        })
-      );
+      capture.salesforce.captureLiveBatch = () =>
+        Promise.resolve(buildCapturedBatch([]));
+      const recovered =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:reset-after-success",
+          }),
+        );
 
       expect(recovered.outcome).toBe("succeeded");
       if (recovered.outcome !== "succeeded") {
@@ -906,13 +1153,16 @@ Alias drift outbound message.
       expect(recovered.syncState.consecutiveFailureCount).toBe(0);
 
       capture.salesforce.captureLiveBatch = () => {
-        throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+        throw new Stage1RetryableJobError(
+          "Temporary Salesforce live capture failure.",
+        );
       };
-      const afterReset = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:reset-after-success"
-        })
-      );
+      const afterReset =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:reset-after-success",
+          }),
+        );
 
       expect(afterReset.outcome).toBe("failed");
       if (afterReset.outcome !== "failed") {
@@ -928,7 +1178,9 @@ Alias drift outbound message.
   it("dead-letters Salesforce live ingest across 5 distinct sync_state rows (per-poll fresh UUIDs)", async () => {
     const capture = createEmptyCapturePorts();
     capture.salesforce.captureLiveBatch = () => {
-      throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+      throw new Stage1RetryableJobError(
+        "Temporary Salesforce live capture failure.",
+      );
     };
 
     const context = await createTestWorkerContext({ capture });
@@ -936,11 +1188,12 @@ Alias drift outbound message.
     try {
       for (let attempt = 1; attempt <= 4; attempt += 1) {
         const pollId = String(attempt);
-        const result = await context.orchestration.runSalesforceLiveCaptureBatch(
-          buildSalesforceLivePayload({
-            syncStateId: `sync:salesforce:live:poll-${pollId}`
-          })
-        );
+        const result =
+          await context.orchestration.runSalesforceLiveCaptureBatch(
+            buildSalesforceLivePayload({
+              syncStateId: `sync:salesforce:live:poll-${pollId}`,
+            }),
+          );
 
         expect(result.outcome).toBe("failed");
         if (result.outcome !== "failed") {
@@ -953,11 +1206,12 @@ Alias drift outbound message.
         expect(result.syncState.deadLetterCount).toBe(0);
       }
 
-      const deadLettered = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:poll-5"
-        })
-      );
+      const deadLettered =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:poll-5",
+          }),
+        );
 
       expect(deadLettered.outcome).toBe("failed");
       if (deadLettered.outcome !== "failed") {
@@ -969,12 +1223,14 @@ Alias drift outbound message.
       expect(deadLettered.syncState.consecutiveFailureCount).toBe(5);
       expect(deadLettered.syncState.deadLetterCount).toBe(1);
 
-      capture.salesforce.captureLiveBatch = () => Promise.resolve(buildCapturedBatch([]));
-      const recovered = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:poll-reset-success"
-        })
-      );
+      capture.salesforce.captureLiveBatch = () =>
+        Promise.resolve(buildCapturedBatch([]));
+      const recovered =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:poll-reset-success",
+          }),
+        );
 
       expect(recovered.outcome).toBe("succeeded");
       if (recovered.outcome !== "succeeded") {
@@ -984,17 +1240,22 @@ Alias drift outbound message.
       expect(recovered.syncState.consecutiveFailureCount).toBe(0);
 
       capture.salesforce.captureLiveBatch = () => {
-        throw new Stage1RetryableJobError("Temporary Salesforce live capture failure.");
+        throw new Stage1RetryableJobError(
+          "Temporary Salesforce live capture failure.",
+        );
       };
-      const afterReset = await context.orchestration.runSalesforceLiveCaptureBatch(
-        buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:live:poll-reset-failure"
-        })
-      );
+      const afterReset =
+        await context.orchestration.runSalesforceLiveCaptureBatch(
+          buildSalesforceLivePayload({
+            syncStateId: "sync:salesforce:live:poll-reset-failure",
+          }),
+        );
 
       expect(afterReset.outcome).toBe("failed");
       if (afterReset.outcome !== "failed") {
-        throw new Error("Expected Salesforce live failure after cross-poll reset.");
+        throw new Error(
+          "Expected Salesforce live failure after cross-poll reset.",
+        );
       }
 
       expect(afterReset.failure.disposition).toBe("retryable");
@@ -1021,13 +1282,13 @@ Alias drift outbound message.
       threadId: "thread-live-duplicate-1",
       rfc822MessageId: "<gmail-live-duplicate-1@example.org>",
       supportingRecords: [],
-      crossProviderCollapseKey: null
+      crossProviderCollapseKey: null,
     });
     const capture = createEmptyCapturePorts();
     capture.gmail.captureLiveBatch = () =>
       Promise.resolve(buildCapturedBatch([gmailRecord]));
     const logger = {
-      info: vi.fn()
+      info: vi.fn(),
     };
 
     const context = await createTestWorkerContext({ capture, logger });
@@ -1052,10 +1313,11 @@ Alias drift outbound message.
         windowStart: "2026-01-01T23:52:00.000Z",
         windowEnd: "2026-01-02T00:02:00.000Z",
         recordIds: ["gmail-live-duplicate-1"],
-        maxRecords: 10
+        maxRecords: 10,
       };
 
-      const first = await context.orchestration.runGmailLiveCaptureBatch(payload);
+      const first =
+        await context.orchestration.runGmailLiveCaptureBatch(payload);
 
       expect(first.outcome).toBe("succeeded");
       if (first.outcome !== "succeeded") {
@@ -1063,19 +1325,27 @@ Alias drift outbound message.
       }
       expect(first.summary.normalized).toBe(1);
       expect(first.summary.duplicate).toBe(0);
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
-      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
       await expect(
-        context.repositories.identityResolutionQueue.listOpenByContactId(contactId)
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.inboxProjection.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByContactId(
+          contactId,
+        ),
       ).resolves.toEqual([]);
       await expect(
-        context.repositories.routingReviewQueue.listOpenByContactId(contactId)
+        context.repositories.routingReviewQueue.listOpenByContactId(contactId),
       ).resolves.toEqual([]);
 
       const second = await context.orchestration.runGmailLiveCaptureBatch({
         ...payload,
-        syncStateId: "sync:gmail:live:duplicate:second"
+        syncStateId: "sync:gmail:live:duplicate:second",
       });
 
       expect(second.outcome).toBe("succeeded");
@@ -1084,21 +1354,29 @@ Alias drift outbound message.
       }
       expect(second.summary.normalized).toBe(0);
       expect(second.summary.duplicate).toBe(1);
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(1);
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(1);
-      await expect(context.repositories.inboxProjection.countAll()).resolves.toBe(1);
       await expect(
-        context.repositories.identityResolutionQueue.listOpenByContactId(contactId)
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.inboxProjection.countAll(),
+      ).resolves.toBe(1);
+      await expect(
+        context.repositories.identityResolutionQueue.listOpenByContactId(
+          contactId,
+        ),
       ).resolves.toEqual([]);
       await expect(
-        context.repositories.routingReviewQueue.listOpenByContactId(contactId)
+        context.repositories.routingReviewQueue.listOpenByContactId(contactId),
       ).resolves.toEqual([]);
       expect(logger.info).toHaveBeenCalledTimes(1);
       expect(logger.info).toHaveBeenCalledWith({
         event: "gmail_live.duplicate_skip",
         messageId: "gmail-live-duplicate-1",
         windowStart: "2026-01-01T23:52:00.000Z",
-        windowEnd: "2026-01-02T00:02:00.000Z"
+        windowEnd: "2026-01-02T00:02:00.000Z",
       });
     } finally {
       await context.dispose();
@@ -1125,7 +1403,7 @@ Alias drift outbound message.
       threadId: "thread-dsn-match-1",
       rfc822MessageId: "<gmail-dsn-match-1@example.org>",
       supportingRecords: [],
-      crossProviderCollapseKey: null
+      crossProviderCollapseKey: null,
     });
     const capture = createEmptyCapturePorts();
     capture.gmail.captureLiveBatch = () =>
@@ -1160,11 +1438,11 @@ Alias drift outbound message.
         attachmentMetadata: [],
         gmailThreadId: null,
         inReplyToRfc822: null,
-        attemptedAt: "2026-01-02T00:01:00.000Z"
+        attemptedAt: "2026-01-02T00:01:00.000Z",
       });
       await context.repositories.pendingOutbounds.markSentRfc822(
         "pending:dsn-match",
-        "<sent-match-1@example.org>"
+        "<sent-match-1@example.org>",
       );
 
       const result = await context.orchestration.runGmailLiveCaptureBatch({
@@ -1184,7 +1462,7 @@ Alias drift outbound message.
         windowStart: "2026-01-02T00:00:00.000Z",
         windowEnd: "2026-01-02T00:03:00.000Z",
         recordIds: ["gmail-dsn-match-1"],
-        maxRecords: 10
+        maxRecords: 10,
       });
 
       expect(result.outcome).toBe("succeeded");
@@ -1193,30 +1471,30 @@ Alias drift outbound message.
       }
       expect(result.summary.deferred).toBe(1);
       await expect(
-        context.repositories.canonicalEvents.countAll()
+        context.repositories.canonicalEvents.countAll(),
       ).resolves.toBe(0);
       await expect(
         context.repositories.sourceEvidence.findById(
-          "source-evidence:gmail:gmail.dsn:gmail-dsn-match-1"
-        )
+          "source-evidence:gmail:gmail.dsn:gmail-dsn-match-1",
+        ),
       ).resolves.toMatchObject({
         providerRecordType: "gmail.dsn",
-        providerRecordId: "gmail-dsn-match-1"
+        providerRecordId: "gmail-dsn-match-1",
       });
       await expect(
-        context.repositories.pendingOutbounds.findByFingerprint("fp:dsn-match")
+        context.repositories.pendingOutbounds.findByFingerprint("fp:dsn-match"),
       ).resolves.toMatchObject({
         id: "pending:dsn-match",
         status: "failed",
         failedReason: "bounce",
         failedDetail:
-          "550 5.1.1 The email account that you tried to reach does not exist."
+          "550 5.1.1 The email account that you tried to reach does not exist.",
       });
       expect(logger.info).toHaveBeenCalledWith({
         event: "composer.bounce.matched",
         pendingOutboundId: "pending:dsn-match",
         dsnOriginalMessageId: "<sent-match-1@example.org>",
-        dsnGmailMessageId: "gmail-dsn-match-1"
+        dsnGmailMessageId: "gmail-dsn-match-1",
       });
     } finally {
       await context.dispose();
@@ -1242,7 +1520,7 @@ Alias drift outbound message.
       threadId: "thread-dsn-unmatched-1",
       rfc822MessageId: "<gmail-dsn-unmatched-1@example.org>",
       supportingRecords: [],
-      crossProviderCollapseKey: null
+      crossProviderCollapseKey: null,
     });
     const capture = createEmptyCapturePorts();
     capture.gmail.captureLiveBatch = () =>
@@ -1270,7 +1548,7 @@ Alias drift outbound message.
         windowStart: "2026-01-02T00:03:00.000Z",
         windowEnd: "2026-01-02T00:05:00.000Z",
         recordIds: ["gmail-dsn-unmatched-1"],
-        maxRecords: 10
+        maxRecords: 10,
       });
 
       expect(result.outcome).toBe("succeeded");
@@ -1279,21 +1557,21 @@ Alias drift outbound message.
       }
       expect(result.summary.deferred).toBe(1);
       await expect(
-        context.repositories.canonicalEvents.countAll()
+        context.repositories.canonicalEvents.countAll(),
       ).resolves.toBe(0);
       expect(logger.info).toHaveBeenCalledWith({
         event: "composer.bounce.unmatched",
         dsnOriginalMessageId: "<missing-match@example.org>",
-        dsnGmailMessageId: "gmail-dsn-unmatched-1"
+        dsnGmailMessageId: "gmail-dsn-unmatched-1",
       });
     } finally {
       await context.dispose();
     }
   });
 
-  it("clears stale inbox rows during projection rebuild when a contact has no queue-driving communication", async () => {
+  it("keeps the existing inbox row when a contact has no queue-driving communication", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1308,7 +1586,7 @@ Alias drift outbound message.
         occurredAt: "2026-01-01T00:00:00.000Z",
         payloadRef: "payloads/salesforce/task-stale-1.json",
         idempotencyKey: "salesforce:task-stale-1",
-        checksum: "checksum:task-stale-1"
+        checksum: "checksum:task-stale-1",
       });
 
       await context.repositories.canonicalEvents.upsert({
@@ -1332,9 +1610,9 @@ Alias drift outbound message.
           threadRef: null,
           direction: "outbound",
           inboxProjectionExclusionReason: "forwarded_chain",
-          notes: null
+          notes: null,
         },
-        reviewState: "clear"
+        reviewState: "clear",
       });
 
       await context.repositories.timelineProjection.upsert({
@@ -1347,7 +1625,7 @@ Alias drift outbound message.
         summary: "Outbound email sent",
         channel: "email",
         primaryProvider: "salesforce",
-        reviewState: "clear"
+        reviewState: "clear",
       });
 
       await context.repositories.inboxProjection.upsert({
@@ -1361,7 +1639,7 @@ Alias drift outbound message.
         snippet: "Outbound email sent",
         archivedAt: null,
         lastCanonicalEventId: "evt:stale-salesforce-task",
-        lastEventType: "communication.email.outbound"
+        lastEventType: "communication.email.outbound",
       });
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
@@ -1377,8 +1655,8 @@ Alias drift outbound message.
           jobType: "projection_rebuild",
           projection: "all",
           contactIds: [contactId],
-          includeReviewOverlayRefresh: true
-        })
+          includeReviewOverlayRefresh: true,
+        }),
       );
 
       expect(rebuilt.outcome).toBe("succeeded");
@@ -1389,8 +1667,12 @@ Alias drift outbound message.
       expect(rebuilt.rebuiltTimelineRows).toBe(1);
       expect(rebuilt.rebuiltInboxRows).toBe(0);
       await expect(
-        context.repositories.inboxProjection.findByContactId(contactId)
-      ).resolves.toBeNull();
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toMatchObject({
+        contactId,
+        bucket: "Opened",
+        lastCanonicalEventId: "evt:stale-salesforce-task",
+      });
     } finally {
       await context.dispose();
     }
@@ -1398,7 +1680,7 @@ Alias drift outbound message.
 
   it("rebuilds inbox state from Gmail events even when historical provenance messageKind is null", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1413,7 +1695,7 @@ Alias drift outbound message.
         occurredAt: "2026-03-31T17:31:38.000Z",
         payloadRef: "payloads/gmail/gmail-null-kind-1.json",
         idempotencyKey: "gmail:null-kind-1",
-        checksum: "checksum:gmail:null-kind-1"
+        checksum: "checksum:gmail:null-kind-1",
       });
 
       await context.repositories.canonicalEvents.upsert({
@@ -1436,9 +1718,9 @@ Alias drift outbound message.
           campaignRef: null,
           threadRef: null,
           direction: null,
-          notes: null
+          notes: null,
         },
-        reviewState: "clear"
+        reviewState: "clear",
       });
 
       await context.repositories.gmailMessageDetails.upsert({
@@ -1459,7 +1741,7 @@ Alias drift outbound message.
         bodyTextPreview:
           "Thanks for checking in. I'll claim some hexes soon. A piece of feedback on the web map...",
         capturedMailbox: "pnwbio@adventurescientists.org",
-        projectInboxAlias: "pnwbio@adventurescientists.org"
+        projectInboxAlias: "pnwbio@adventurescientists.org",
       });
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
@@ -1475,8 +1757,8 @@ Alias drift outbound message.
           jobType: "projection_rebuild",
           projection: "all",
           contactIds: [contactId],
-          includeReviewOverlayRefresh: true
-        })
+          includeReviewOverlayRefresh: true,
+        }),
       );
 
       expect(rebuilt.outcome).toBe("succeeded");
@@ -1486,21 +1768,21 @@ Alias drift outbound message.
 
       expect(rebuilt.rebuiltInboxRows).toBe(1);
       await expect(
-        context.repositories.inboxProjection.findByContactId(contactId)
+        context.repositories.inboxProjection.findByContactId(contactId),
       ).resolves.toMatchObject({
         contactId,
         bucket: "New",
         lastInboundAt: "2026-03-31T17:31:38.000Z",
-        lastCanonicalEventId: "evt:gmail-historical-null-kind"
+        lastCanonicalEventId: "evt:gmail-historical-null-kind",
       });
     } finally {
       await context.dispose();
     }
   });
 
-  it("excludes internal-only forwarded staff messages during projection rebuild", async () => {
+  it("does not delete an inbox row for an internal-only forwarded message during projection rebuild", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1515,7 +1797,7 @@ Alias drift outbound message.
         occurredAt: "2026-03-31T18:00:00.000Z",
         payloadRef: "payloads/gmail/gmail-internal-only-1.json",
         idempotencyKey: "gmail:internal-only-1",
-        checksum: "checksum:gmail:internal-only-1"
+        checksum: "checksum:gmail:internal-only-1",
       });
 
       await context.repositories.canonicalEvents.upsert({
@@ -1538,9 +1820,9 @@ Alias drift outbound message.
           campaignRef: null,
           threadRef: null,
           direction: null,
-          notes: null
+          notes: null,
         },
-        reviewState: "clear"
+        reviewState: "clear",
       });
 
       await context.repositories.inboxProjection.upsert({
@@ -1554,7 +1836,7 @@ Alias drift outbound message.
         snippet: "Staff forwarded this internally.",
         archivedAt: null,
         lastCanonicalEventId: "evt:gmail-internal-only",
-        lastEventType: "communication.email.outbound"
+        lastEventType: "communication.email.outbound",
       });
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
@@ -1570,8 +1852,8 @@ Alias drift outbound message.
           jobType: "projection_rebuild",
           projection: "all",
           contactIds: [contactId],
-          includeReviewOverlayRefresh: true
-        })
+          includeReviewOverlayRefresh: true,
+        }),
       );
 
       expect(rebuilt.outcome).toBe("succeeded");
@@ -1581,8 +1863,12 @@ Alias drift outbound message.
 
       expect(rebuilt.rebuiltInboxRows).toBe(0);
       await expect(
-        context.repositories.inboxProjection.findByContactId(contactId)
-      ).resolves.toBeNull();
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toMatchObject({
+        contactId,
+        bucket: "Opened",
+        lastCanonicalEventId: "evt:gmail-internal-only",
+      });
     } finally {
       await context.dispose();
     }
@@ -1590,7 +1876,7 @@ Alias drift outbound message.
 
   it("stores forwarded inbound events while leaving queue-driving inbox state untouched", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1606,15 +1892,14 @@ Alias drift outbound message.
           snippet: "Baseline outbound message",
           snippetClean: "Baseline outbound message",
           bodyTextPreview: "Baseline outbound message",
-          crossProviderCollapseKey: "collapse:baseline:outbound"
-        })
+          crossProviderCollapseKey: "collapse:baseline:outbound",
+        }),
       );
 
       expect(baseline.outcome).toBe("normalized");
 
-      const inboxBefore = await context.repositories.inboxProjection.findByContactId(
-        contactId
-      );
+      const inboxBefore =
+        await context.repositories.inboxProjection.findByContactId(contactId);
 
       const forwarded = await context.ingest.ingestGmailHistoricalRecord(
         buildGmailMessageRecord({
@@ -1628,40 +1913,50 @@ Alias drift outbound message.
           snippet: "Forwarded volunteer intro",
           snippetClean: "Forwarded volunteer intro",
           bodyTextPreview: "Please meet this volunteer.",
-          crossProviderCollapseKey: "collapse:forwarded:inbound"
-        })
+          crossProviderCollapseKey: "collapse:forwarded:inbound",
+        }),
       );
 
       expect(forwarded.outcome).toBe("normalized");
-      if (forwarded.outcome !== "normalized" || forwarded.canonicalEventId === null) {
-        throw new Error("Expected forwarded inbound ingest to persist a canonical event.");
+      if (
+        forwarded.outcome !== "normalized" ||
+        forwarded.canonicalEventId === null
+      ) {
+        throw new Error(
+          "Expected forwarded inbound ingest to persist a canonical event.",
+        );
       }
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(2);
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(2);
+      await expect(
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(2);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(2);
 
-      const canonicalEvent = await context.repositories.canonicalEvents.findById(
-        forwarded.canonicalEventId
-      );
-      const timelineRow = await context.repositories.timelineProjection.findByCanonicalEventId(
-        forwarded.canonicalEventId
-      );
-      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
-        contactId
-      );
+      const canonicalEvent =
+        await context.repositories.canonicalEvents.findById(
+          forwarded.canonicalEventId,
+        );
+      const timelineRow =
+        await context.repositories.timelineProjection.findByCanonicalEventId(
+          forwarded.canonicalEventId,
+        );
+      const inboxAfter =
+        await context.repositories.inboxProjection.findByContactId(contactId);
 
       expect(canonicalEvent?.provenance).toMatchObject({
-        inboxProjectionExclusionReason: "forwarded_chain"
+        inboxProjectionExclusionReason: "forwarded_chain",
       });
       expect(timelineRow).toMatchObject({
         canonicalEventId: forwarded.canonicalEventId,
-        eventType: "communication.email.inbound"
+        eventType: "communication.email.inbound",
       });
       expect(inboxAfter).toEqual(inboxBefore);
       expect(inboxAfter).toMatchObject({
         bucket: "Opened",
         lastInboundAt: null,
         lastOutboundAt: "2026-03-31T17:00:00.000Z",
-        lastActivityAt: "2026-03-31T17:00:00.000Z"
+        lastActivityAt: "2026-03-31T17:00:00.000Z",
       });
     } finally {
       await context.dispose();
@@ -1670,7 +1965,7 @@ Alias drift outbound message.
 
   it("stores forwarded outbound events while leaving inbox recency and bucket state unchanged", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1688,15 +1983,14 @@ Alias drift outbound message.
           snippet: "Can you confirm the training time?",
           snippetClean: "Can you confirm the training time?",
           bodyTextPreview: "Can you confirm the training time?",
-          crossProviderCollapseKey: "collapse:baseline:inbound"
-        })
+          crossProviderCollapseKey: "collapse:baseline:inbound",
+        }),
       );
 
       expect(baseline.outcome).toBe("normalized");
 
-      const inboxBefore = await context.repositories.inboxProjection.findByContactId(
-        contactId
-      );
+      const inboxBefore =
+        await context.repositories.inboxProjection.findByContactId(contactId);
 
       const forwarded = await context.ingest.ingestGmailHistoricalRecord(
         buildGmailMessageRecord({
@@ -1713,42 +2007,52 @@ Alias drift outbound message.
             "---------- Forwarded message ---------",
             "From: Someone Else <someone@example.org>",
             "",
-            "Looping this along for reference."
+            "Looping this along for reference.",
           ].join("\n"),
-          crossProviderCollapseKey: "collapse:forwarded:outbound"
-        })
+          crossProviderCollapseKey: "collapse:forwarded:outbound",
+        }),
       );
 
       expect(forwarded.outcome).toBe("normalized");
-      if (forwarded.outcome !== "normalized" || forwarded.canonicalEventId === null) {
-        throw new Error("Expected forwarded outbound ingest to persist a canonical event.");
+      if (
+        forwarded.outcome !== "normalized" ||
+        forwarded.canonicalEventId === null
+      ) {
+        throw new Error(
+          "Expected forwarded outbound ingest to persist a canonical event.",
+        );
       }
-      await expect(context.repositories.canonicalEvents.countAll()).resolves.toBe(2);
-      await expect(context.repositories.timelineProjection.countAll()).resolves.toBe(2);
+      await expect(
+        context.repositories.canonicalEvents.countAll(),
+      ).resolves.toBe(2);
+      await expect(
+        context.repositories.timelineProjection.countAll(),
+      ).resolves.toBe(2);
 
-      const canonicalEvent = await context.repositories.canonicalEvents.findById(
-        forwarded.canonicalEventId
-      );
-      const timelineRow = await context.repositories.timelineProjection.findByCanonicalEventId(
-        forwarded.canonicalEventId
-      );
-      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
-        contactId
-      );
+      const canonicalEvent =
+        await context.repositories.canonicalEvents.findById(
+          forwarded.canonicalEventId,
+        );
+      const timelineRow =
+        await context.repositories.timelineProjection.findByCanonicalEventId(
+          forwarded.canonicalEventId,
+        );
+      const inboxAfter =
+        await context.repositories.inboxProjection.findByContactId(contactId);
 
       expect(canonicalEvent?.provenance).toMatchObject({
-        inboxProjectionExclusionReason: "forwarded_chain"
+        inboxProjectionExclusionReason: "forwarded_chain",
       });
       expect(timelineRow).toMatchObject({
         canonicalEventId: forwarded.canonicalEventId,
-        eventType: "communication.email.outbound"
+        eventType: "communication.email.outbound",
       });
       expect(inboxAfter).toEqual(inboxBefore);
       expect(inboxAfter).toMatchObject({
         bucket: "New",
         lastInboundAt: "2026-03-31T17:00:00.000Z",
         lastOutboundAt: null,
-        lastActivityAt: "2026-03-31T17:00:00.000Z"
+        lastActivityAt: "2026-03-31T17:00:00.000Z",
       });
     } finally {
       await context.dispose();
@@ -1757,7 +2061,7 @@ Alias drift outbound message.
 
   it("continues to let non-forwarded Gmail messages drive inbox projection state", async () => {
     const context = await createTestWorkerContext({
-      capture: createEmptyCapturePorts()
+      capture: createEmptyCapturePorts(),
     });
 
     try {
@@ -1773,8 +2077,8 @@ Alias drift outbound message.
           snippet: "Baseline outbound message",
           snippetClean: "Baseline outbound message",
           bodyTextPreview: "Baseline outbound message",
-          crossProviderCollapseKey: "collapse:non-forwarded:baseline"
-        })
+          crossProviderCollapseKey: "collapse:non-forwarded:baseline",
+        }),
       );
 
       expect(baseline.outcome).toBe("normalized");
@@ -1791,28 +2095,35 @@ Alias drift outbound message.
           snippet: "This is a normal inbox-driving reply.",
           snippetClean: "This is a normal inbox-driving reply.",
           bodyTextPreview: "This is a normal inbox-driving reply.",
-          crossProviderCollapseKey: "collapse:non-forwarded:inbound"
-        })
+          crossProviderCollapseKey: "collapse:non-forwarded:inbound",
+        }),
       );
 
       expect(inbound.outcome).toBe("normalized");
-      if (inbound.outcome !== "normalized" || inbound.canonicalEventId === null) {
-        throw new Error("Expected normal inbound ingest to persist a canonical event.");
+      if (
+        inbound.outcome !== "normalized" ||
+        inbound.canonicalEventId === null
+      ) {
+        throw new Error(
+          "Expected normal inbound ingest to persist a canonical event.",
+        );
       }
 
-      const canonicalEvent = await context.repositories.canonicalEvents.findById(
-        inbound.canonicalEventId
-      );
-      const inboxAfter = await context.repositories.inboxProjection.findByContactId(
-        contactId
-      );
+      const canonicalEvent =
+        await context.repositories.canonicalEvents.findById(
+          inbound.canonicalEventId,
+        );
+      const inboxAfter =
+        await context.repositories.inboxProjection.findByContactId(contactId);
 
-      expect(canonicalEvent?.provenance.inboxProjectionExclusionReason).toBeUndefined();
+      expect(
+        canonicalEvent?.provenance.inboxProjectionExclusionReason,
+      ).toBeUndefined();
       expect(inboxAfter).toMatchObject({
         bucket: "New",
         lastInboundAt: "2026-03-31T18:00:00.000Z",
         lastActivityAt: "2026-03-31T18:00:00.000Z",
-        snippet: "This is a normal inbox-driving reply."
+        snippet: "This is a normal inbox-driving reply.",
       });
     } finally {
       await context.dispose();
@@ -1826,8 +2137,8 @@ Alias drift outbound message.
       Promise.resolve(
         buildCapturedBatch([gmailRecord], {
           nextCursor: "gmail:cursor:parity",
-          checkpoint: "gmail:checkpoint:parity"
-        })
+          checkpoint: "gmail:checkpoint:parity",
+        }),
       );
 
     const context = await createTestWorkerContext({ capture });
@@ -1835,27 +2146,28 @@ Alias drift outbound message.
     try {
       await seedContact(context);
 
-      const ingested = await context.orchestration.runGmailHistoricalCaptureBatch(
-        gmailHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:gmail:parity-source",
-          correlationId: "corr:gmail:parity-source",
-          traceId: null,
-          batchId: "batch:gmail:parity-source",
-          syncStateId: "sync:gmail:parity-source",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "gmail",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: "2026-01-01T00:00:00.000Z",
-          windowEnd: "2026-01-02T00:00:00.000Z",
-          recordIds: [gmailRecord.recordId],
-          maxRecords: 10
-        })
-      );
+      const ingested =
+        await context.orchestration.runGmailHistoricalCaptureBatch(
+          gmailHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:gmail:parity-source",
+            correlationId: "corr:gmail:parity-source",
+            traceId: null,
+            batchId: "batch:gmail:parity-source",
+            syncStateId: "sync:gmail:parity-source",
+            attempt: 1,
+            maxAttempts: 3,
+            provider: "gmail",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: "2026-01-01T00:00:00.000Z",
+            windowEnd: "2026-01-02T00:00:00.000Z",
+            recordIds: [gmailRecord.recordId],
+            maxRecords: 10,
+          }),
+        );
 
       expect(ingested.outcome).toBe("succeeded");
       await context.persistence.saveSyncState({
@@ -1874,7 +2186,7 @@ Alias drift outbound message.
         consecutiveFailureCount: 0,
         leaseOwner: null,
         heartbeatAt: null,
-        deadLetterCount: 0
+        deadLetterCount: 0,
       });
 
       const parity = await context.orchestration.runParityCheckBatch(
@@ -1894,8 +2206,8 @@ Alias drift outbound message.
           sampleSize: 10,
           queueParityThresholdPercent: 100,
           timelineParityThresholdPercent: 100,
-          evaluatedAt: "2026-01-02T02:00:00.000Z"
-        })
+          evaluatedAt: "2026-01-02T02:00:00.000Z",
+        }),
       );
 
       expect(parity.outcome).toBe("succeeded");
@@ -1927,8 +2239,8 @@ Alias drift outbound message.
           providers: ["gmail"],
           evaluatedAt: "2026-01-02T02:30:00.000Z",
           requireHistoricalBackfillComplete: true,
-          requireLiveIngestCoverage: true
-        })
+          requireLiveIngestCoverage: true,
+        }),
       );
 
       expect(cutover.outcome).toBe("succeeded");
@@ -1940,10 +2252,16 @@ Alias drift outbound message.
       expect(cutover.syncState.scope).toBe("orchestration");
       expect(cutover.syncState.provider).toBeNull();
       expect(cutover.syncSnapshots).toHaveLength(1);
-      expect(cutover.syncSnapshots[0]?.historicalBackfill?.status).toBe("succeeded");
+      expect(cutover.syncSnapshots[0]?.historicalBackfill?.status).toBe(
+        "succeeded",
+      );
       expect(cutover.syncSnapshots[0]?.liveIngest?.status).toBe("succeeded");
-      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP95Seconds).toBe(60);
-      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP99Seconds).toBe(120);
+      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP95Seconds).toBe(
+        60,
+      );
+      expect(cutover.syncSnapshots[0]?.liveIngest?.freshnessP99Seconds).toBe(
+        120,
+      );
       expect(cutover.discrepancies).toEqual([]);
     } finally {
       await context.dispose();
@@ -1957,36 +2275,37 @@ Alias drift outbound message.
         buildCapturedBatch([
           {
             recordType: "audience_mutation" as const,
-            recordId: "audience-1"
-          }
-        ])
+            recordId: "audience-1",
+          },
+        ]),
       );
     const deferredContext = await createTestWorkerContext({
-      capture: deferredCapture
+      capture: deferredCapture,
     });
 
     try {
-      const deferred = await deferredContext.orchestration.runMailchimpHistoricalCaptureBatch(
-        mailchimpHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:mailchimp:deferred:1",
-          correlationId: "corr:mailchimp:deferred:1",
-          traceId: null,
-          batchId: "batch:mailchimp:deferred:1",
-          syncStateId: "sync:mailchimp:deferred:1",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "mailchimp",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: "2026-01-01T00:00:00.000Z",
-          windowEnd: "2026-01-02T00:00:00.000Z",
-          recordIds: [],
-          maxRecords: 10
-        })
-      );
+      const deferred =
+        await deferredContext.orchestration.runMailchimpHistoricalCaptureBatch(
+          mailchimpHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:mailchimp:deferred:1",
+            correlationId: "corr:mailchimp:deferred:1",
+            traceId: null,
+            batchId: "batch:mailchimp:deferred:1",
+            syncStateId: "sync:mailchimp:deferred:1",
+            attempt: 1,
+            maxAttempts: 3,
+            provider: "mailchimp",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: "2026-01-01T00:00:00.000Z",
+            windowEnd: "2026-01-02T00:00:00.000Z",
+            recordIds: [],
+            maxRecords: 10,
+          }),
+        );
 
       expect(deferred.outcome).toBe("succeeded");
       if (deferred.outcome !== "succeeded") {
@@ -2004,31 +2323,32 @@ Alias drift outbound message.
       throw new Stage1RetryableJobError("Temporary Gmail capture failure.");
     };
     const retryableContext = await createTestWorkerContext({
-      capture: retryableCapture
+      capture: retryableCapture,
     });
 
     try {
-      const retryable = await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
-        gmailHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:gmail:retryable:1",
-          correlationId: "corr:gmail:retryable:1",
-          traceId: null,
-          batchId: "batch:gmail:retryable:1",
-          syncStateId: "sync:gmail:retryable:1",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "gmail",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: null,
-          windowEnd: null,
-          recordIds: [],
-          maxRecords: 10
-        })
-      );
+      const retryable =
+        await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
+          gmailHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:gmail:retryable:1",
+            correlationId: "corr:gmail:retryable:1",
+            traceId: null,
+            batchId: "batch:gmail:retryable:1",
+            syncStateId: "sync:gmail:retryable:1",
+            attempt: 1,
+            maxAttempts: 3,
+            provider: "gmail",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: null,
+            windowEnd: null,
+            recordIds: [],
+            maxRecords: 10,
+          }),
+        );
 
       expect(retryable.outcome).toBe("failed");
       if (retryable.outcome !== "failed") {
@@ -2038,27 +2358,28 @@ Alias drift outbound message.
       expect(retryable.failure.disposition).toBe("retryable");
       expect(retryable.syncState.status).toBe("failed");
 
-      const deadLetter = await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
-        gmailHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:gmail:dead-letter:1",
-          correlationId: "corr:gmail:dead-letter:1",
-          traceId: null,
-          batchId: "batch:gmail:dead-letter:1",
-          syncStateId: "sync:gmail:dead-letter:1",
-          attempt: 3,
-          maxAttempts: 3,
-          provider: "gmail",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: null,
-          windowEnd: null,
-          recordIds: [],
-          maxRecords: 10
-        })
-      );
+      const deadLetter =
+        await retryableContext.orchestration.runGmailHistoricalCaptureBatch(
+          gmailHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:gmail:dead-letter:1",
+            correlationId: "corr:gmail:dead-letter:1",
+            traceId: null,
+            batchId: "batch:gmail:dead-letter:1",
+            syncStateId: "sync:gmail:dead-letter:1",
+            attempt: 3,
+            maxAttempts: 3,
+            provider: "gmail",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: null,
+            windowEnd: null,
+            recordIds: [],
+            maxRecords: 10,
+          }),
+        );
 
       expect(deadLetter.outcome).toBe("failed");
       if (deadLetter.outcome !== "failed") {
@@ -2074,34 +2395,37 @@ Alias drift outbound message.
 
     const nonRetryableCapture = createEmptyCapturePorts();
     nonRetryableCapture.salesforce.captureHistoricalBatch = () => {
-      throw new Stage1NonRetryableJobError("Unsupported Salesforce batch shape.");
+      throw new Stage1NonRetryableJobError(
+        "Unsupported Salesforce batch shape.",
+      );
     };
     const nonRetryableContext = await createTestWorkerContext({
-      capture: nonRetryableCapture
+      capture: nonRetryableCapture,
     });
 
     try {
-      const nonRetryable = await nonRetryableContext.orchestration.runSalesforceHistoricalCaptureBatch(
-        salesforceHistoricalCaptureBatchPayloadSchema.parse({
-          version: 1,
-          jobId: "job:salesforce:non-retryable:1",
-          correlationId: "corr:salesforce:non-retryable:1",
-          traceId: null,
-          batchId: "batch:salesforce:non-retryable:1",
-          syncStateId: "sync:salesforce:non-retryable:1",
-          attempt: 1,
-          maxAttempts: 3,
-          provider: "salesforce",
-          mode: "historical",
-          jobType: "historical_backfill",
-          cursor: null,
-          checkpoint: null,
-          windowStart: null,
-          windowEnd: null,
-          recordIds: [],
-          maxRecords: 10
-        })
-      );
+      const nonRetryable =
+        await nonRetryableContext.orchestration.runSalesforceHistoricalCaptureBatch(
+          salesforceHistoricalCaptureBatchPayloadSchema.parse({
+            version: 1,
+            jobId: "job:salesforce:non-retryable:1",
+            correlationId: "corr:salesforce:non-retryable:1",
+            traceId: null,
+            batchId: "batch:salesforce:non-retryable:1",
+            syncStateId: "sync:salesforce:non-retryable:1",
+            attempt: 1,
+            maxAttempts: 3,
+            provider: "salesforce",
+            mode: "historical",
+            jobType: "historical_backfill",
+            cursor: null,
+            checkpoint: null,
+            windowStart: null,
+            windowEnd: null,
+            recordIds: [],
+            maxRecords: 10,
+          }),
+        );
 
       expect(nonRetryable.outcome).toBe("failed");
       if (nonRetryable.outcome !== "failed") {
@@ -2110,22 +2434,23 @@ Alias drift outbound message.
 
       expect(nonRetryable.failure.disposition).toBe("non_retryable");
       expect(nonRetryable.syncState.status).toBe("failed");
-      const auditEvidence = await nonRetryableContext.repositories.auditEvidence.listByEntity({
-        entityType: "sync_state",
-        entityId: "sync:salesforce:non-retryable:1"
-      });
+      const auditEvidence =
+        await nonRetryableContext.repositories.auditEvidence.listByEntity({
+          entityType: "sync_state",
+          entityId: "sync:salesforce:non-retryable:1",
+        });
 
       expect(auditEvidence).toHaveLength(1);
       expect(auditEvidence[0]).toMatchObject({
         entityType: "sync_state",
         entityId: "sync:salesforce:non-retryable:1",
         policyCode: "stage1.sync.failure",
-        result: "recorded"
+        result: "recorded",
       });
       expect(auditEvidence[0]?.metadataJson).toMatchObject({
         message: "Unsupported Salesforce batch shape.",
         disposition: "non_retryable",
-        retryable: false
+        retryable: false,
       });
     } finally {
       await nonRetryableContext.dispose();
@@ -2147,29 +2472,29 @@ Alias drift outbound message.
             whoId: "003-stage1",
             relatedMembershipPresent: true,
             createdDate: "2026-01-05T00:01:00.000Z",
-            lastModifiedDate: "2026-01-05T00:02:00.000Z"
-          }
-        ])
+            lastModifiedDate: "2026-01-05T00:02:00.000Z",
+          },
+        ]),
       );
     const context = await createTestWorkerContext({ capture });
 
     try {
       const first = await context.orchestration.runSalesforceLiveCaptureBatch(
         buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:task-unmapped:1"
-        })
+          syncStateId: "sync:salesforce:task-unmapped:1",
+        }),
       );
       const second = await context.orchestration.runSalesforceLiveCaptureBatch(
         buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:task-unmapped:2"
-        })
+          syncStateId: "sync:salesforce:task-unmapped:2",
+        }),
       );
 
       expect(first.outcome).toBe("succeeded");
       expect(second.outcome).toBe("succeeded");
       const audits = await context.repositories.auditEvidence.listByEntity({
         entityType: "salesforce_task",
-        entityId: "00T-unmapped-1"
+        entityId: "00T-unmapped-1",
       });
 
       expect(audits).toHaveLength(1);
@@ -2180,7 +2505,7 @@ Alias drift outbound message.
         entityType: "salesforce_task",
         entityId: "00T-unmapped-1",
         policyCode: "stage1.skip.task_unmapped_channel",
-        result: "recorded"
+        result: "recorded",
       });
       expect(audits[0]?.metadataJson).toMatchObject({
         taskSubtype: "Task",
@@ -2188,12 +2513,12 @@ Alias drift outbound message.
         whoId: "003-stage1",
         relatedMembershipPresent: true,
         createdDate: "2026-01-05T00:01:00.000Z",
-        lastModifiedDate: "2026-01-05T00:02:00.000Z"
+        lastModifiedDate: "2026-01-05T00:02:00.000Z",
       });
       expect(typeof audits[0]?.metadataJson.subject).toBe("string");
-      expect((audits[0]?.metadataJson.subject as string).length).toBeLessThanOrEqual(
-        200
-      );
+      expect(
+        (audits[0]?.metadataJson.subject as string).length,
+      ).toBeLessThanOrEqual(200);
     } finally {
       await context.dispose();
     }
@@ -2226,10 +2551,10 @@ Alias drift outbound message.
               projectId: "project-stage1",
               expeditionId: "expedition-stage1",
               projectName: "Project Stage 1",
-              expeditionName: "Expedition Stage 1"
-            }
-          }
-        ])
+              expeditionName: "Expedition Stage 1",
+            },
+          },
+        ]),
       );
     const context = await createTestWorkerContext({ capture });
 
@@ -2237,16 +2562,16 @@ Alias drift outbound message.
       await seedContact(context);
       const result = await context.orchestration.runSalesforceLiveCaptureBatch(
         buildSalesforceLivePayload({
-          syncStateId: "sync:salesforce:task-communication:1"
-        })
+          syncStateId: "sync:salesforce:task-communication:1",
+        }),
       );
 
       expect(result.outcome).toBe("succeeded");
       await expect(
         context.repositories.auditEvidence.listByEntity({
           entityType: "salesforce_task",
-          entityId: "00T-task-1"
-        })
+          entityId: "00T-task-1",
+        }),
       ).resolves.toEqual([]);
     } finally {
       await context.dispose();
