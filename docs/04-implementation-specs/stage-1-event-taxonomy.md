@@ -72,7 +72,7 @@ If Stage 1 cannot pick one canonical contact safely, prefer opening an identity 
 - Never collapse lifecycle events into membership state rows.
 - Keep SMS compliance events distinct from SMS message events even when timestamps match.
 - When Gmail and Salesforce describe the same outbound one-to-one email, emit one canonical `communication.email.outbound` event and keep Gmail as the primary provenance winner.
-- When SimpleTexting and Salesforce describe the same outbound SMS, keep the SimpleTexting transport event as primary and use Salesforce only as supporting provenance if needed.
+- When Twilio and Salesforce describe the same outbound SMS, keep the Twilio transport event as primary and use Salesforce only as supporting provenance if needed.
 
 ## First-Implementation Vs Deferred
 

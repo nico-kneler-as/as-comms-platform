@@ -10,7 +10,7 @@
 - Dependency injection through adapter interfaces is the default testing strategy.
 - Unit and integration tests use fakes or stubs, not live provider APIs.
 - Playwright uses a controlled test backend; seeded fixtures remain the preferred path for data-driven flows.
-- CI never hits real Salesforce, Gmail, or SimpleTexting APIs.
+- CI never hits real Salesforce, Gmail, or Twilio APIs.
 
 ## CI Test Environment
 
@@ -56,7 +56,7 @@ export class FakeSalesforceAdapter implements SalesforceAdapter {
 | --- | --- |
 | Salesforce | deterministic IDs, memberships, and routing outcomes from fixtures |
 | Gmail | deterministic message/thread fixtures and send-result stubs without remote transport |
-| SimpleTexting | deterministic inbound/outbound message fixtures, compliance events, and delivery outcomes |
+| Twilio | deterministic inbound/outbound message fixtures, consent events, and delivery-status callbacks |
 
 ## Compact Provider Examples
 
@@ -73,14 +73,14 @@ export class FakeGmailAdapter implements GmailAdapter {
   }
 }
 
-export class FakeSimpleTextingAdapter implements SimpleTextingAdapter {
-  constructor(private readonly fixtures: FakeSimpleTextingFixtures) {}
+export class FakeTwilioAdapter implements TwilioAdapter {
+  constructor(private readonly fixtures: FakeTwilioFixtures) {}
 
   async listMessages(contactId: string) {
     return this.fixtures.messagesByContact[contactId] ?? [];
   }
 
-  async sendMessage(input: SimpleTextingSendInput) {
+  async sendMessage(input: TwilioSendInput) {
     return { providerMessageId: input.idempotencyKey ?? "st-test-1" };
   }
 }
@@ -92,7 +92,7 @@ export class FakeSimpleTextingAdapter implements SimpleTextingAdapter {
 const workerDeps = {
   salesforce: new FakeSalesforceAdapter(fixtures.salesforce),
   gmail: new FakeGmailAdapter(fixtures.gmail),
-  simpleTexting: new FakeSimpleTextingAdapter(fixtures.simpleTexting),
+  twilio: new FakeTwilioAdapter(fixtures.twilio),
   db: testDb,
   clock: fakeClock,
 };

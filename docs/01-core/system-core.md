@@ -37,7 +37,7 @@
 
 - Gmail wins tie-breaks when Gmail and Salesforce describe the same outbound email
 - Salesforce is the primary source for contact identity and expedition/project context
-- SimpleTexting is the source for official SMS compliance events
+- Twilio is the source for official SMS transport and compliance events
 - Notion is the source for AI instructions and approved knowledge
 - Postmark is the delivery provider for Broadcasts Email (Stage 5A), not the authoring source of truth (see `D-045`)
 

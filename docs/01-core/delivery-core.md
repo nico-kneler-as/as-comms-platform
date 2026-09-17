@@ -56,8 +56,8 @@ Every stage closes through:
 | `CUT-01` | unresolved `identity_conflict` backlog at approval = `0` |
 | `CUT-02` | queue row parity during shadow/cutover `>= 99.5%` |
 | `CUT-03` | sampled timeline/event parity `>= 99.0%` |
-| `CUT-04` | comms freshness p95 for live Gmail/SimpleTexting `<= 2m` |
-| `CUT-05` | comms freshness p99 for live Gmail/SimpleTexting `<= 5m` |
+| `CUT-04` | comms freshness p95 for live Gmail/Twilio `<= 2m` |
+| `CUT-05` | comms freshness p99 for live Gmail/Twilio `<= 5m` |
 | `CUT-06` | lifecycle freshness p95 for Salesforce lifecycle feeds `<= 10m` |
 
 Threshold failures block approval unless the explicit decision is rollback.
