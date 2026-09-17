@@ -105,10 +105,27 @@ export const aiThreadContextEventSchema = z.object({
 });
 export type AiThreadContextEvent = z.infer<typeof aiThreadContextEventSchema>;
 
+const shareableLinkSchema = z.object({
+  label: z.string(),
+  url: z.string(),
+});
+
+export const projectDraftFactsSchema = z.object({
+  projectId: z.string().min(1),
+  resolvedFromProjectId: z.string().min(1),
+  projectName: z.string().min(1),
+  projectAlias: z.string().nullable(),
+  senderEmail: z.string().nullable(),
+  operatingContext: z.string(),
+  shareableLinks: z.array(shareableLinkSchema),
+});
+export type ProjectDraftFacts = z.infer<typeof projectDraftFactsSchema>;
+
 export const groundingBundleSchema = z.object({
   contact: contactSchema.nullable(),
   generalTraining: aiKnowledgeEntrySchema.nullable(),
   projectContext: aiKnowledgeEntrySchema.nullable(),
+  projectFacts: projectDraftFactsSchema.nullable(),
   tier3Entries: z.array(projectKnowledgeEntrySchema),
   intent: z.enum(["reply", "new"]),
   targetInbound: aiThreadContextEventSchema.nullable(),

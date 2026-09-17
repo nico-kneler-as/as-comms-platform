@@ -23,6 +23,7 @@ const bundle: GroundingBundle = {
     updatedAt: "2026-04-24T12:00:00.000Z",
   },
   projectContext: null,
+  projectFacts: null,
   tier3Entries: [],
   intent: "reply",
   targetInbound: null,

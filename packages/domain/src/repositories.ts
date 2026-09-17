@@ -487,6 +487,19 @@ export interface EffectiveAiKnowledge {
   readonly aiOptimizedInputHash: string | null;
 }
 
+export interface ProjectDraftFacts {
+  readonly projectId: string;
+  readonly resolvedFromProjectId: string;
+  readonly projectName: string;
+  readonly projectAlias: string | null;
+  readonly senderEmail: string | null;
+  readonly operatingContext: string;
+  readonly shareableLinks: readonly {
+    readonly label: string;
+    readonly url: string;
+  }[];
+}
+
 export interface ProjectDimensionRepository {
   /**
    * Returns active projects only — rows with
@@ -554,6 +567,9 @@ export interface ProjectDimensionRepository {
   findEffectiveAiKnowledge(
     projectId: string,
   ): Promise<EffectiveAiKnowledge | null>;
+  findProjectFactsForDraft(
+    projectId: string,
+  ): Promise<ProjectDraftFacts | null>;
   getAiKnowledgeSources(
     projectId: string,
   ): Promise<readonly AiKnowledgeSource[]>;

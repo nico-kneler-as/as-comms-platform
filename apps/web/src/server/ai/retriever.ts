@@ -12,6 +12,7 @@ type AiRetrieverRepositories = Pick<
   Stage1RepositoryBundle,
   | "aiKnowledge"
   | "projectKnowledge"
+  | "projectDimensions"
   | "canonicalEvents"
   | "contacts"
   | "gmailMessageDetails"
@@ -141,7 +142,7 @@ export async function retrieveGrounding(
   >,
   logger: Pick<Console, "warn"> = console,
 ): Promise<GroundingBundle> {
-  const [contact, generalTraining, projectContext, canonicalEvents] =
+  const [contact, generalTraining, projectContext, projectFacts, canonicalEvents] =
     await Promise.all([
       repositories.contacts.findById(input.contactId),
       loadGeneralVoiceEntry(repositories),
@@ -154,6 +155,11 @@ export async function retrieveGrounding(
           // the sub's project_id. Tier-3 past-reply retrieval keeps that raw
           // id too; its repository lookup applies the same host resolution.
           repositories.aiKnowledge.findEffectiveProjectNotionContent(
+            input.projectId,
+          ),
+      input.projectId === null
+        ? Promise.resolve(null)
+        : repositories.projectDimensions.findProjectFactsForDraft(
             input.projectId,
           ),
       repositories.canonicalEvents.listByContactId(input.contactId),
@@ -344,6 +350,13 @@ export async function retrieveGrounding(
     contact,
     generalTraining,
     projectContext,
+    projectFacts:
+      projectFacts === null
+        ? null
+        : {
+            ...projectFacts,
+            shareableLinks: [...projectFacts.shareableLinks],
+          },
     tier3Entries: [...tier3Entries],
     intent: input.intent,
     targetInbound:

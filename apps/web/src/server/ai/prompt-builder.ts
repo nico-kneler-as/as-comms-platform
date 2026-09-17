@@ -63,31 +63,94 @@ function renderTier3Entries(bundle: GroundingBundle): string {
     .join("\n\n");
 }
 
+function renderProjectFacts(bundle: GroundingBundle): string | null {
+  const facts = bundle.projectFacts;
+  if (facts === null) {
+    return null;
+  }
+
+  const lines = [
+    facts.projectAlias === null
+      ? null
+      : `You are drafting as the ${facts.projectAlias} team.`,
+    facts.senderEmail === null
+      ? null
+      : `This message is sent from ${facts.senderEmail}.`,
+    facts.operatingContext === ""
+      ? null
+      : `Current project status: ${facts.operatingContext}`,
+    facts.shareableLinks.length === 0
+      ? null
+      : [
+          "Volunteer-facing links:",
+          ...facts.shareableLinks.map((link) => `- ${link.label}: ${link.url}`),
+        ].join("\n"),
+  ].filter((line): line is string => line !== null);
+
+  return lines.length === 0 ? null : ["[Project Facts]", ...lines].join("\n");
+}
+
+function renderProjectFactsRules(input: {
+  readonly channel: AiDraftRequest["channel"];
+  readonly projectFacts: GroundingBundle["projectFacts"];
+}): string {
+  if (input.projectFacts === null) {
+    return "";
+  }
+
+  const rules: string[] = [];
+  if (input.projectFacts.shareableLinks.length > 0) {
+    const smsConstraint =
+      input.channel === "sms"
+        ? " For SMS, include at most one URL and only when the volunteer asked where to find something."
+        : "";
+    rules.push(
+      `The project's volunteer-facing links are listed above. When the reply points the volunteer toward a resource — training, the trip-planning map, a form, the field manual, FAQs — include the matching URL inline. If none matches specifically, use the volunteer homepage. Never tell a volunteer where something "lives" without giving them the link, and never offer to send a link you already have. If the project context contains a more specific URL for what they asked about, prefer that one.${smsConstraint}`,
+    );
+  }
+  if (input.projectFacts.senderEmail !== null) {
+    rules.push(
+      `Never tell the volunteer to email ${input.projectFacts.senderEmail} — that is the address this message is sent from and the volunteer has already reached it. Project knowledge that says to direct a volunteer there was written for the public website; in a reply it means handle the request yourself, or say a teammate will follow up.`,
+    );
+  }
+
+  return rules.join(" ");
+}
+
 function renderChannelInstructionBlock(input: {
   readonly channel: AiDraftRequest["channel"];
   readonly intent: GroundingBundle["intent"];
+  readonly projectFacts: GroundingBundle["projectFacts"];
 }): string {
   const styleConstraints =
     "Never use em dashes or en dashes; use a comma, colon, period or parentheses. Do not open with 'Great question!', 'Thanks for reaching out!', 'Certainly!', 'Absolutely!' or 'Of course!'. Do not use 'It is worth noting that', 'It is important to note', 'That said', 'With that in mind', 'In essence' or 'Ultimately'. Use straight quotes and apostrophes, not curly ones.";
+  const projectFactsRules = renderProjectFactsRules(input);
+  // Carry the separating space inside the clause. Interpolating an empty
+  // rules block between two sentences would otherwise leave a double space
+  // in every prompt that has no project facts.
+  const factsClause =
+    projectFactsRules.length === 0 ? "" : `${projectFactsRules} `;
 
   if (input.channel === "sms") {
     if (input.intent === "new") {
-      return `Write a brand-new outbound SMS. The operator is starting a new conversation, not replying to anything; do NOT phrase this as a reply. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown. Open with the volunteer's first name when natural. No signature unless the operator asked. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${styleConstraints}`;
+      return `Write a brand-new outbound SMS. The operator is starting a new conversation, not replying to anything; do NOT phrase this as a reply. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown. Open with the volunteer's first name when natural. No signature unless the operator asked. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${factsClause}${styleConstraints}`;
     }
-    return `Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${styleConstraints}`;
+    return `Write SMS replies. Be concise, plaintext, one thought, target ~140 characters and never exceed 320 (two segments). No markdown, no greetings if the volunteer is mid-thread, no signature unless the operator asked. Match the tone of prior thread messages if any. Use the volunteer's first name when natural; default to no salutation. Don't include 'Reply STOP to opt out'; Twilio appends compliance language automatically. ${factsClause}${styleConstraints}`;
   }
 
   if (input.intent === "new") {
-    return `You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation; do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the operator's directive (if any). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
+    return `You are drafting a brand-new outbound email to a volunteer. The operator is starting a new conversation; do NOT phrase this as a reply, do NOT begin with 'Thanks for reaching out' or any reply-style opener, and do NOT reference any inbound message as if it triggered this. The thread history below is background context only. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the operator's directive (if any). Never invent facts. ${factsClause}Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
   }
 
-  return `You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
+  return `You are drafting a reply to a volunteer. Aim for roughly 600 characters across two or three short paragraphs; treat roughly 900 as too long, but let a genuinely complex logistics answer run longer rather than omitting necessary detail. Use only the information above and the inbound message (if present). Never invent facts. ${factsClause}Do NOT include a sign-off or signature line; the composer appends the operator's alias signature automatically. End the draft with the last sentence of the message body. ${styleConstraints}`;
 }
 
 function buildSystemPrompt(
   bundle: GroundingBundle,
   request: Pick<AiDraftRequest, "channel">,
 ): string {
+  const projectFactsSection = renderProjectFacts(bundle);
+
   return [
     renderContextSection(
       "Tier 1 Voice Instructions",
@@ -101,6 +164,7 @@ function buildSystemPrompt(
       "(No project-specific context is available.)",
     ),
     "",
+    ...(projectFactsSection === null ? [] : [projectFactsSection, ""]),
     renderContextSection(
       "Tier 3 Canonical Examples",
       renderTier3Entries(bundle),
@@ -112,6 +176,7 @@ function buildSystemPrompt(
     renderChannelInstructionBlock({
       channel: request.channel,
       intent: bundle.intent,
+      projectFacts: bundle.projectFacts,
     }),
   ].join("\n");
 }

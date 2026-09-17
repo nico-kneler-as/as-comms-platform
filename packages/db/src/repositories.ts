@@ -24,6 +24,7 @@ import type {
   InboxUnifiedSearchRow,
   InternalNoteRecord,
   PendingComposerOutboundRecord,
+  ProjectDraftFacts,
   ProjectAliasRecord,
   SourceEvidenceCollisionEntry,
   Stage1RepositoryBundle,
@@ -3816,6 +3817,98 @@ function createStage1RepositoriesInternal(
           aiAutoSyncSchedule: resolved.aiAutoSyncSchedule ?? "never",
           aiOptimizedSynthesizedAt: resolved.aiOptimizedSynthesizedAt ?? null,
           aiOptimizedInputHash: resolved.aiOptimizedInputHash ?? null,
+        };
+      },
+
+      async findProjectFactsForDraft(
+        projectId,
+      ): Promise<ProjectDraftFacts | null> {
+        const hostProjectId = await findConnectedHostProjectId(db, projectId);
+        const projectIds =
+          hostProjectId === null ? [projectId] : [projectId, hostProjectId];
+        const rows = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            projectName: projectDimensions.projectName,
+            projectAlias: projectDimensions.projectAlias,
+            operatingContext: projectDimensions.aiOperatingContext,
+            aiKnowledgeSources: projectDimensions.aiKnowledgeSources,
+            senderEmail: projectAliases.alias,
+          })
+          .from(projectDimensions)
+          .leftJoin(
+            projectAliases,
+            eq(projectAliases.projectId, projectDimensions.projectId),
+          )
+          .where(inArray(projectDimensions.projectId, projectIds))
+          .orderBy(asc(projectAliases.alias));
+
+        const ownRows = rows.filter((row) => row.projectId === projectId);
+        const own = ownRows[0];
+        if (own === undefined) {
+          return null;
+        }
+
+        const hostRows = rows.filter(
+          (row) => row.projectId === hostProjectId,
+        );
+        const host = hostRows[0];
+        const firstSenderEmail = (
+          projectRows: readonly (typeof rows)[number][],
+        ): string | null =>
+          projectRows.find((row) => row.senderEmail !== null)?.senderEmail ??
+          null;
+        const shareableLinks = (value: unknown) =>
+          aiKnowledgeSourcesSchema
+            .safeParse(value)
+            .data?.filter(
+              (source) => source.kind === "web_page" && source.enabled,
+            )
+            .map((source) => ({
+              label:
+                source.label === null || source.label.trim() === ""
+                  ? source.url
+                  : source.label,
+              url: source.url,
+            })) ?? [];
+
+        const ownShareableLinks = shareableLinks(own.aiKnowledgeSources);
+        const hostShareableLinks =
+          host === undefined ? [] : shareableLinks(host.aiKnowledgeSources);
+        const ownSenderEmail = firstSenderEmail(ownRows);
+        const hostSenderEmail = firstSenderEmail(hostRows);
+
+        const fallsBackToHostAlias =
+          own.projectAlias === null && host?.projectAlias !== null && host !== undefined;
+        const fallsBackToHostContext =
+          own.operatingContext === "" &&
+          host !== undefined &&
+          host.operatingContext !== "";
+        const fallsBackToHostLinks =
+          ownShareableLinks.length === 0 && hostShareableLinks.length > 0;
+        const fallsBackToHostSender =
+          ownSenderEmail === null && hostSenderEmail !== null;
+        const didFallBack =
+          fallsBackToHostAlias ||
+          fallsBackToHostContext ||
+          fallsBackToHostLinks ||
+          fallsBackToHostSender;
+
+        return {
+          projectId,
+          resolvedFromProjectId:
+            didFallBack && hostProjectId !== null ? hostProjectId : projectId,
+          projectName: own.projectName,
+          projectAlias: fallsBackToHostAlias
+            ? host.projectAlias
+            : own.projectAlias,
+          senderEmail: fallsBackToHostSender ? hostSenderEmail : ownSenderEmail,
+          operatingContext: fallsBackToHostContext
+            ? host.operatingContext
+            : own.operatingContext,
+          shareableLinks: fallsBackToHostLinks
+            ? hostShareableLinks
+            : ownShareableLinks,
         };
       },
 

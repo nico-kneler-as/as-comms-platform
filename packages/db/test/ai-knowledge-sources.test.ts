@@ -389,8 +389,12 @@ describe("0055_ai_knowledge_auto_sync_schedule migration", () => {
         );
       `);
 
+      // Select only the column under test. This suite pins the schema to a
+      // subset of migrations, so a bare .select() would ask for every column
+      // in the *current* drizzle schema and fail on any column added by a
+      // later migration than the ones applied above.
       const [project] = await db
-        .select()
+        .select({ aiAutoSyncSchedule: projectDimensions.aiAutoSyncSchedule })
         .from(projectDimensions)
         .where(eq(projectDimensions.projectId, "project:auto-sync"));
 
@@ -506,12 +510,18 @@ describe("0054_ai_knowledge_source_registry migration", () => {
       );
 
       const db = drizzle(client) as Stage1Database;
+      // Narrowed for the same reason as above: this test applies migrations
+      // only through 0073, so it must not select columns added after that.
+      const assertedProjectColumns = {
+        aiKnowledgeSources: projectDimensions.aiKnowledgeSources,
+        aiKnowledgeUrl: projectDimensions.aiKnowledgeUrl,
+      };
       const [projectWithSource] = await db
-        .select()
+        .select(assertedProjectColumns)
         .from(projectDimensions)
         .where(eq(projectDimensions.projectId, "project:alpha"));
       const [projectWithoutSource] = await db
-        .select()
+        .select(assertedProjectColumns)
         .from(projectDimensions)
         .where(eq(projectDimensions.projectId, "project:beta"));
       const [legacyEntry] = await db

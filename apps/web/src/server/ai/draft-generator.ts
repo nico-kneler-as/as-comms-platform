@@ -30,6 +30,7 @@ export interface GenerateAiDraftDeps {
     Stage1RepositoryBundle,
     | "aiKnowledge"
     | "projectKnowledge"
+    | "projectDimensions"
     | "canonicalEvents"
     | "contacts"
     | "gmailMessageDetails"
