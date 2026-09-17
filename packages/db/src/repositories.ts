@@ -37,7 +37,7 @@ import {
   defineStage2RepositoryBundle,
 } from "@as-comms/domain";
 import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
-import { aiKnowledgeSourcesSchema, volunteerLinksSchema } from "@as-comms/contracts";
+import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
 import {
   audienceCriteriaSchema,
   audienceSnapshotRecordSchema,
@@ -3832,7 +3832,7 @@ function createStage1RepositoriesInternal(
             projectName: projectDimensions.projectName,
             projectAlias: projectDimensions.projectAlias,
             operatingContext: projectDimensions.aiOperatingContext,
-            volunteerLinks: projectDimensions.volunteerLinks,
+            aiKnowledgeSources: projectDimensions.aiKnowledgeSources,
             senderEmail: projectAliases.alias,
           })
           .from(projectDimensions)
@@ -3858,11 +3858,23 @@ function createStage1RepositoriesInternal(
         ): string | null =>
           projectRows.find((row) => row.senderEmail !== null)?.senderEmail ??
           null;
-        const parseVolunteerLinks = (value: unknown) =>
-          volunteerLinksSchema.safeParse(value).data ?? [];
+        const shareableLinks = (value: unknown) =>
+          aiKnowledgeSourcesSchema
+            .safeParse(value)
+            .data?.filter(
+              (source) => source.kind === "web_page" && source.enabled,
+            )
+            .map((source) => ({
+              label:
+                source.label === null || source.label.trim() === ""
+                  ? source.url
+                  : source.label,
+              url: source.url,
+            })) ?? [];
 
-        const ownLinks = parseVolunteerLinks(own.volunteerLinks);
-        const hostLinks = host === undefined ? [] : parseVolunteerLinks(host.volunteerLinks);
+        const ownShareableLinks = shareableLinks(own.aiKnowledgeSources);
+        const hostShareableLinks =
+          host === undefined ? [] : shareableLinks(host.aiKnowledgeSources);
         const ownSenderEmail = firstSenderEmail(ownRows);
         const hostSenderEmail = firstSenderEmail(hostRows);
 
@@ -3872,7 +3884,8 @@ function createStage1RepositoriesInternal(
           own.operatingContext === "" &&
           host !== undefined &&
           host.operatingContext !== "";
-        const fallsBackToHostLinks = ownLinks.length === 0 && hostLinks.length > 0;
+        const fallsBackToHostLinks =
+          ownShareableLinks.length === 0 && hostShareableLinks.length > 0;
         const fallsBackToHostSender =
           ownSenderEmail === null && hostSenderEmail !== null;
         const didFallBack =
@@ -3893,7 +3906,9 @@ function createStage1RepositoriesInternal(
           operatingContext: fallsBackToHostContext
             ? host.operatingContext
             : own.operatingContext,
-          volunteerLinks: fallsBackToHostLinks ? hostLinks : ownLinks,
+          shareableLinks: fallsBackToHostLinks
+            ? hostShareableLinks
+            : ownShareableLinks,
         };
       },
 
@@ -4005,8 +4020,6 @@ function createStage1RepositoriesInternal(
               aiOperatingContext:
                 values.aiOperatingContext ??
                 projectDimensions.aiOperatingContext,
-              volunteerLinks:
-                values.volunteerLinks ?? projectDimensions.volunteerLinks,
               aiOptimizedSynthesizedAt:
                 values.aiOptimizedSynthesizedAt === undefined
                   ? projectDimensions.aiOptimizedSynthesizedAt

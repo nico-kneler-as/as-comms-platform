@@ -153,24 +153,6 @@ export const contactMembershipSchema = z.object({
 });
 export type ContactMembershipRecord = z.infer<typeof contactMembershipSchema>;
 
-export const volunteerLinkRoleSchema = z.enum([
-  "homepage",
-  "training",
-  "trip_planning",
-  "other",
-]);
-export type VolunteerLinkRole = z.infer<typeof volunteerLinkRoleSchema>;
-
-export const volunteerLinkSchema = z.object({
-  role: volunteerLinkRoleSchema,
-  label: z.string().trim().min(1).max(80),
-  url: z.string().trim().url().max(500),
-});
-export type VolunteerLink = z.infer<typeof volunteerLinkSchema>;
-
-export const volunteerLinksSchema = z.array(volunteerLinkSchema).max(8);
-export type VolunteerLinks = z.infer<typeof volunteerLinksSchema>;
-
 export const projectDimensionSchema = z.object({
   projectId: idSchema,
   projectName: z.string().min(1),
@@ -190,7 +172,6 @@ export const projectDimensionSchema = z.object({
   aiKnowledgeSyncedAt: optionalTimestampSchema.optional(),
   aiKnowledgeSources: z.lazy(() => aiKnowledgeSourcesSchema).optional(),
   aiOperatingContext: z.string().optional(),
-  volunteerLinks: volunteerLinksSchema.optional(),
   aiAutoSyncSchedule: z.enum(["never", "daily", "weekly"]).optional(),
   aiOptimizedSynthesizedAt: optionalTimestampSchema.optional(),
   // Bumped on every successful synthesis orchestrator run, including the

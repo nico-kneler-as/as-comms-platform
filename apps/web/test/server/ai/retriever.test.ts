@@ -88,11 +88,20 @@ describe("retrieveGrounding", () => {
       source: "salesforce",
       isActive: true,
       aiOperatingContext: "Field season closes October 1.",
-      volunteerLinks: [
+      aiKnowledgeSources: [
         {
-          role: "trip_planning",
+          id: "11111111-1111-4111-8111-111111111111",
           label: "Trip-planning map",
           url: "https://adventurescientists.org/whitebark-trip-planning",
+          kind: "web_page",
+          enabled: true,
+          last_synced_at: null,
+          last_sync_status: "healthy",
+          last_sync_error: null,
+          source_id: null,
+          source_content_hash: null,
+          created_at: "2026-09-15T12:00:00.000Z",
+          updated_at: "2026-09-15T12:00:00.000Z",
         },
       ],
     });
@@ -121,9 +130,8 @@ describe("retrieveGrounding", () => {
       senderEmail: "whitebark@adventurescientists.org",
       operatingContext: "Field season closes October 1.",
     });
-    expect(bundle.projectFacts?.volunteerLinks).toEqual([
+    expect(bundle.projectFacts?.shareableLinks).toEqual([
       {
-        role: "trip_planning",
         label: "Trip-planning map",
         url: "https://adventurescientists.org/whitebark-trip-planning",
       },

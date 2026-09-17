@@ -355,7 +355,7 @@ export async function retrieveGrounding(
         ? null
         : {
             ...projectFacts,
-            volunteerLinks: [...projectFacts.volunteerLinks],
+            shareableLinks: [...projectFacts.shareableLinks],
           },
     tier3Entries: [...tier3Entries],
     intent: input.intent,

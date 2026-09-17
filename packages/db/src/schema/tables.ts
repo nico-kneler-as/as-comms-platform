@@ -443,7 +443,6 @@ export const projectDimensions = pgTable(
       .notNull()
       .default([]),
     aiOperatingContext: text("ai_operating_context").notNull().default(""),
-    volunteerLinks: jsonb("volunteer_links").notNull().default([]),
     aiAutoSyncSchedule: text("ai_auto_sync_schedule")
       .$type<"never" | "daily" | "weekly">()
       .notNull()

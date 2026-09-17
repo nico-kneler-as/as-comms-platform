@@ -32,7 +32,6 @@ import type {
   SyncJobType,
   SyncStateRecord,
   TimelineProjectionRow,
-  VolunteerLink,
 } from "@as-comms/contracts";
 
 import type { PendingComposerOutboundRecord } from "./pending-outbounds.js";
@@ -495,7 +494,10 @@ export interface ProjectDraftFacts {
   readonly projectAlias: string | null;
   readonly senderEmail: string | null;
   readonly operatingContext: string;
-  readonly volunteerLinks: readonly VolunteerLink[];
+  readonly shareableLinks: readonly {
+    readonly label: string;
+    readonly url: string;
+  }[];
 }
 
 export interface ProjectDimensionRepository {

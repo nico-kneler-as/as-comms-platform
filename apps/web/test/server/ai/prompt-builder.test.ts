@@ -81,9 +81,8 @@ describe("prompt builder", () => {
           projectAlias: "Whitebark",
           senderEmail: "whitebark@adventurescientists.org",
           operatingContext: "Field season closes October 1.",
-          volunteerLinks: [
+          shareableLinks: [
             {
-              role: "trip_planning",
               label: "Trip-planning map",
               url: "https://adventurescientists.org/whitebark-trip-planning",
             },
@@ -128,9 +127,8 @@ describe("prompt builder", () => {
           projectAlias: null,
           senderEmail: null,
           operatingContext: "",
-          volunteerLinks: [
+          shareableLinks: [
             {
-              role: "homepage",
               label: "Volunteer homepage",
               url: "https://adventurescientists.org/whitebark",
             },
@@ -162,7 +160,7 @@ describe("prompt builder", () => {
           projectAlias: null,
           senderEmail: null,
           operatingContext: "",
-          volunteerLinks: [],
+          shareableLinks: [],
         },
       },
       {
@@ -196,9 +194,8 @@ describe("prompt builder", () => {
       projectAlias: null,
       senderEmail: "whitebark@adventurescientists.org",
       operatingContext: "",
-      volunteerLinks: [
+      shareableLinks: [
         {
-          role: "homepage" as const,
           label: "Volunteer homepage",
           url: "https://adventurescientists.org/whitebark",
         },

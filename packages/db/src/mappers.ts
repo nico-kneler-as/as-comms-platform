@@ -1,6 +1,5 @@
 import {
   aiKnowledgeSourcesSchema,
-  volunteerLinksSchema,
   aiKnowledgeEntrySchema,
   automatedEmailRenderedPreviewSchema,
   automatedEmailSendRecordSchema,
@@ -1552,7 +1551,6 @@ export function mapProjectDimensionRow(
     aiKnowledgeSyncedAt: fromDate(row.aiKnowledgeSyncedAt),
     aiKnowledgeSources: aiKnowledgeSourcesSchema.parse(row.aiKnowledgeSources),
     aiOperatingContext: row.aiOperatingContext,
-    volunteerLinks: volunteerLinksSchema.safeParse(row.volunteerLinks).data ?? [],
     aiAutoSyncSchedule: row.aiAutoSyncSchedule,
     aiOptimizedSynthesizedAt: fromDate(row.aiOptimizedSynthesizedAt),
     aiOptimizedLastCheckedAt: fromDate(row.aiOptimizedLastCheckedAt),
@@ -1584,11 +1582,6 @@ export function mapProjectDimensionToInsert(
         : toDate(parsed.aiKnowledgeSyncedAt),
     aiKnowledgeSources: parsed.aiKnowledgeSources ?? undefined,
     aiOperatingContext: parsed.aiOperatingContext ?? undefined,
-    // Salesforce capture never carries volunteer links. An omitted field
-    // must leave the operator-managed column untouched, so key off the raw
-    // record rather than the parsed one and write undefined when absent.
-    volunteerLinks:
-      record.volunteerLinks === undefined ? undefined : parsed.volunteerLinks,
     aiAutoSyncSchedule: parsed.aiAutoSyncSchedule,
     aiOptimizedSynthesizedAt:
       parsed.aiOptimizedSynthesizedAt === undefined

@@ -79,11 +79,11 @@ function renderProjectFacts(bundle: GroundingBundle): string | null {
     facts.operatingContext === ""
       ? null
       : `Current project status: ${facts.operatingContext}`,
-    facts.volunteerLinks.length === 0
+    facts.shareableLinks.length === 0
       ? null
       : [
           "Volunteer-facing links:",
-          ...facts.volunteerLinks.map((link) => `- ${link.label}: ${link.url}`),
+          ...facts.shareableLinks.map((link) => `- ${link.label}: ${link.url}`),
         ].join("\n"),
   ].filter((line): line is string => line !== null);
 
@@ -99,7 +99,7 @@ function renderProjectFactsRules(input: {
   }
 
   const rules: string[] = [];
-  if (input.projectFacts.volunteerLinks.length > 0) {
+  if (input.projectFacts.shareableLinks.length > 0) {
     const smsConstraint =
       input.channel === "sms"
         ? " For SMS, include at most one URL and only when the volunteer asked where to find something."

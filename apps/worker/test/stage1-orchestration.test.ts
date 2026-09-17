@@ -503,7 +503,6 @@ Alias drift outbound message.
           aiKnowledgeSyncedAt: null,
           aiKnowledgeSources: [],
           aiOperatingContext: "",
-          volunteerLinks: [],
           aiAutoSyncSchedule: "never",
           aiOptimizedSynthesizedAt: null,
           aiOptimizedLastCheckedAt: null,
