@@ -284,6 +284,13 @@ export interface Stage1NormalizationService {
   applyInboxProjection(
     input: InboxProjectionApplyInput,
   ): Promise<InboxProjectionRow | null>;
+  prepareInboxProjectionRebuild(input: {
+    readonly contactId: string;
+    readonly events: readonly {
+      readonly canonicalEvent: CanonicalEventRecord;
+      readonly snippet: string;
+    }[];
+  }): Promise<InboxProjectionRow | null>;
   refreshInboxReviewOverlay(
     input: InboxReviewOverlayRefreshInput,
   ): Promise<InboxProjectionRow | null>;
@@ -364,9 +371,10 @@ export async function applyCanonicalEventAudience(
         observedDisplayName,
       });
     } else {
-      const contacts = await deps.persistence.repositories.contacts.listByIds(
-        candidateContactIds,
-      );
+      const contacts =
+        await deps.persistence.repositories.contacts.listByIds(
+          candidateContactIds,
+        );
       const projections = await Promise.all(
         contacts.map(async (candidateContact) => ({
           contact: candidateContact,
@@ -649,6 +657,89 @@ function latestTimestampWins(
   return incoming.id.localeCompare(existingEventId) >= 0;
 }
 
+/**
+ * Applies one qualifying canonical event to an inbox projection without I/O.
+ *
+ * Live ingest saves the result immediately. Projection rebuilds fold a contact's
+ * ordered events in memory and save only the final result, keeping both paths on
+ * the same merge rules.
+ */
+export function reduceInboxProjection(input: {
+  readonly existing: InboxProjectionRow | null;
+  readonly canonicalEvent: CanonicalEventRecord;
+  readonly snippet: string;
+  readonly hasUnresolved: boolean;
+}): InboxProjectionRow | null {
+  if (!qualifiesForInboxProjection(input.canonicalEvent)) {
+    return input.existing;
+  }
+
+  const existing = input.existing;
+  const incomingIsInbound = isInboundEvent(input.canonicalEvent.eventType);
+  const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
+    input.canonicalEvent.eventType,
+  );
+  const lastInboundAt = incomingIsInbound
+    ? newestTimestamp(
+        existing?.lastInboundAt ?? null,
+        input.canonicalEvent.occurredAt,
+      )
+    : (existing?.lastInboundAt ?? null);
+  const lastOutboundAt = incomingIsOutboundProjectionEvent
+    ? newestTimestamp(
+        existing?.lastOutboundAt ?? null,
+        input.canonicalEvent.occurredAt,
+      )
+    : (existing?.lastOutboundAt ?? null);
+  const lastActivityAt = newestTimestamp(
+    existing?.lastActivityAt ?? null,
+    input.canonicalEvent.occurredAt,
+  );
+
+  if (lastActivityAt === null) {
+    return null;
+  }
+
+  const incomingIsLatestKnown = latestTimestampWins(
+    input.canonicalEvent,
+    existing,
+  );
+  const bucket =
+    existing === null
+      ? incomingIsInbound
+        ? "New"
+        : "Opened"
+      : incomingIsInbound &&
+          (existing.lastInboundAt === null ||
+            input.canonicalEvent.occurredAt > existing.lastInboundAt)
+        ? "New"
+        : existing.bucket;
+
+  return {
+    contactId: input.canonicalEvent.contactId,
+    bucket,
+    needsFollowUp: existing?.needsFollowUp ?? false,
+    hasUnresolved: input.hasUnresolved,
+    lastInboundAt,
+    lastOutboundAt,
+    lastActivityAt,
+    snippet: incomingIsLatestKnown
+      ? pickIngestSnippet({
+          incomingEventType: input.canonicalEvent.eventType,
+          incomingSnippet: input.snippet,
+          existingSnippet: existing?.snippet,
+        })
+      : (existing?.snippet ?? input.snippet),
+    archivedAt: existing?.archivedAt ?? null,
+    lastCanonicalEventId: incomingIsLatestKnown
+      ? input.canonicalEvent.id
+      : (existing?.lastCanonicalEventId ?? input.canonicalEvent.id),
+    lastEventType: incomingIsLatestKnown
+      ? input.canonicalEvent.eventType
+      : (existing?.lastEventType ?? input.canonicalEvent.eventType),
+  };
+}
+
 function buildTimelineProjectionId(canonicalEventId: string): string {
   return `timeline:${canonicalEventId}`;
 }
@@ -816,7 +907,8 @@ function parseHeaderEntry(value: string): {
     const [, rawDisplayName = "", rawEmail = ""] = bracketMatch;
     return {
       email: normalizeEmailAddress(rawEmail),
-      displayName: rawDisplayName.trim().length > 0 ? rawDisplayName.trim() : null,
+      displayName:
+        rawDisplayName.trim().length > 0 ? rawDisplayName.trim() : null,
     };
   }
 
@@ -911,7 +1003,9 @@ function shouldReplaceObservedDisplayName(input: {
   const existingDisplayName = normalizeContactDisplayName(
     input.contact.displayName,
   );
-  const normalizedPrimaryEmail = normalizeEmailAddress(input.contact.primaryEmail ?? "");
+  const normalizedPrimaryEmail = normalizeEmailAddress(
+    input.contact.primaryEmail ?? "",
+  );
 
   if (existingDisplayName === null) {
     return true;
@@ -944,7 +1038,10 @@ function resolveHeaderValueForParticipantRole(
   }
 }
 
-function compareNullableIsoDesc(left: string | null, right: string | null): number {
+function compareNullableIsoDesc(
+  left: string | null,
+  right: string | null,
+): number {
   if (left === right) {
     return 0;
   }
@@ -1038,9 +1135,12 @@ async function reconcilePendingComposerOutbound(
         pending.status === "orphaned" ||
         (pending.status === "confirmed" && pending.reconciledEventId === null))
     ) {
-      await persistence.repositories.pendingOutbounds.markConfirmed(pending.id, {
-        reconciledEventId: input.canonicalEvent.id,
-      });
+      await persistence.repositories.pendingOutbounds.markConfirmed(
+        pending.id,
+        {
+          reconciledEventId: input.canonicalEvent.id,
+        },
+      );
       logStructuredEvent({
         event: "composer.reconciliation.matched",
         metadata: {
@@ -1570,8 +1670,8 @@ function resolveInboxSnippet(
 
     const snippet =
       detail.snippetClean.length > 0
-      ? detail.snippetClean
-      : detail.bodyTextPreview;
+        ? detail.snippetClean
+        : detail.bodyTextPreview;
 
     if (snippet.length > 0) {
       return snippet;
@@ -1688,15 +1788,16 @@ async function latestOutboundMatchesPendingReplySignal(input: {
     )?.rfc822MessageId ?? null;
   const matchingPendingOutbound =
     pendingOutbounds.find(
-      (pendingOutbound) => pendingOutbound.reconciledEventId === input.latestEvent.id,
+      (pendingOutbound) =>
+        pendingOutbound.reconciledEventId === input.latestEvent.id,
     ) ??
     (latestRfc822MessageId === null
       ? null
-      : pendingOutbounds.find(
+      : (pendingOutbounds.find(
           (pendingOutbound) =>
             pendingOutbound.reconciledEventId === null &&
             pendingOutbound.sentRfc822MessageId === latestRfc822MessageId,
-        ) ?? null);
+        ) ?? null));
 
   return (matchingPendingOutbound?.inReplyToRfc822 ?? null) !== null;
 }
@@ -1816,10 +1917,10 @@ export async function rebuildInboxProjectionForContact(
     contactId,
     bucket: hasNewerInbound
       ? "New"
-      : (latestOutboundIsInThreadReply && existing?.bucket === "New"
-          ? "Opened"
-          : (existing?.bucket ??
-            (isInboundEvent(latestEvent.eventType) ? "New" : "Opened"))),
+      : latestOutboundIsInThreadReply && existing?.bucket === "New"
+        ? "Opened"
+        : (existing?.bucket ??
+          (isInboundEvent(latestEvent.eventType) ? "New" : "Opened")),
     needsFollowUp: existing?.needsFollowUp ?? false,
     hasUnresolved: await contactHasUnresolved(persistence, contactId),
     lastInboundAt,
@@ -2099,12 +2200,11 @@ async function autoMergeEmailOnlyConflictsIntoAnchored(
   },
 ): Promise<void> {
   for (const conflictingContact of input.conflictingContacts) {
-    const mergeResult = await context.persistence.mergeEmailOnlyContactIntoAnchored(
-      {
+    const mergeResult =
+      await context.persistence.mergeEmailOnlyContactIntoAnchored({
         emailOnlyContactId: conflictingContact.id,
         anchoredContactId: input.anchoredContactId,
-      },
-    );
+      });
 
     await recordEmailOnlyAutoMergeAuditOnce(context.persistence, {
       sourceEvidenceId: input.sourceEvidenceId,
@@ -2907,7 +3007,8 @@ export function createStage1NormalizationService(
         contactSchema.parse(parsed.contact),
       );
       const shouldFilterSalesforceAliasEmails = parsed.identities.some(
-        (identity) => identity.source === "salesforce" && identity.kind === "email",
+        (identity) =>
+          identity.source === "salesforce" && identity.kind === "email",
       );
       const internalProjectAliasSet = !shouldFilterSalesforceAliasEmails
         ? null
@@ -3121,72 +3222,61 @@ export function createStage1NormalizationService(
         await persistence.repositories.inboxProjection.findByContactId(
           parsed.canonicalEvent.contactId,
         );
-      const incomingIsInbound = isInboundEvent(parsed.canonicalEvent.eventType);
-      const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
-        parsed.canonicalEvent.eventType,
-      );
-      const lastInboundAt = incomingIsInbound
-        ? newestTimestamp(
-            existing?.lastInboundAt ?? null,
-            parsed.canonicalEvent.occurredAt,
-          )
-        : (existing?.lastInboundAt ?? null);
-      const lastOutboundAt = incomingIsOutboundProjectionEvent
-        ? newestTimestamp(
-            existing?.lastOutboundAt ?? null,
-            parsed.canonicalEvent.occurredAt,
-          )
-        : (existing?.lastOutboundAt ?? null);
-      const lastActivityAt = newestTimestamp(
-        existing?.lastActivityAt ?? null,
-        parsed.canonicalEvent.occurredAt,
-      );
-      const incomingIsLatestKnown = latestTimestampWins(
-        parsed.canonicalEvent,
-        existing,
-      );
-
-      if (lastActivityAt === null) {
-        return null;
-      }
       const hasUnresolved = await contactHasUnresolved(
         persistence,
         parsed.canonicalEvent.contactId,
       );
-      const bucket =
-        existing === null
-          ? incomingIsInbound
-            ? "New"
-            : "Opened"
-          : incomingIsInbound &&
-              (existing.lastInboundAt === null ||
-                parsed.canonicalEvent.occurredAt > existing.lastInboundAt)
-            ? "New"
-            : existing.bucket;
-
-      return persistence.saveInboxProjection({
-        contactId: parsed.canonicalEvent.contactId,
-        bucket,
-        needsFollowUp: existing?.needsFollowUp ?? false,
+      const projection = reduceInboxProjection({
+        existing,
+        canonicalEvent: parsed.canonicalEvent,
+        snippet: parsed.snippet,
         hasUnresolved,
-        lastInboundAt,
-        lastOutboundAt,
-        lastActivityAt,
-        snippet: incomingIsLatestKnown
-          ? pickIngestSnippet({
-              incomingEventType: parsed.canonicalEvent.eventType,
-              incomingSnippet: parsed.snippet,
-              existingSnippet: existing?.snippet,
-            })
-          : (existing?.snippet ?? parsed.snippet),
-        archivedAt: existing?.archivedAt ?? null,
-        lastCanonicalEventId: incomingIsLatestKnown
-          ? parsed.canonicalEvent.id
-          : (existing?.lastCanonicalEventId ?? parsed.canonicalEvent.id),
-        lastEventType: incomingIsLatestKnown
-          ? parsed.canonicalEvent.eventType
-          : (existing?.lastEventType ?? parsed.canonicalEvent.eventType),
       });
+
+      return projection === null
+        ? null
+        : persistence.saveInboxProjection(projection);
+    },
+
+    async prepareInboxProjectionRebuild(input) {
+      const events = input.events.map((event) =>
+        inboxProjectionApplyInputSchema.parse(event),
+      );
+      const qualifyingEvents = events.filter((event) =>
+        qualifiesForInboxProjection(event.canonicalEvent),
+      );
+
+      if (qualifyingEvents.length === 0) {
+        return null;
+      }
+
+      if (
+        qualifyingEvents.some(
+          (event) => event.canonicalEvent.contactId !== input.contactId,
+        )
+      ) {
+        throw new Error(
+          "Inbox projection rebuild events must all belong to the requested contact.",
+        );
+      }
+
+      const [existing, hasUnresolved] = await Promise.all([
+        persistence.repositories.inboxProjection.findByContactId(
+          input.contactId,
+        ),
+        contactHasUnresolved(persistence, input.contactId),
+      ]);
+
+      return qualifyingEvents.reduce(
+        (projection, event) =>
+          reduceInboxProjection({
+            existing: projection,
+            canonicalEvent: event.canonicalEvent,
+            snippet: event.snippet,
+            hasUnresolved,
+          }),
+        existing,
+      );
     },
 
     async refreshInboxReviewOverlay(input) {
