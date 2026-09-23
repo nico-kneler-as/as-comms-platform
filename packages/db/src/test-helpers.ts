@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 
 import { PGlite } from "@electric-sql/pglite";
+import { pg_trgm } from "@electric-sql/pglite/contrib/pg_trgm";
 import { drizzle } from "drizzle-orm/pglite";
 
 import {
@@ -26,7 +27,7 @@ export interface TestStage1Context {
 }
 
 export async function createTestStage1Context(): Promise<TestStage1Context> {
-  const client = new PGlite();
+  const client = new PGlite({ extensions: { pg_trgm } });
   const drizzleDirectoryUrl = new URL(
     /* webpackIgnore: true */ "../drizzle/",
     import.meta.url

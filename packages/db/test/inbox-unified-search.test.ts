@@ -1151,6 +1151,57 @@ describe("contact repository searchInboxUnified", () => {
     }
   });
 
+  it("matches an audience-only contact by a Gmail subject", async () => {
+    const context = await seedFixture();
+
+    try {
+      const anchorId = "contact:audience-subject-anchor";
+      const audienceId = "contact:audience-subject-participant";
+      const occurredAt = "2026-04-20T16:00:00.000Z";
+      await context.repositories.contacts.upsert({
+        id: anchorId,
+        salesforceContactId: null,
+        displayName: "Anchor Reese",
+        primaryEmail: "anchor-reese@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      await context.repositories.contacts.upsert({
+        id: audienceId,
+        salesforceContactId: null,
+        displayName: "Participant Perry",
+        primaryEmail: "participant-perry@example.org",
+        primaryPhone: null,
+        createdAt: BASE_TIMESTAMP,
+        updatedAt: BASE_TIMESTAMP,
+      });
+      const { canonicalEventId } = await seedInboundEmail(context, {
+        contactId: anchorId,
+        occurredAt,
+        idSuffix: "audience-subject",
+        subject: "Hidden watershed survey details",
+      });
+      await seedAudienceParticipant(context, {
+        canonicalEventId,
+        contactId: audienceId,
+        participantRole: "cc",
+        normalizedEmail: "participant-perry@example.org",
+      });
+
+      const result = await context.repositories.contacts.searchInboxUnified({
+        query: "watershed survey",
+        limit: 25,
+      });
+
+      expect(result.contacts.map((row) => row.contact.id)).toContain(
+        audienceId,
+      );
+    } finally {
+      await context.dispose();
+    }
+  });
+
   it("keeps section assignment based on membership even when the match comes only from headers", async () => {
     const context = await seedFixture();
 
