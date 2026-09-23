@@ -67,5 +67,28 @@ export async function GET(request: Request) {
     });
   }
 
-  return NextResponse.json(await getInboxUnifiedSearch({ query: trimmed }));
+  try {
+    return NextResponse.json(await getInboxUnifiedSearch({ query: trimmed }));
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : "unknown";
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+
+    console.error("inbox.search.failed", {
+      name: errorName,
+      message: errorMessage,
+      ...(errorCode === undefined ? {} : { code: errorCode }),
+    });
+
+    return NextResponse.json(
+      { ok: false, code: "search_failed" },
+      { status: 500 },
+    );
+  }
 }

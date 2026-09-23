@@ -90,6 +90,10 @@ function resolveInboxRefreshErrorMessage(input: {
   readonly status: number | null;
   readonly errorName: string | null;
 }): string {
+  if (input.status === 401) {
+    return "Your session expired. Reload the page and try again.";
+  }
+
   if (input.status !== null) {
     return `Inbox refresh failed (HTTP ${input.status.toString()}). Keeping the last loaded rows.`;
   }
@@ -468,8 +472,13 @@ export function InboxList({
         }
 
         setSearchResult(next);
-      } catch {
+      } catch (error) {
         if (activeRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        if (extractFetchErrorStatus(error) === 401) {
+          setQueueError("Your session expired. Reload the page and try again.");
           return;
         }
 

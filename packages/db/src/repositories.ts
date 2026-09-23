@@ -2901,108 +2901,172 @@ function createStage1RepositoriesInternal(
           "communication.sms.opt_out",
         ] as const;
 
-        // Per-contact lastActivityAt CTE filtered to volunteer-side events.
-        const lastActivityCte = sql`(
-          select
-            ${canonicalEventLedger.contactId} as contact_id,
-            max(${canonicalEventLedger.occurredAt}) as last_activity_at
-          from ${canonicalEventLedger}
-          where ${canonicalEventLedger.eventType} in ${VOLUNTEER_SIDE_EVENT_TYPES}
-          group by ${canonicalEventLedger.contactId}
-        )`;
-
-        // Per-contact membership-existence CTE. Either an active OR past
-        // membership qualifies — any row in `contact_memberships` for the
-        // contact flips them into the Volunteers section.
-        const membershipFlagCte = sql`(
-          select distinct ${contactMemberships.contactId} as contact_id
-          from ${contactMemberships}
-        )`;
-
-        // Single contact-attribute query, partitioned in TS after we read
-        // the `has_membership` flag. We LEFT JOIN inbox projection so
-        // projection-backed contacts return their thread metadata for the
-        // hybrid row format; non-projection contacts get nulls and render
-        // as contact-only rows on the client.
-        const contactMatchesResult = await db.execute(sql`
-          with last_activity as ${lastActivityCte},
-          memberships_flag as ${membershipFlagCte}
-          select
-            ${contacts.id} as id,
-            ${contacts.salesforceContactId} as salesforce_contact_id,
-            ${contacts.displayName} as display_name,
-            ${contacts.primaryEmail} as primary_email,
-            ${contacts.primaryPhone} as primary_phone,
-            ${contacts.createdAt} as created_at,
-            ${contacts.updatedAt} as updated_at,
-            la.last_activity_at as last_activity_at,
-            (mf.contact_id is not null) as has_membership,
-            ${contactInboxProjection.snippet} as snippet,
-            ${contactInboxProjection.lastEventType} as last_event_type,
-            ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
-            coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetailsTable.subject}) as latest_subject,
-            (${contactInboxProjection.contactId} is not null) as has_projection
+        // Stage A: contact attributes are independent of the event ledger.
+        // Keep nullable columns bare: NULL never matches ILIKE, and this form
+        // lets the raw-column trigram indexes service the predicate.
+        const attributeMatchResult = await db.execute(sql<{
+          readonly id: string;
+        }>`
+          select ${contacts.id} as id
           from ${contacts}
-          left join last_activity la
-            on la.contact_id = ${contacts.id}
-          left join memberships_flag mf
-            on mf.contact_id = ${contacts.id}
-          left join ${contactInboxProjection}
-            on ${contactInboxProjection.contactId} = ${contacts.id}
-          left join ${canonicalEventLedger}
-            on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
-          left join ${gmailMessageDetails}
-            on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-          left join ${salesforceCommunicationDetailsTable}
-            on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-          where (
-            ${contacts.displayName} ilike ${pattern} escape '\\'
-            or coalesce(${contacts.primaryEmail}, '') ilike ${pattern} escape '\\'
-            or coalesce(${contacts.primaryPhone}, '') ilike ${pattern} escape '\\'
-            or ${contacts.id} in (
-              select distinct header_subject.subject_contact_id
-              from (
-                select
-                  ${canonicalEventLedger.contactId} as subject_contact_id,
-                  ${gmailMessageDetails.fromHeader} as from_header,
-                  ${gmailMessageDetails.toHeader} as to_header,
-                  ${gmailMessageDetails.ccHeader} as cc_header
-                from ${canonicalEventLedger}
-                inner join ${gmailMessageDetails}
-                  on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-                union
-                select
-                  ${canonicalEventAudience.contactId} as subject_contact_id,
-                  ${gmailMessageDetails.fromHeader} as from_header,
-                  ${gmailMessageDetails.toHeader} as to_header,
-                  ${gmailMessageDetails.ccHeader} as cc_header
-                from ${canonicalEventAudience}
-                inner join ${canonicalEventLedger}
-                  on ${canonicalEventLedger.id} = ${canonicalEventAudience.canonicalEventId}
-                inner join ${gmailMessageDetails}
-                  on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-              ) as header_subject
-              where
-                coalesce(header_subject.from_header, '') ilike ${pattern} escape '\\'
-                or coalesce(header_subject.to_header, '') ilike ${pattern} escape '\\'
-                or coalesce(header_subject.cc_header, '') ilike ${pattern} escape '\\'
-            )
-            or coalesce(${contactInboxProjection.snippet}, '') ilike ${pattern} escape '\\'
-            or exists (
-              select 1
-              from ${canonicalEventLedger}
-              left join ${gmailMessageDetails}
-                on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-              left join ${salesforceCommunicationDetailsTable}
-                on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
-              where ${canonicalEventLedger.contactId} = ${contacts.id}
-                and (
-                  coalesce(${gmailMessageDetails.subject}, '') ilike ${pattern} escape '\\'
-                  or coalesce(${salesforceCommunicationDetailsTable.subject}, '') ilike ${pattern} escape '\\'
-                )
-            )
+          where ${contacts.displayName} ilike ${pattern} escape '\\'
+             or ${contacts.primaryEmail} ilike ${pattern} escape '\\'
+             or ${contacts.primaryPhone} ilike ${pattern} escape '\\'
+        `);
+
+        // Stage B: materialize the small, trigram-filtered message-detail
+        // sets before looking up their canonical events. This intentionally
+        // prevents the planner from combining the complete event ledger and
+        // both detail tables in one parallel hash plan.
+        const contentMatchResult = await db.execute(sql<{
+          readonly contact_id: string;
+        }>`
+          with matching_gmail as materialized (
+            select ${gmailMessageDetails.sourceEvidenceId} as source_evidence_id
+            from ${gmailMessageDetails}
+            where ${gmailMessageDetails.subject} ilike ${pattern} escape '\\'
+               or ${gmailMessageDetails.fromHeader} ilike ${pattern} escape '\\'
+               or ${gmailMessageDetails.toHeader} ilike ${pattern} escape '\\'
+               or ${gmailMessageDetails.ccHeader} ilike ${pattern} escape '\\'
+          ),
+          matching_salesforce as materialized (
+            select ${salesforceCommunicationDetailsTable.sourceEvidenceId} as source_evidence_id
+            from ${salesforceCommunicationDetailsTable}
+            where ${salesforceCommunicationDetailsTable.subject} ilike ${pattern} escape '\\'
+          ),
+          content_matches as (
+            select ${contactInboxProjection.contactId} as contact_id
+            from ${contactInboxProjection}
+            where ${contactInboxProjection.snippet} ilike ${pattern} escape '\\'
+
+            union
+
+            select ${canonicalEventLedger.contactId} as contact_id
+            from matching_gmail
+            inner join ${canonicalEventLedger}
+              on ${canonicalEventLedger.sourceEvidenceId} = matching_gmail.source_evidence_id
+
+            union
+
+            select ${canonicalEventAudience.contactId} as contact_id
+            from matching_gmail
+            inner join ${canonicalEventLedger}
+              on ${canonicalEventLedger.sourceEvidenceId} = matching_gmail.source_evidence_id
+            inner join ${canonicalEventAudience}
+              on ${canonicalEventAudience.canonicalEventId} = ${canonicalEventLedger.id}
+
+            union
+
+            select ${canonicalEventLedger.contactId} as contact_id
+            from matching_salesforce
+            inner join ${canonicalEventLedger}
+              on ${canonicalEventLedger.sourceEvidenceId} = matching_salesforce.source_evidence_id
+
+            union
+
+            select ${canonicalEventAudience.contactId} as contact_id
+            from matching_salesforce
+            inner join ${canonicalEventLedger}
+              on ${canonicalEventLedger.sourceEvidenceId} = matching_salesforce.source_evidence_id
+            inner join ${canonicalEventAudience}
+              on ${canonicalEventAudience.canonicalEventId} = ${canonicalEventLedger.id}
           )
-          order by la.last_activity_at desc nulls last, ${contacts.createdAt} desc, ${contacts.id} asc
+          select contact_id
+          from content_matches
+          limit 500
+        `);
+
+        const attributeMatchRows = normalizeSqlResultRows<{
+          readonly id: string;
+        }>(
+          attributeMatchResult as
+            | readonly { readonly id: string }[]
+            | { readonly rows?: readonly { readonly id: string }[] },
+        );
+        const contentMatchRows = normalizeSqlResultRows<{
+          readonly contact_id: string;
+        }>(
+          contentMatchResult as
+            | readonly { readonly contact_id: string }[]
+            | { readonly rows?: readonly { readonly contact_id: string }[] },
+        );
+
+        const candidateIds = [
+          ...new Set([
+            ...attributeMatchRows.map((row) => row.id),
+            ...contentMatchRows.map((row) => row.contact_id),
+          ]),
+        ];
+
+        if (candidateIds.length === 0) {
+          return {
+            volunteers: [],
+            contacts: [],
+            totals: { volunteers: 0, contacts: 0 },
+          };
+        }
+
+        // Stage C: hydrate only the union of candidate IDs. The volunteer
+        // activity aggregation is restricted to that set, and the per-section
+        // row-number condition is the SQL display limit while section_total
+        // retains the pre-truncation total for the UI.
+        const contactMatchesResult = await db.execute(sql`
+          with last_activity as (
+            select
+              ${canonicalEventLedger.contactId} as contact_id,
+              max(${canonicalEventLedger.occurredAt}) as last_activity_at
+            from ${canonicalEventLedger}
+            where ${canonicalEventLedger.eventType} in ${VOLUNTEER_SIDE_EVENT_TYPES}
+              and ${canonicalEventLedger.contactId} = any(${sql.param(candidateIds)})
+            group by ${canonicalEventLedger.contactId}
+          ),
+          memberships_flag as (
+            select distinct ${contactMemberships.contactId} as contact_id
+            from ${contactMemberships}
+            where ${contactMemberships.contactId} = any(${sql.param(candidateIds)})
+          ),
+          ranked_matches as (
+            select
+              ${contacts.id} as id,
+              ${contacts.salesforceContactId} as salesforce_contact_id,
+              ${contacts.displayName} as display_name,
+              ${contacts.primaryEmail} as primary_email,
+              ${contacts.primaryPhone} as primary_phone,
+              ${contacts.createdAt} as created_at,
+              ${contacts.updatedAt} as updated_at,
+              la.last_activity_at as last_activity_at,
+              (mf.contact_id is not null) as has_membership,
+              ${contactInboxProjection.snippet} as snippet,
+              ${contactInboxProjection.lastEventType} as last_event_type,
+              ${contactInboxProjection.lastCanonicalEventId} as last_canonical_event_id,
+              coalesce(${gmailMessageDetails.subject}, ${salesforceCommunicationDetailsTable.subject}) as latest_subject,
+              (${contactInboxProjection.contactId} is not null) as has_projection,
+              count(*) over (
+                partition by (mf.contact_id is not null)
+              ) as section_total,
+              row_number() over (
+                partition by (mf.contact_id is not null)
+                order by la.last_activity_at desc nulls last, ${contacts.createdAt} desc, ${contacts.id} asc
+              ) as section_rank
+            from ${contacts}
+            left join last_activity la
+              on la.contact_id = ${contacts.id}
+            left join memberships_flag mf
+              on mf.contact_id = ${contacts.id}
+            left join ${contactInboxProjection}
+              on ${contactInboxProjection.contactId} = ${contacts.id}
+            left join ${canonicalEventLedger}
+              on ${canonicalEventLedger.id} = ${contactInboxProjection.lastCanonicalEventId}
+            left join ${gmailMessageDetails}
+              on ${gmailMessageDetails.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+            left join ${salesforceCommunicationDetailsTable}
+              on ${salesforceCommunicationDetailsTable.sourceEvidenceId} = ${canonicalEventLedger.sourceEvidenceId}
+            where ${contacts.id} = any(${sql.param(candidateIds)})
+          )
+          select *
+          from ranked_matches
+          where section_rank <= ${limit}
+          order by has_membership desc, last_activity_at desc nulls last, created_at desc, id asc
         `);
 
         interface SearchRowResult {
@@ -3020,11 +3084,15 @@ function createStage1RepositoriesInternal(
           readonly last_canonical_event_id: string | null;
           readonly latest_subject: string | null;
           readonly has_projection: boolean | string | number | null;
+          readonly section_total: number | string;
         }
 
         const allRowsRaw =
-          (contactMatchesResult as { rows?: readonly SearchRowResult[] })
-            .rows ?? (contactMatchesResult as readonly SearchRowResult[]);
+          normalizeSqlResultRows<SearchRowResult>(
+            contactMatchesResult as
+              | readonly SearchRowResult[]
+              | { readonly rows?: readonly SearchRowResult[] },
+          );
 
         // Postgres can return booleans as boolean | "t"/"f" | 1/0 depending
         // on the driver layer; normalise once.
@@ -3119,23 +3187,27 @@ function createStage1RepositoriesInternal(
               : (raw.last_event_type as InboxUnifiedSearchRow["lastEventType"]),
         });
 
-        const volunteerRowsAll: InboxUnifiedSearchRow[] = [];
-        const contactRowsAll: InboxUnifiedSearchRow[] = [];
+        const volunteerRows: InboxUnifiedSearchRow[] = [];
+        const contactRows: InboxUnifiedSearchRow[] = [];
+        let volunteerTotal = 0;
+        let contactTotal = 0;
         for (const raw of allRowsRaw) {
           const mapped = toRow(raw);
           if (mapped.hasMembership) {
-            volunteerRowsAll.push(mapped);
+            volunteerRows.push(mapped);
+            volunteerTotal = Number(raw.section_total);
           } else {
-            contactRowsAll.push(mapped);
+            contactRows.push(mapped);
+            contactTotal = Number(raw.section_total);
           }
         }
 
         return {
-          volunteers: volunteerRowsAll.slice(0, limit),
-          contacts: contactRowsAll.slice(0, limit),
+          volunteers: volunteerRows,
+          contacts: contactRows,
           totals: {
-            volunteers: volunteerRowsAll.length,
-            contacts: contactRowsAll.length,
+            volunteers: volunteerTotal,
+            contacts: contactTotal,
           },
         };
       },
