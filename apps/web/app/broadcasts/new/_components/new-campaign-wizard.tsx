@@ -977,7 +977,9 @@ export function NewCampaignWizard({
           {toast ? (
             <div
               className={cn(
-                "fixed right-6 top-6 z-50 rounded-xl border px-4 py-2 text-sm shadow-lg",
+                // Above the confirm dialog's z-50 overlay, which is portaled
+                // later in the DOM and would otherwise blur a send error.
+                "fixed right-6 top-6 z-[60] max-w-md break-words rounded-xl border px-4 py-2 text-sm shadow-lg",
                 toast.tone === "error"
                   ? "border-rose-200 bg-rose-50 text-rose-900"
                   : "border-emerald-200 bg-emerald-50 text-emerald-900",

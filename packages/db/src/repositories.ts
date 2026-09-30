@@ -7604,6 +7604,10 @@ function mapCampaignRunMutationFields(
   return values;
 }
 
+// Postgres caps one statement at 65,534 bind parameters and each snapshot row
+// binds 22, so a single INSERT fails for any audience above ~2,978 recipients.
+const AUDIENCE_SNAPSHOT_BULK_INSERT_CHUNK_SIZE = 1_000;
+
 function mapAudienceSnapshotInsert(
   runId: string,
   member: NewAudienceSnapshot,
@@ -8006,12 +8010,20 @@ export function createStage5RepositoryBundle(
           return;
         }
 
-        await db
-          .insert(audienceSnapshots)
-          .values(
-            members.map((member) => mapAudienceSnapshotInsert(runId, member)),
-          )
-          .onConflictDoNothing();
+        for (
+          let index = 0;
+          index < members.length;
+          index += AUDIENCE_SNAPSHOT_BULK_INSERT_CHUNK_SIZE
+        ) {
+          await db
+            .insert(audienceSnapshots)
+            .values(
+              members
+                .slice(index, index + AUDIENCE_SNAPSHOT_BULK_INSERT_CHUNK_SIZE)
+                .map((member) => mapAudienceSnapshotInsert(runId, member)),
+            )
+            .onConflictDoNothing();
+        }
       },
 
       async listForRun(runId) {
