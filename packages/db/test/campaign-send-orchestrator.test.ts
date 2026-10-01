@@ -12,6 +12,7 @@ import {
 import {
   createStage5RepositoryBundle,
   listBroadcastUploadedRecipientsForRun,
+  newsletterSubscribers,
   replaceBroadcastUploadedRecipientsForRun,
 } from "../src/index.js";
 import { createTestStage1Context } from "./helpers.js";
@@ -174,6 +175,7 @@ function createMockPostmarkClient(input: {
       readonly MessageStream?: string;
       readonly TrackOpens?: boolean;
       readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
+      readonly Metadata?: Readonly<Record<string, string>>;
     }[],
   ) => Promise<void> | void;
   resultFor?: (email: string) => { readonly errorCode: number; readonly message: string };
@@ -191,6 +193,7 @@ function createMockPostmarkClient(input: {
         readonly MessageStream?: string;
         readonly TrackOpens?: boolean;
         readonly TrackLinks?: "None" | "HtmlAndText" | "HtmlOnly" | "TextOnly";
+        readonly Metadata?: Readonly<Record<string, string>>;
       }[];
     }) {
       calls += 1;
@@ -512,6 +515,84 @@ describe("Campaign send orchestrator", () => {
     await orchestrator.processSendRequest(run.id);
 
     expect(streams).toEqual(["as-newsletter-stream"]);
+  });
+
+  it("keeps newsletter-subscriber metadata within Postmark's field limits", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await context.db.insert(newsletterSubscribers).values({
+      id: "11111111-1111-1111-1111-111111111111",
+      email: "subscriber@example.org",
+      firstName: null,
+      status: "subscribed",
+      source: "mailchimp_import",
+    });
+
+    let metadata: readonly Readonly<Record<string, string>>[] = [];
+    const { campaigns, orchestrator } = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          metadata = messages.map((message) => message.Metadata ?? {});
+        },
+      }),
+    );
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-newsletter-metadata",
+        kind: "newsletter",
+        launchType: "html_email",
+        projectId: null,
+        fromEmail: "info@adventurescientists.org",
+        bodyHtmlTemplate: "<p>Hi {{firstName}},</p>",
+        audienceCriteria: {
+          projectId: null,
+          projectIds: [],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+      }),
+    );
+    await campaigns.audienceSnapshots.bulkInsert(run.id, [
+      {
+        id: "snapshot-newsletter-metadata",
+        contactId: null,
+        newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+        frozenEmail: "subscriber@example.org",
+        frozenFirstName: null,
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-newsletter-metadata",
+        deliveryStatus: "pending",
+      },
+    ]);
+    await campaigns.campaignRuns.transitionState(run.id, "draft", "scheduled", {
+      audienceSize: 1,
+      scheduledAt: "2026-05-15T12:00:00.000Z",
+    });
+
+    await orchestrator.processSendRequest(run.id);
+
+    expect(metadata).toEqual([
+      {
+        campaignRunId: "run-newsletter-metadata",
+        audienceSnapshotId: "snapshot-newsletter-metadata",
+        newsletterSubId: "11111111-1111-1111-1111-111111111111",
+      },
+    ]);
+    // Past these limits Postmark rejects the whole message (ErrorCode 300).
+    for (const fields of metadata) {
+      for (const [name, value] of Object.entries(fields)) {
+        expect(name.length).toBeLessThanOrEqual(20);
+        expect(value.length).toBeLessThanOrEqual(80);
+      }
+    }
   });
 
   it("requests open and link tracking so Postmark emits Open/Click events", async () => {
