@@ -328,6 +328,73 @@ describe("Postmark webhook route handler", () => {
     expect(suppressed).toBe(true);
   });
 
+  it("marks a Gmail rate-limit SpamNotification bounced without suppressing the address", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns);
+
+    const bounce = loadFixturePayload("bounce.json") as Record<string, unknown>;
+    const response = await POST(
+      signRequest(
+        JSON.stringify({
+          ...bounce,
+          Type: "SpamNotification",
+          TypeCode: 512,
+          Inactive: false,
+          CanActivate: false,
+        }),
+      ),
+    );
+    expect(response.status).toBe(200);
+
+    const snapshots = await campaigns.audienceSnapshots.listForRun(
+      "run-project-postmark",
+    );
+    expect(snapshots[0]?.deliveryStatus).toBe("bounced");
+    expect(
+      await campaigns.suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2099-01-01T00:00:00Z"),
+      ),
+    ).toBe(false);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+  });
+
+  it("ignores an out-of-office AutoResponder bounce because the message was delivered", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns);
+
+    const bounce = loadFixturePayload("bounce.json") as Record<string, unknown>;
+    const response = await POST(
+      signRequest(
+        JSON.stringify({
+          ...bounce,
+          Type: "AutoResponder",
+          TypeCode: 64,
+          Inactive: false,
+          CanActivate: false,
+        }),
+      ),
+    );
+    expect(response.status).toBe(200);
+
+    const snapshots = await campaigns.audienceSnapshots.listForRun(
+      "run-project-postmark",
+    );
+    expect(snapshots[0]?.deliveryStatus).toBe("sent");
+    expect(
+      await campaigns.suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2099-01-01T00:00:00Z"),
+      ),
+    ).toBe(false);
+  });
+
   it("processes a SpamComplaint event into suppression_list + identity review queue", async () => {
     if (runtime === null) {
       throw new Error("Runtime not initialized.");

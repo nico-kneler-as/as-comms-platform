@@ -103,10 +103,22 @@ function toBounceReason(event: PostmarkWebhookEvent): SuppressionReason | null {
     return null;
   }
 
-  return /softbounce/iu.test(event.Type)
-    ? "soft_bounce_strike3"
-    : "hard_bounce";
+  // Suppress only addresses Postmark itself deactivated (hard bounces, bad
+  // addresses). Soft bounces, Gmail rate limits (SpamNotification) and DNS or
+  // transient errors are temporary, so the address stays sendable.
+  return event.Inactive ? "hard_bounce" : null;
 }
+
+// Postmark reports these as Bounce records, but the message was delivered
+// (an out-of-office reply, a subscribe request), so they must not count as one.
+const DELIVERED_BOUNCE_TYPES = new Set([
+  "AutoResponder",
+  "Subscribe",
+  "Unsubscribe",
+  "AddressChange",
+  "ChallengeVerification",
+  "OpenRelayTest",
+]);
 
 function buildProviderRecordType(event: PostmarkWebhookEvent): string {
   return `postmark_webhook_${event.RecordType.toLowerCase()}`;
@@ -414,6 +426,10 @@ async function processEvent(
     event.RecordType === "SubscriptionChange" &&
     !isRecipientUnsubscribe(event)
   ) {
+    return;
+  }
+
+  if (event.RecordType === "Bounce" && DELIVERED_BOUNCE_TYPES.has(event.Type)) {
     return;
   }
 
