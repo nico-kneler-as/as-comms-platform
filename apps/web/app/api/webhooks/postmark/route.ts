@@ -383,11 +383,46 @@ function isUnknownRecordType(payload: unknown): boolean {
   );
 }
 
+// Real broadcast sends tag every message with its audience snapshot id; test
+// sends don't, and never get a snapshot row.
+function isFromAudienceSnapshot(event: PostmarkWebhookEvent): boolean {
+  return (event.Metadata.audienceSnapshotId ?? "").length > 0;
+}
+
+function parseRetriesRemaining(value: string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 async function processEvent(
   runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>,
   rawBody: string,
   event: PostmarkWebhookEvent,
-): Promise<void> {
+  retriesRemaining: number | null,
+): Promise<"processed" | "retry_later"> {
+  const snapshot =
+    event.MessageID === null
+      ? null
+      : await runtime.campaigns.audienceSnapshots.findByProviderMessageId(
+          event.MessageID,
+        );
+
+  // Postmark can fire a Delivery webhook before the batch response that stores
+  // provider_message_id is written. Ask it to retry (1 min, then 5, 10...)
+  // before anything is recorded, so the retry is processed from scratch.
+  if (
+    snapshot === null &&
+    isFromAudienceSnapshot(event) &&
+    retriesRemaining !== null &&
+    retriesRemaining > 0
+  ) {
+    return "retry_later";
+  }
+
   const persistence = createStage1PersistenceService(runtime.repositories);
   const occurredAt = toOccurredAt(event);
   const sourceEvidence = await persistence.recordSourceEvidence({
@@ -412,25 +447,19 @@ async function processEvent(
         messageId: event.MessageID,
       }),
     );
-    return;
+    return "processed";
   }
   const sourceEvidenceId = sourceEvidence.record.id;
-  const snapshot =
-    event.MessageID === null
-      ? null
-      : await runtime.campaigns.audienceSnapshots.findByProviderMessageId(
-          event.MessageID,
-        );
 
   if (
     event.RecordType === "SubscriptionChange" &&
     !isRecipientUnsubscribe(event)
   ) {
-    return;
+    return "processed";
   }
 
   if (event.RecordType === "Bounce" && DELIVERED_BOUNCE_TYPES.has(event.Type)) {
-    return;
+    return "processed";
   }
 
   try {
@@ -467,7 +496,7 @@ async function processEvent(
           recipientHash: recipientLogId(event.Recipient),
         }),
       );
-      return;
+      return "processed";
     }
 
     const run = await runtime.campaigns.campaignRuns.findById(
@@ -534,6 +563,31 @@ async function processEvent(
           run.id,
         );
       }
+
+      // Same split as the /u/[token]/confirm route: a newsletter subscriber
+      // opts out through newsletter_suppressions, a one-off CSV recipient
+      // through the suppression list.
+      if (
+        snapshot.contactId === null &&
+        snapshot.newsletterSubscriberId !== null
+      ) {
+        await runtime.campaigns.newsletterSuppressions.upsert({
+          email: snapshot.frozenEmail,
+          reason: "platform_optout",
+          source: "provider_event",
+        });
+      }
+      if (
+        snapshot.contactId === null &&
+        snapshot.newsletterSubscriberId === null
+      ) {
+        await runtime.campaigns.suppressionList.upsertFromBounce(
+          snapshot.frozenEmail,
+          "manual",
+          `recipient-unsubscribe:${snapshot.campaignRunId}`,
+          new Date(occurredAt),
+        );
+      }
     }
 
     if (snapshot.contactId !== null) {
@@ -556,6 +610,8 @@ async function processEvent(
     });
     throw error;
   }
+
+  return "processed";
 }
 
 export async function POST(request: Request) {
@@ -652,7 +708,19 @@ export async function POST(request: Request) {
 
   try {
     const runtime = await getStage1WebRuntime();
-    await processEvent(runtime, rawBody, event);
+    const outcome = await processEvent(
+      runtime,
+      rawBody,
+      event,
+      parseRetriesRemaining(request.headers.get("x-pm-retries-remaining")),
+    );
+    if (outcome === "retry_later") {
+      return safeError(
+        "snapshot_not_linked",
+        "Audience snapshot not linked to this message yet; retry later.",
+        503,
+      );
+    }
   } catch (error) {
     console.error(
       JSON.stringify({
