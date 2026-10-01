@@ -617,7 +617,9 @@ export function createCampaignSendOrchestrator(deps: {
                 ...(snapshot.newsletterSubscriberId === null
                   ? {}
                   : {
-                      newsletterSubscriberId: snapshot.newsletterSubscriberId,
+                      // Postmark rejects the message (ErrorCode 300) when a
+                      // metadata field name is over 20 characters.
+                      newsletterSubId: snapshot.newsletterSubscriberId,
                     }),
               },
               Headers: [
