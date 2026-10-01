@@ -72,35 +72,66 @@ describe("createMergeRenderer", () => {
   it("renders missing tokens as empty strings and reports them during validation", () => {
     const rendered = renderer.render(
       {
-        subject: "Hi {{firstName}}",
-        bodyHtml: "<p>{{firstName}}</p>",
-        bodyText: "{{firstName}}",
+        subject: "News from {{projectName}}",
+        bodyHtml: "<p>{{projectName}}</p>",
+        bodyText: "{{projectName}}",
       },
       {
-        firstName: null,
-        projectName: "Forests",
+        firstName: "Taylor",
+        projectName: null,
         aliasEmail: "forests@example.org",
         viewInBrowserUrl: null,
       },
     );
 
     expect(rendered).toEqual({
-      subject: "Hi ",
+      subject: "News from ",
       html: "<p></p>",
       text: "",
     });
     expect(
       renderer.validateTokens(
         {
-          subject: "Hi {{firstName}}",
-          bodyHtml: "<p>{{firstName}}</p>",
+          subject: "News from {{projectName}}",
+          bodyHtml: "<p>{{projectName}}</p>",
         },
-        [buildMember({ frozenFirstName: null })],
+        [buildMember({ frozenProjectName: null })],
       ),
     ).toEqual({
-      "contact-1": ["firstName"],
+      "contact-1": ["projectName"],
     });
   });
+
+  it.each([null, "", "   "])(
+    "greets a recipient whose first name is %j as Friends and does not report it missing",
+    (firstName) => {
+      const rendered = renderer.render(
+        {
+          subject: "Hi {{firstName}}",
+          bodyHtml: "<p>Hi {{firstName}},</p>",
+          bodyText: "Hi {{firstName}},",
+        },
+        {
+          firstName,
+          projectName: null,
+          aliasEmail: null,
+          viewInBrowserUrl: null,
+        },
+      );
+
+      expect(rendered).toEqual({
+        subject: "Hi Friends",
+        html: "<p>Hi Friends,</p>",
+        text: "Hi Friends,",
+      });
+      expect(
+        renderer.validateTokens(
+          { subject: "Hi {{firstName}}", bodyHtml: "<p>Hi {{firstName}},</p>" },
+          [buildMember({ frozenFirstName: firstName })],
+        ),
+      ).toEqual({});
+    },
+  );
 
   it("HTML-escapes merge values to prevent XSS while leaving text-body merges plain", () => {
     const xss = "<script>alert('xss')</script>";
@@ -182,19 +213,19 @@ describe("createMergeRenderer", () => {
     expect(
       renderer.validateTokens(
         {
-          subject: "Hi {{firstName}}",
-          bodyHtml: "<p>{{firstName}}</p>",
+          subject: "News from {{projectName}}",
+          bodyHtml: "<p>{{projectName}}</p>",
         },
         [
           buildMember({
             contactId: null,
             newsletterSubscriberId: "subscriber-1",
-            frozenFirstName: null,
+            frozenProjectName: null,
           }),
         ],
       ),
     ).toEqual({
-      "subscriber-1": ["firstName"],
+      "subscriber-1": ["projectName"],
     });
   });
 });
