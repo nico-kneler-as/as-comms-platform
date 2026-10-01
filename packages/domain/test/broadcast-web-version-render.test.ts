@@ -51,11 +51,11 @@ describe("broadcast web version rendering", () => {
   it("wraps a fragment in a complete, neutral document", () => {
     const rendered = renderBroadcastWebVersion(baseInput);
 
-    expect(rendered.title).toBe("Hello friend from Forests <West>");
+    expect(rendered.title).toBe("Hello Friends from Forests <West>");
     expect(rendered.html).toContain("<!doctype html>");
     expect(rendered.html).toContain('<meta charset="utf-8">');
     expect(rendered.html).toContain('name="viewport"');
-    expect(rendered.html).toContain("Hi friend");
+    expect(rendered.html).toContain("Hi Friends");
     expect(rendered.html).toContain("Forests &lt;West&gt;");
     expect(rendered.html).toContain("AS &lt;Team&gt;");
     expect(rendered.html).toContain(baseInput.pageUrl);

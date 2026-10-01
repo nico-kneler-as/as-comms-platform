@@ -279,7 +279,7 @@ describe("campaign org-sender actions", () => {
     const stored = await runtime.runtime.campaigns.broadcastWebVersions.findByRunId(
       "web-version-back-publish",
     );
-    expect(stored?.renderedHtml).toContain("Hello friend");
+    expect(stored?.renderedHtml).toContain("Hello Friends");
     expect(first.ok ? first.data.url : "").toContain(`/b/${stored?.publicToken ?? ""}`);
     const renderedHtml = stored?.renderedHtml;
 

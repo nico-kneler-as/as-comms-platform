@@ -104,7 +104,9 @@ export function renderBroadcastWebVersion(
       bodyText: "",
     },
     {
-      firstName: "friend",
+      // The public page has no reader, so it gets the same no-name greeting
+      // ("Friends") as an email recipient without a first name.
+      firstName: null,
       projectName: input.projectName,
       aliasEmail: input.senderEmail,
       viewInBrowserUrl: input.pageUrl,

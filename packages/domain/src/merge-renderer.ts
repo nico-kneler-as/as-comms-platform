@@ -5,6 +5,10 @@ import type {
   MissingTokensByContact,
 } from "./campaign-types.js";
 
+// Matches the FNAME default on the Mailchimp audience, so a recipient with no
+// first name still reads "Hi Friends," instead of "Hi ,".
+const FIRST_NAME_FALLBACK = "Friends";
+
 const tokenPattern = /\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/gu;
 const malformedTokenPattern = /\{\{(?![^}]*\}\})/u;
 const supportedTokens = new Set<MergeToken>([
@@ -31,7 +35,9 @@ function readTokenValue(
 ): string | null {
   switch (token) {
     case "firstName":
-      return context.firstName;
+      return (context.firstName?.trim().length ?? 0) > 0
+        ? context.firstName
+        : FIRST_NAME_FALLBACK;
     case "projectName":
       return context.projectName;
     case "aliasEmail":
