@@ -826,12 +826,35 @@ export type PostmarkSubscriptionChangeEvent = z.infer<
   typeof postmarkSubscriptionChangeEventSchema
 >;
 
-export const postmarkWebhookEventSchema = z.discriminatedUnion("RecordType", [
-  postmarkDeliveryEventSchema,
-  postmarkBounceEventSchema,
-  postmarkSpamComplaintEventSchema,
-  postmarkOpenEventSchema,
-  postmarkClickEventSchema,
-  postmarkSubscriptionChangeEventSchema,
-]);
+// Postmark's Bounce and SpamComplaint payloads carry the address in `Email`
+// and have no `Recipient`, so copy it across before the shared base schema
+// requires it. Idempotent, because zod can run a preprocess more than once.
+function withBounceRecipient(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) {
+    return raw;
+  }
+
+  const record = raw as Record<string, unknown>;
+  if (
+    (record.RecordType === "Bounce" || record.RecordType === "SpamComplaint") &&
+    record.Recipient === undefined &&
+    typeof record.Email === "string"
+  ) {
+    return { ...record, Recipient: record.Email };
+  }
+
+  return raw;
+}
+
+export const postmarkWebhookEventSchema = z.preprocess(
+  withBounceRecipient,
+  z.discriminatedUnion("RecordType", [
+    postmarkDeliveryEventSchema,
+    postmarkBounceEventSchema,
+    postmarkSpamComplaintEventSchema,
+    postmarkOpenEventSchema,
+    postmarkClickEventSchema,
+    postmarkSubscriptionChangeEventSchema,
+  ]),
+);
 export type PostmarkWebhookEvent = z.infer<typeof postmarkWebhookEventSchema>;
