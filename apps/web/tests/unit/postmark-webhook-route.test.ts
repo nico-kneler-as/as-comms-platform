@@ -6,6 +6,7 @@ import {
   broadcastLinkClicks,
   broadcastOpens,
   createStage5RepositoryBundle,
+  newsletterSubscribers,
   postmarkWebhookDeadLetter,
 } from "@as-comms/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -49,7 +50,10 @@ function buildOpenIdempotencyKey(
   );
 }
 
-function signRequest(rawBody: string): Request {
+function signRequest(
+  rawBody: string,
+  extraHeaders: Record<string, string> = {},
+): Request {
   // Postmark can't HMAC-sign payloads; the endpoint authenticates via a
   // static shared-secret custom header equal to POSTMARK_WEBHOOK_SIGNING_SECRET.
   return new Request("http://localhost/api/webhooks/postmark", {
@@ -57,8 +61,20 @@ function signRequest(rawBody: string): Request {
     headers: {
       "content-type": "application/json",
       "x-postmark-signature": SIGNING_SECRET,
+      ...extraHeaders,
     },
     body: rawBody,
+  });
+}
+
+function deliveryFromAudienceSnapshot(): string {
+  const delivery = loadFixturePayload("delivery.json") as Record<string, unknown>;
+  return JSON.stringify({
+    ...delivery,
+    Metadata: {
+      campaignRunId: "run-project-postmark",
+      audienceSnapshotId: "snapshot-postmark",
+    },
   });
 }
 
@@ -77,10 +93,24 @@ async function listOpenEvents(runtime: Stage1WebTestRuntime) {
 async function seedRunAndSnapshot(
   runtime: Stage1WebTestRuntime,
   campaigns: CampaignsBundle,
-  overrides: { projectId?: string; runKind?: "newsletter" | "project" } = {},
+  overrides: {
+    projectId?: string;
+    runKind?: "newsletter" | "project";
+    newsletterSubscriberId?: string;
+  } = {},
 ) {
   const projectId = overrides.projectId ?? "project-postmark";
   const runKind = overrides.runKind ?? "project";
+  const newsletterSubscriberId = overrides.newsletterSubscriberId ?? null;
+
+  if (newsletterSubscriberId !== null) {
+    await runtime.context.db.insert(newsletterSubscribers).values({
+      id: newsletterSubscriberId,
+      email: "john@example.com",
+      status: "subscribed",
+      source: "mailchimp_import",
+    });
+  }
 
   await runtime.context.repositories.projectDimensions.upsert({
     projectId,
@@ -140,8 +170,8 @@ async function seedRunAndSnapshot(
   await campaigns.audienceSnapshots.bulkInsert(run.id, [
     {
       id: "snapshot-postmark",
-      contactId: "contact-postmark",
-      newsletterSubscriberId: null,
+      contactId: newsletterSubscriberId === null ? "contact-postmark" : null,
+      newsletterSubscriberId,
       frozenEmail: "john@example.com",
       frozenFirstName: "John",
       frozenProjectName: "Postmark Test Project",
@@ -645,6 +675,79 @@ describe("Postmark webhook route handler", () => {
     expect(consentRows).toHaveLength(1);
     expect(consentRows[0]?.scopeType).toBe("newsletter");
     expect(consentRows[0]?.scopeId).toBeNull();
+  });
+
+  it("opts a newsletter subscriber out on a Postmark one-click unsubscribe", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns, {
+      runKind: "newsletter",
+      newsletterSubscriberId: "11111111-1111-1111-1111-111111111111",
+    });
+
+    const response = await POST(
+      signRequest(loadFixture("subscription-change.json")),
+    );
+    expect(response.status).toBe(200);
+
+    expect(
+      await campaigns.newsletterSuppressions.findByEmail("john@example.com"),
+    ).toMatchObject({ reason: "platform_optout", source: "provider_event" });
+  });
+
+  it("asks Postmark to retry a real-send event that arrives before its snapshot is linked", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+
+    const early = await POST(
+      signRequest(deliveryFromAudienceSnapshot(), {
+        "x-pm-retries-remaining": "6",
+      }),
+    );
+    expect(early.status).toBe(503);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+
+    await seedRunAndSnapshot(runtime, campaigns);
+    const retried = await POST(
+      signRequest(deliveryFromAudienceSnapshot(), {
+        "x-pm-retries-remaining": "5",
+      }),
+    );
+    expect(retried.status).toBe(200);
+
+    const snapshots = await campaigns.audienceSnapshots.listForRun(
+      "run-project-postmark",
+    );
+    expect(snapshots[0]?.deliveryStatus).toBe("delivered");
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+  });
+
+  it("dead-letters a real-send event once Postmark has no retries left", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    const response = await POST(
+      signRequest(deliveryFromAudienceSnapshot(), {
+        "x-pm-retries-remaining": "0",
+      }),
+    );
+    expect(response.status).toBe(200);
+
+    const deadLetters = await listDeadLetters(runtime);
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toMatchObject({
+      failureKind: "snapshot_not_found",
+      status: "pending",
+    });
+    warnSpy.mockRestore();
   });
 
   it("returns 200 (no-op) and records a pending dead-letter when the MessageID has no matching audience snapshot", async () => {
