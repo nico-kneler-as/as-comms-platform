@@ -255,6 +255,38 @@ describe("Stage 5 campaigns repositories", () => {
     expect(orgSettingsAfter.physicalZip).toBe("59715");
   });
 
+  it("bulk inserts audiences larger than one statement's bind-parameter limit", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+    const run = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-bulk-insert-large" }),
+    );
+    // 22 bind parameters per row: 3,500 rows = 77,000, over Postgres' 65,534.
+    const members = Array.from({ length: 3_500 }, (_, index) => ({
+      id: `snapshot-bulk-${String(index)}`,
+      contactId: null,
+      newsletterSubscriberId: null,
+      frozenEmail: `recipient-${String(index)}@example.org`,
+      frozenFirstName: null,
+      frozenProjectName: null,
+      frozenProjectId: null,
+      frozenAliasEmail: null,
+      unsubscribeToken: `token-bulk-${String(index)}`,
+      deliveryStatus: "pending" as const,
+    }));
+
+    await campaigns.audienceSnapshots.bulkInsert(run.id, members);
+
+    const [row] = await context.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(audienceSnapshots)
+      .where(eq(audienceSnapshots.campaignRunId, run.id));
+    expect(row?.count).toBe(3_500);
+  });
+
   it("round-trips bodyDesignJson for html_email campaign runs", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);

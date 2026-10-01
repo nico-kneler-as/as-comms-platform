@@ -63,6 +63,7 @@ import {
   resolveSmsCsvAudienceForRun,
   resolveStoredCampaignAudience,
 } from "./_lib/audience-data-source";
+import { toOperatorErrorMessage } from "./_lib/operator-error-message";
 
 interface CampaignActionData {
   readonly runId: string;
@@ -1079,9 +1080,11 @@ export async function sendNow(
   } catch (error) {
     return errorResult(
       "campaign_send_failed",
-      error instanceof Error
-        ? error.message
-        : "Unable to start the broadcast send.",
+      toOperatorErrorMessage(
+        error,
+        "Unable to start the broadcast send. Nothing was sent.",
+        "broadcast.send_now_failed",
+      ),
       true,
     );
   }
@@ -1165,9 +1168,11 @@ export async function schedule(
   } catch (error) {
     return errorResult(
       "campaign_schedule_failed",
-      error instanceof Error
-        ? error.message
-        : "Unable to schedule the broadcast.",
+      toOperatorErrorMessage(
+        error,
+        "Unable to schedule the broadcast. Nothing was scheduled.",
+        "broadcast.schedule_failed",
+      ),
       true,
     );
   }
@@ -1272,9 +1277,11 @@ export async function sendSmsBroadcastNow(rawInput: {
   } catch (error) {
     return errorResult(
       "campaign_sms_send_failed",
-      error instanceof Error
-        ? error.message
-        : "Unable to start the SMS broadcast send.",
+      toOperatorErrorMessage(
+        error,
+        "Unable to start the SMS broadcast send. Nothing was sent.",
+        "broadcast.sms_send_now_failed",
+      ),
       true,
     );
   }

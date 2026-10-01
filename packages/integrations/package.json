@@ -27,7 +27,7 @@
     "@aws-sdk/client-s3": "^3.1075.0",
     "@notionhq/client": "^4.0.2",
     "libmime": "^5.3.8",
-    "mailparser": "^3.9.8",
+    "mailparser": "^3.9.32",
     "twilio": "^6.0.0",
     "zod": "^3.24.2"
   },
