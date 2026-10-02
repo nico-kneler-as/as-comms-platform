@@ -104,9 +104,10 @@ export interface InboxListItemViewModel {
   readonly isUnread: boolean;
   readonly unreadCount: number;
   /**
-   * True when the last inbound is newer than the last outbound (or no outbound
-   * exists), regardless of bucket. Drives the "unanswered" dot indicator on
-   * the row: a thread the operator has opened but hasn't replied to yet.
+   * True when the last inbound is newer than the last human outbound (or no
+   * human outbound exists), regardless of bucket. Drives the "unanswered" dot
+   * indicator on the row: a thread the operator has opened but hasn't replied
+   * to yet.
    */
   readonly isUnanswered: boolean;
 
