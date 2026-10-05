@@ -652,9 +652,12 @@ describe("rebuildInboxProjectionForContact historical inbound horizons", () => {
       "contact_fresh_campaign"
     );
 
+    // D-063: the campaign send is activity, not a reply, so lastOutboundAt
+    // stays on the human Gmail outbound.
     expect(campaignProjection).toMatchObject({
       bucket: "Opened",
-      lastOutboundAt: "2026-07-20T16:00:00.000Z"
+      lastOutboundAt: "2026-07-20T15:00:00.000Z",
+      lastActivityAt: "2026-07-20T16:00:00.000Z"
     });
   });
 });
@@ -2009,7 +2012,8 @@ describe("Stage 1 normalization service", () => {
         contactId: "contact_1",
         bucket: "Opened",
         lastInboundAt: null,
-        lastOutboundAt: "2026-01-01T00:02:00.000Z",
+        // D-063: an automated Salesforce send is not a human reply.
+        lastOutboundAt: null,
         lastActivityAt: "2026-01-01T00:02:00.000Z",
         lastCanonicalEventId: "evt_auto_task_1",
         lastEventType: "communication.email.outbound"
@@ -2021,7 +2025,7 @@ describe("Stage 1 normalization service", () => {
     ).resolves.toMatchObject({
       contactId: "contact_1",
       bucket: "Opened",
-      lastOutboundAt: "2026-01-01T00:02:00.000Z"
+      lastOutboundAt: null
     });
     await expect(
       context.repositories.timelineProjection.listByContactId("contact_1")

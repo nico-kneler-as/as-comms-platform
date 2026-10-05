@@ -307,7 +307,7 @@ describe("Stage 1 worker orchestration service", () => {
         context.repositories.inboxProjection.findByContactId(contactId),
       ).resolves.toMatchObject({
         lastInboundAt: "2026-05-01T09:00:00.000Z",
-        lastOutboundAt: "2026-05-01T11:00:00.000Z",
+        lastOutboundAt: "2026-05-01T10:00:00.000Z", // D-063: human outbound, not the later campaign
         lastEventType: "campaign.email.sent",
       });
     } finally {

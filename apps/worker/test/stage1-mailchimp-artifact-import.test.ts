@@ -448,7 +448,7 @@ describe("Stage 1 Mailchimp artifact importer", () => {
         contactId,
         bucket: "Opened",
         lastInboundAt: null,
-        lastOutboundAt: "2026-02-01T15:00:00.000Z",
+        lastOutboundAt: null, // D-063: campaign sends are not replies
         lastActivityAt: "2026-02-02T10:00:00.000Z",
         lastEventType: "campaign.email.unsubscribed",
       });
