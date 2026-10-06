@@ -7,9 +7,11 @@
  *   pnpm --filter @as-comms/worker ops cleanup-salesforce-owner-scope --execute
  *
  * Dry-run by default. Looks up the current Salesforce Task owner for every
- * Salesforce email canonical event in the DB and removes the rows whose Task
- * owner is explicitly not Nim Admin. Tasks that Salesforce does not currently
- * resolve are skipped and reported rather than deleted.
+ * Salesforce email canonical event in the DB and removes only non-Nim-Admin
+ * rows whose Task subject has the CRM Email: prefix. This mirrors D-064, so
+ * unprefixed Salesforce Flow sends from a human owner remain captured. Tasks
+ * that Salesforce does not currently resolve are skipped and reported rather
+ * than deleted.
  */
 import { execFile } from "node:child_process";
 import process from "node:process";
@@ -37,6 +39,7 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService,
 } from "@as-comms/domain";
+import { isSalesforceVolunteerEmailTaskCaptureAllowed } from "@as-comms/integrations";
 
 import { createStage1IngestService } from "../ingest/index.js";
 import {
@@ -54,7 +57,6 @@ import {
 const execFileAsync = promisify(execFile);
 
 const defaultTargetOrg = "as-production";
-const nimAdminUsername = "admin+1@adventurescientists.org";
 const queryChunkSize = 200;
 const deleteChunkSize = 500;
 const projectionChunkSize = 250;
@@ -92,7 +94,7 @@ export interface SalesforceOwnerScopeCleanupChange {
   readonly providerRecordId: string;
   readonly subject: string | null;
   readonly ownerUsername: string | null;
-  readonly removalReason: "non_nim_admin_owner" | "unresolved_owner";
+  readonly removalReason: "non_nim_admin_prefixed_email" | "unresolved_owner";
 }
 
 export interface SalesforceOwnerScopeCleanupPlan {
@@ -409,7 +411,12 @@ export function planSalesforceOwnerScopeCleanup(input: {
 
     resolvedCount += 1;
 
-    if (ownerUsername === nimAdminUsername) {
+    if (
+      isSalesforceVolunteerEmailTaskCaptureAllowed({
+        ownerUsername,
+        subject: candidate.subject,
+      })
+    ) {
       keepCount += 1;
       continue;
     }
@@ -422,7 +429,7 @@ export function planSalesforceOwnerScopeCleanup(input: {
       providerRecordId: candidate.providerRecordId,
       subject: candidate.subject,
       ownerUsername,
-      removalReason: "non_nim_admin_owner",
+      removalReason: "non_nim_admin_prefixed_email",
     });
   }
 
@@ -455,8 +462,10 @@ function printPlanSummary(
   console.log(`- Salesforce target org: ${input.targetOrg}`);
   console.log(`- scanned Salesforce email rows: ${String(plan.scannedCount)}`);
   console.log(`- owner-resolved Task ids: ${String(plan.resolvedCount)}`);
-  console.log(`- Nim Admin rows kept: ${String(plan.keepCount)}`);
-  console.log(`- non-Nim Admin rows to remove: ${String(plan.removeCount)}`);
+  console.log(`- D-064-admitted rows kept: ${String(plan.keepCount)}`);
+  console.log(
+    `- non-Nim Admin CRM-prefixed rows to remove: ${String(plan.removeCount)}`,
+  );
   console.log(
     `- unresolved Task ids ${input.includeUnresolved ? "to remove" : "skipped"}: ${String(plan.unresolvedCount)}`,
   );
@@ -470,7 +479,7 @@ function printSampleChanges(
 ): void {
   if (changes.length === 0) {
     console.log(
-      "No non-Nim Admin Salesforce email rows are currently in scope.",
+      "No non-Nim Admin CRM-prefixed Salesforce email rows are currently in scope.",
     );
     return;
   }

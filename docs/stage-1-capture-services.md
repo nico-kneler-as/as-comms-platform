@@ -105,7 +105,7 @@ Launch-scope behavior:
 
 - only `Contact`, `Expedition_Members__c`, and `Task`
 - `Task` is the only launch-scope communication source
-- volunteer-linked Salesforce email Tasks are captured only when owned by `Nim Admin` (`admin+1@adventurescientists.org`)
+- volunteer-linked Salesforce email Tasks are captured when owned by `Nim Admin` (`admin+1@adventurescientists.org`) or when their subject does not contain `Email:` (D-064)
 - lifecycle events come only from:
   - `CreatedDate`
   - `Date_Training_Sent__c`

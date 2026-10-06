@@ -96,7 +96,7 @@ describe("recover-orphan-task-details helpers", () => {
           salesforceTask: {
             Id: "task-r",
             TaskSubtype: "Email",
-            Subject: "Checking in",
+            Subject: "→ Email: Checking in",
             Description: "Checking in",
             CreatedDate: "2026-04-30T13:40:34.000+0000",
             OwnerId: "005-human",

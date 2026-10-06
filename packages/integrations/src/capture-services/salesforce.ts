@@ -1007,20 +1007,26 @@ function buildLaunchScopeEmailTaskOwnerWhere(): string {
   ])}`;
 }
 
+function buildD064VolunteerEmailTaskAdmissionWhere(): string {
+  // D-064 amends D-039: retain volunteer email-like Tasks owned by Nim Admin
+  // and Salesforce-sent flow emails from any owner, identified by the absence
+  // of the CRM Email: subject prefix. The NOT stays on a leaf because SOQL
+  // rejects NOT applied to a parenthesized OR group.
+  return `(${buildLaunchScopeEmailTaskOwnerWhere()} OR (NOT Subject LIKE '%Email:%'))`;
+}
+
 function buildLaunchScopedTaskWhere(
   baseWhere: string,
   config: ResolvedSalesforceCaptureServiceConfig,
 ): string {
   const volunteerScopedWhere = buildVolunteerScopedTaskWhere(baseWhere, config);
   const notEmailLikeTaskWhere = buildNotEmailLikeTaskWhere(config);
-  const ownerIsLaunchScope = buildLaunchScopeEmailTaskOwnerWhere();
+  const d064EmailTaskAdmissionWhere =
+    buildD064VolunteerEmailTaskAdmissionWhere();
 
-  // D-039: volunteer-linked Salesforce email Tasks are captured only when they
-  // come from the Nim Admin automation owner. Non-email Task shapes keep the
-  // prior launch-scope behavior. Expressed as (NOT emailLike) OR ownerMatch,
-  // with the NOT expanded via De Morgan into positive leaf predicates so
-  // SOQL accepts it.
-  return `${volunteerScopedWhere} AND ((${notEmailLikeTaskWhere}) OR ${ownerIsLaunchScope})`;
+  // Non-email Task shapes keep the prior launch-scope behavior. The first NOT
+  // is expanded via De Morgan into positive leaf predicates so SOQL accepts it.
+  return `${volunteerScopedWhere} AND ((${notEmailLikeTaskWhere}) OR ${d064EmailTaskAdmissionWhere})`;
 }
 
 function buildTaskWindowWhere(
