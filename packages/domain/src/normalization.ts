@@ -525,14 +525,11 @@ function isInboundEvent(eventType: CanonicalEventRecord["eventType"]): boolean {
   );
 }
 
-function isOutboundProjectionEvent(
-  eventType: CanonicalEventRecord["eventType"],
-): boolean {
+function isHumanOutboundProjectionEvent(event: CanonicalEventRecord): boolean {
   return (
-    eventType === "communication.email.outbound" ||
-    eventType === "communication.sms.outbound" ||
-    eventType === "campaign.email.sent" ||
-    eventType === "automated.email.sent"
+    (event.eventType === "communication.email.outbound" ||
+      event.eventType === "communication.sms.outbound") &&
+    event.provenance.messageKind !== "auto"
   );
 }
 
@@ -676,8 +673,8 @@ export function reduceInboxProjection(input: {
 
   const existing = input.existing;
   const incomingIsInbound = isInboundEvent(input.canonicalEvent.eventType);
-  const incomingIsOutboundProjectionEvent = isOutboundProjectionEvent(
-    input.canonicalEvent.eventType,
+  const incomingIsHumanOutbound = isHumanOutboundProjectionEvent(
+    input.canonicalEvent,
   );
   const lastInboundAt = incomingIsInbound
     ? newestTimestamp(
@@ -685,7 +682,7 @@ export function reduceInboxProjection(input: {
         input.canonicalEvent.occurredAt,
       )
     : (existing?.lastInboundAt ?? null);
-  const lastOutboundAt = incomingIsOutboundProjectionEvent
+  const lastOutboundAt = incomingIsHumanOutbound
     ? newestTimestamp(
         existing?.lastOutboundAt ?? null,
         input.canonicalEvent.occurredAt,
@@ -1741,7 +1738,7 @@ function latestOutboundMatchesEarlierInboundThread(input: {
   readonly qualifyingEvents: readonly CanonicalEventRecord[];
   readonly detailMaps: ProviderDetailMaps;
 }): boolean {
-  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+  if (!isHumanOutboundProjectionEvent(input.latestEvent)) {
     return false;
   }
 
@@ -1771,7 +1768,7 @@ async function latestOutboundMatchesPendingReplySignal(input: {
   readonly latestEvent: CanonicalEventRecord;
   readonly detailMaps: ProviderDetailMaps;
 }): Promise<boolean> {
-  if (!isOutboundProjectionEvent(input.latestEvent.eventType)) {
+  if (!isHumanOutboundProjectionEvent(input.latestEvent)) {
     return false;
   }
 
@@ -1880,7 +1877,7 @@ export async function rebuildInboxProjectionForContact(
       lastInboundAt = newestTimestamp(lastInboundAt, event.occurredAt);
     }
 
-    if (isOutboundProjectionEvent(event.eventType)) {
+    if (isHumanOutboundProjectionEvent(event)) {
       lastOutboundAt = newestTimestamp(lastOutboundAt, event.occurredAt);
     }
 

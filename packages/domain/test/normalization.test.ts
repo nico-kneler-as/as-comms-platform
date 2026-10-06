@@ -30,6 +30,7 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService,
   defineStage1RepositoryBundle,
+  reduceInboxProjection,
   rebuildInboxProjectionForContact,
   type PendingComposerOutboundRecord,
   type Stage1RepositoryBundle,
@@ -150,7 +151,8 @@ function buildEvent(input: {
       winnerReason: "single_source",
       sourceRecordType: input.sourceRecordType ?? "message",
       sourceRecordId: `${input.provider ?? "gmail"}:${input.key}`,
-      messageKind: input.messageKind ?? "one_to_one",
+      messageKind:
+        input.messageKind === undefined ? "one_to_one" : input.messageKind,
       campaignRef: null,
       threadRef: null,
       direction: input.direction ?? null,
@@ -1648,7 +1650,7 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     await expect(replayEvent(context, campaignSent)).resolves.toMatchObject({
       bucket: "Opened",
       lastInboundAt: null,
-      lastOutboundAt: campaignSent.occurredAt,
+      lastOutboundAt: null,
       lastActivityAt: campaignSent.occurredAt,
       lastCanonicalEventId: campaignSent.id,
       lastEventType: "campaign.email.sent",
@@ -1670,7 +1672,7 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     await expect(replayEvent(context, autoOutbound)).resolves.toMatchObject({
       bucket: "Opened",
       lastInboundAt: null,
-      lastOutboundAt: autoOutbound.occurredAt,
+      lastOutboundAt: null,
       lastActivityAt: autoOutbound.occurredAt,
       lastCanonicalEventId: autoOutbound.id,
       lastEventType: "communication.email.outbound",
@@ -1745,11 +1747,220 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     await expect(replayEvent(context, lifecycle)).resolves.toMatchObject({
       bucket: "Opened",
       lastInboundAt: inbound.occurredAt,
-      lastOutboundAt: campaignSent.occurredAt,
+      lastOutboundAt: null,
       lastActivityAt: lifecycle.occurredAt,
       lastCanonicalEventId: lifecycle.id,
       lastEventType: "lifecycle.received_training",
     });
+  });
+
+  it.each([
+    {
+      label: "Salesforce auto email",
+      event: buildEvent({
+        key: "human-outbound-sf-auto",
+        occurredAt: "2026-04-24T15:05:00.000Z",
+        direction: "outbound",
+        provider: "salesforce",
+        sourceRecordType: "task",
+        messageKind: "auto",
+      }),
+      lastOutboundAt: null,
+    },
+    {
+      label: "campaign email",
+      event: buildEvent({
+        key: "human-outbound-campaign",
+        occurredAt: "2026-04-24T15:10:00.000Z",
+        eventType: "campaign.email.sent",
+        direction: null,
+        provider: "mailchimp",
+        sourceRecordType: "campaign_activity",
+        messageKind: "campaign",
+      }),
+      lastOutboundAt: null,
+    },
+    {
+      label: "platform automated email",
+      event: buildEvent({
+        key: "human-outbound-platform-auto",
+        occurredAt: "2026-04-24T15:15:00.000Z",
+        eventType: "automated.email.sent",
+        direction: "outbound",
+        provider: "postmark",
+        sourceRecordType: "automated_email",
+        messageKind: "auto",
+      }),
+      lastOutboundAt: null,
+    },
+    {
+      label: "Gmail one-to-one email",
+      event: buildEvent({
+        key: "human-outbound-gmail-one-to-one",
+        occurredAt: "2026-04-24T15:20:00.000Z",
+        direction: "outbound",
+        messageKind: "one_to_one",
+      }),
+      lastOutboundAt: "2026-04-24T15:20:00.000Z",
+    },
+    {
+      label: "legacy Gmail email without a message kind",
+      event: buildEvent({
+        key: "human-outbound-gmail-null-kind",
+        occurredAt: "2026-04-24T15:25:00.000Z",
+        direction: "outbound",
+        messageKind: null,
+      }),
+      lastOutboundAt: "2026-04-24T15:25:00.000Z",
+    },
+    {
+      label: "one-to-one SMS",
+      event: buildEvent({
+        key: "human-outbound-sms-one-to-one",
+        occurredAt: "2026-04-24T15:30:00.000Z",
+        eventType: "communication.sms.outbound",
+        direction: "outbound",
+        provider: "twilio",
+        messageKind: "one_to_one",
+      }),
+      lastOutboundAt: "2026-04-24T15:30:00.000Z",
+    },
+  ])("counts only human outbound for $label", ({ event, lastOutboundAt }) => {
+    const inbound = buildEvent({
+      key: "human-outbound-inbound",
+      occurredAt: "2026-04-24T15:00:00.000Z",
+      direction: "inbound",
+    });
+    const afterInbound = reduceInboxProjection({
+      existing: null,
+      canonicalEvent: inbound,
+      snippet: "Inbound question",
+      hasUnresolved: false,
+    });
+
+    expect(afterInbound).not.toBeNull();
+    if (afterInbound === null) {
+      return;
+    }
+
+    expect(
+      reduceInboxProjection({
+        existing: afterInbound,
+        canonicalEvent: event,
+        snippet: "Outbound activity",
+        hasUnresolved: false,
+      }),
+    ).toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt,
+    });
+  });
+
+  it("keeps an unread inbound New after an automated outbound in the same thread", async () => {
+    const inbound = buildEvent({
+      key: "auto-reply-inbound",
+      occurredAt: "2026-04-24T16:00:00.000Z",
+      direction: "inbound",
+    });
+    const autoOutbound = buildEvent({
+      key: "auto-reply-outbound",
+      occurredAt: "2026-04-24T16:05:00.000Z",
+      direction: "outbound",
+      messageKind: "auto",
+    });
+    const context = buildContext({
+      events: [inbound, autoOutbound],
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: inbound.occurredAt,
+        lastCanonicalEventId: inbound.id,
+      }),
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "auto-reply-inbound",
+          direction: "inbound",
+          gmailThreadId: "thread:auto-reply",
+        }),
+        buildGmailDetail({
+          key: "auto-reply-outbound",
+          direction: "outbound",
+          gmailThreadId: "thread:auto-reply",
+        }),
+      ],
+    });
+
+    await expect(
+      rebuildInboxProjectionForContact(
+        context.normalization.persistence,
+        inbound.contactId,
+      ),
+    ).resolves.toMatchObject({
+      bucket: "New",
+      lastInboundAt: inbound.occurredAt,
+      lastOutboundAt: null,
+    });
+  });
+
+  it("uses the same human-outbound rule for live ingest and rebuild folds", async () => {
+    const events = [
+      buildEvent({
+        key: "fold-human",
+        occurredAt: "2026-04-24T17:00:00.000Z",
+        direction: "outbound",
+      }),
+      buildEvent({
+        key: "fold-auto",
+        occurredAt: "2026-04-24T17:05:00.000Z",
+        direction: "outbound",
+        provider: "salesforce",
+        sourceRecordType: "task",
+        messageKind: "auto",
+      }),
+      buildEvent({
+        key: "fold-campaign",
+        occurredAt: "2026-04-24T17:10:00.000Z",
+        eventType: "campaign.email.sent",
+        direction: null,
+        provider: "mailchimp",
+        sourceRecordType: "campaign_activity",
+        messageKind: "campaign",
+      }),
+      buildEvent({
+        key: "fold-inbound",
+        occurredAt: "2026-04-24T17:15:00.000Z",
+        direction: "inbound",
+      }),
+      buildEvent({
+        key: "fold-latest-auto",
+        occurredAt: "2026-04-24T17:20:00.000Z",
+        direction: "outbound",
+        provider: "salesforce",
+        sourceRecordType: "task",
+        messageKind: "auto",
+      }),
+    ];
+    const liveProjection = events.reduce<InboxProjectionRow | null>(
+      (projection, event) =>
+        reduceInboxProjection({
+          existing: projection,
+          canonicalEvent: event,
+          snippet: "Replayed snippet",
+          hasUnresolved: false,
+        }),
+      null,
+    );
+    const context = buildContext({ events, existingProjection: null });
+
+    await expect(
+      context.normalization.prepareInboxProjectionRebuild({
+        contactId: contact.id,
+        events: events.map((canonicalEvent) => ({
+          canonicalEvent,
+          snippet: "Replayed snippet",
+        })),
+      }),
+    ).resolves.toEqual(liveProjection);
   });
 
   it("saves one rebuilt projection for a multi-event contact replay", async () => {

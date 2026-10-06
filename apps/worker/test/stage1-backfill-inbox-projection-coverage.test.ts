@@ -323,7 +323,7 @@ describe("Stage 1 inbox projection coverage backfill ops", () => {
       ).resolves.toMatchObject({
         bucket: "Opened",
         lastInboundAt: null,
-        lastOutboundAt: "2026-04-24T14:50:00.000Z",
+        lastOutboundAt: null, // D-063: auto-only contact has no human reply
         lastActivityAt: "2026-04-24T14:50:00.000Z",
         lastEventType: "communication.email.outbound"
       });
@@ -332,7 +332,7 @@ describe("Stage 1 inbox projection coverage backfill ops", () => {
       ).resolves.toMatchObject({
         bucket: "Opened",
         lastInboundAt: null,
-        lastOutboundAt: "2026-04-24T15:05:00.000Z",
+        lastOutboundAt: null, // D-063: campaign-only contact has no human reply
         lastActivityAt: "2026-04-24T15:08:00.000Z",
         lastEventType: "campaign.email.opened"
       });
