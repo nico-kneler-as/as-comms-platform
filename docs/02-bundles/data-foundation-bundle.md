@@ -25,7 +25,7 @@ Build canonical identity, source evidence, normalized history, review queues, pr
 - Salesforce Contact ID primary identity anchor
 - ambiguous identity goes to manual resolution
 - Gmail wins canonical email tie-breaks
-- Salesforce volunteer email Task ingest is limited to Nim Admin-owned automations
+- Salesforce volunteer email Task ingest admits Nim Admin-owned Tasks and unprefixed Salesforce-sent Tasks from any owner (D-064)
 - hybrid cutover with explicit approval or rollback
 
 ## Required Interfaces / Concepts

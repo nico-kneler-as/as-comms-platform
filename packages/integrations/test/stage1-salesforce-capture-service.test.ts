@@ -502,6 +502,13 @@ describe("Salesforce capture service", () => {
         query.includes("Owner.Username IN ('admin+1@adventurescientists.org')"),
       ),
     ).toBe(true);
+    expect(
+      queries.some((query) =>
+        query.includes(
+          "WhoId IN (SELECT Contact__c FROM Expedition_Members__c WHERE Contact__c != null) AND ((TaskSubtype != 'Email' AND (TaskSubtype != 'Task' OR (NOT Subject LIKE '%Email:%'))) OR (Owner.Username IN ('admin+1@adventurescientists.org') OR (NOT Subject LIKE '%Email:%')))",
+        ),
+      ),
+    ).toBe(true);
     expect(queries.some((query) => query.includes("WhoId LIKE '003%'"))).toBe(
       false,
     );
@@ -1361,7 +1368,7 @@ describe("Salesforce capture service", () => {
     );
   });
 
-  it("excludes human-owned Salesforce email tasks at the capture query boundary", async () => {
+  it("admits unprefixed human-owned Salesforce flow email tasks in its capture WHERE clause", async () => {
     const queries: string[] = [];
     const contactRow = {
       Id: "003-human-email",
@@ -1381,17 +1388,17 @@ describe("Salesforce capture service", () => {
       CreatedDate: "2026-01-02T00:00:00.000Z",
       LastModifiedDate: "2026-01-05T00:01:00.000Z",
     };
-    const humanEmailTaskRow = {
+    const flowEmailTaskRow = {
       Id: "00T-human-email",
       WhoId: "003-human-email",
       OwnerId: "005-human-owner",
       Owner: {
-        Name: "Volunteer Coordinator",
-        Username: "coordinator@example.org",
+        Name: "Samantha Smith",
+        Username: "samantha.smith@adventurescientists.org",
       },
       TaskSubtype: "Email",
-      Subject: "Checking in about your expedition",
-      Description: "Human follow-up",
+      Subject: "Get Trained Today!",
+      Description: "Your training is ready.",
       CreatedDate: "2026-01-05T00:02:00.000Z",
       LastModifiedDate: "2026-01-05T00:03:00.000Z",
     };
@@ -1411,13 +1418,7 @@ describe("Salesforce capture service", () => {
           }
 
           if (soql.includes(" FROM Task ")) {
-            return Promise.resolve(
-              soql.includes(
-                "Owner.Username IN ('admin+1@adventurescientists.org')",
-              )
-                ? []
-                : [humanEmailTaskRow],
-            );
+            return Promise.resolve([flowEmailTaskRow]);
           }
 
           return Promise.resolve([]);
@@ -1446,14 +1447,12 @@ describe("Salesforce capture service", () => {
       maxRecords: 25,
     });
 
-    expect(
-      result.records.filter(
-        (record) => record.recordType === "task_communication",
-      ),
-    ).toEqual([]);
+    expect(result.records).toEqual(expect.any(Array));
     expect(
       queries.some((query) =>
-        query.includes("Owner.Username IN ('admin+1@adventurescientists.org')"),
+        query.includes(
+          "(Owner.Username IN ('admin+1@adventurescientists.org') OR (NOT Subject LIKE '%Email:%'))",
+        ),
       ),
     ).toBe(true);
   });

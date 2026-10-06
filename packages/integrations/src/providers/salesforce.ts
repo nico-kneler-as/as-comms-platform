@@ -134,6 +134,8 @@ export const salesforceLaunchScopeAutomatedOwnerUsernames = [
   "admin+1@adventurescientists.org",
 ] as const;
 
+const salesforceEmailTaskSubjectPattern = /email:/iu;
+
 const automatedOwnerSignalPatterns = [
   /\bmarketing\s*cloud\b/iu,
   /\bpardot\b/iu,
@@ -195,6 +197,35 @@ function matchesAnyLiteral(
   return literals.some((literal) => normalizedValue === literal.toLowerCase());
 }
 
+export function hasSalesforceEmailTaskSubjectPrefix(
+  subject: string | null | undefined,
+): boolean {
+  const normalizedSubject = normalizeComparableString(subject);
+
+  return (
+    normalizedSubject !== null &&
+    salesforceEmailTaskSubjectPattern.test(normalizedSubject)
+  );
+}
+
+/**
+ * D-064: a volunteer-linked Salesforce email Task is admitted when it belongs
+ * to Nim Admin or its subject is not CRM-email-prefixed. Capture expresses the
+ * same predicate in SOQL; cleanup uses this runtime form so a later cleanup
+ * cannot delete an admitted Salesforce Flow send.
+ */
+export function isSalesforceVolunteerEmailTaskCaptureAllowed(input: {
+  readonly ownerUsername: string | null | undefined;
+  readonly subject: string | null | undefined;
+}): boolean {
+  return (
+    matchesAnyLiteral(
+      input.ownerUsername,
+      salesforceLaunchScopeAutomatedOwnerUsernames,
+    ) || !hasSalesforceEmailTaskSubjectPrefix(input.subject)
+  );
+}
+
 export interface SalesforceTaskMessageKindClassificationInput {
   readonly channel: "email" | "sms";
   readonly taskSubtype?: string | null;
@@ -209,6 +240,7 @@ export interface SalesforceTaskMessageKindClassification {
   readonly reason:
     | "non_email_task"
     | "automated_owner"
+    | "salesforce_sent_email"
     | "subject_pattern"
     | "human_owned_task"
     | "insufficient_metadata";
@@ -259,15 +291,24 @@ export function classifySalesforceTaskMessageKind(
 
   const subject = normalizeComparableString(input.subject);
 
-  // D-039 narrows live Salesforce email Task capture to Nim Admin-owned
-  // volunteer automations. When owner metadata is present, owner truth beats
-  // subject heuristics so human-owned CRM mail does not leak back into the
-  // auto bucket. Subject fallback remains for legacy rows that persisted only
-  // the subject/snippet and no owner metadata.
+  // D-064: Nim Admin remains an automation owner. Human-owned Tasks admitted
+  // by the unprefixed-subject rule are Salesforce-sent flow email; prefixed
+  // Tasks remain CRM-tracked human conversations. Subject fallback remains for
+  // legacy rows that persisted only subject/snippet and no owner metadata.
   if (hasAutomatedOwnerSignal(input)) {
     return {
       messageKind: "auto",
       reason: "automated_owner",
+    };
+  }
+
+  if (
+    hasHumanOwnerSignal(input) &&
+    !hasSalesforceEmailTaskSubjectPrefix(subject)
+  ) {
+    return {
+      messageKind: "auto",
+      reason: "salesforce_sent_email",
     };
   }
 

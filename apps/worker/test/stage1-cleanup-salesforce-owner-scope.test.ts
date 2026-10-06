@@ -6,7 +6,7 @@ import {
 } from "../src/ops/cleanup-salesforce-owner-scope.js";
 
 describe("cleanup-salesforce-owner-scope planning", () => {
-  it("removes only positively resolved non-Nim Admin Salesforce email rows", () => {
+  it("keeps Sam-owned unprefixed flow sends and removes only prefixed CRM mail", () => {
     const candidates: SalesforceOwnerScopeCleanupCandidate[] = [
       {
         canonicalEventId: "evt:nim-admin",
@@ -16,15 +16,22 @@ describe("cleanup-salesforce-owner-scope planning", () => {
         subject: "Application received",
       },
       {
-        canonicalEventId: "evt:human-owner",
+        canonicalEventId: "evt:sam-flow-send",
         contactId: "contact:2",
-        sourceEvidenceId: "sev:human-owner",
-        providerRecordId: "00T-human-owner",
-        subject: "Re: Let’s meet!",
+        sourceEvidenceId: "sev:sam-flow-send",
+        providerRecordId: "00T-sam-flow-send",
+        subject: "Get Trained Today!",
+      },
+      {
+        canonicalEventId: "evt:sam-crm-email",
+        contactId: "contact:3",
+        sourceEvidenceId: "sev:sam-crm-email",
+        providerRecordId: "00T-sam-crm-email",
+        subject: "→ Email: Re: question",
       },
       {
         canonicalEventId: "evt:unresolved",
-        contactId: "contact:3",
+        contactId: "contact:4",
         sourceEvidenceId: "sev:unresolved",
         providerRecordId: "00T-unresolved",
         subject: "Historical task",
@@ -35,26 +42,27 @@ describe("cleanup-salesforce-owner-scope planning", () => {
       candidates,
       ownerUsernameByTaskId: new Map([
         ["00T-nim-admin", "admin+1@adventurescientists.org"],
-        ["00T-human-owner", "ricky@adventurescientists.org"],
+        ["00T-sam-flow-send", "samantha.smith@adventurescientists.org"],
+        ["00T-sam-crm-email", "samantha.smith@adventurescientists.org"],
       ]),
     });
 
     expect(plan).toMatchObject({
-      scannedCount: 3,
-      resolvedCount: 2,
-      keepCount: 1,
+      scannedCount: 4,
+      resolvedCount: 3,
+      keepCount: 2,
       removeCount: 1,
       unresolvedCount: 1,
-      affectedContactIds: ["contact:2"],
+      affectedContactIds: ["contact:3"],
       unresolvedProviderRecordIds: ["00T-unresolved"],
     });
     expect(plan.changes).toEqual([
       expect.objectContaining({
-        canonicalEventId: "evt:human-owner",
-        contactId: "contact:2",
-        providerRecordId: "00T-human-owner",
-        ownerUsername: "ricky@adventurescientists.org",
-        removalReason: "non_nim_admin_owner",
+        canonicalEventId: "evt:sam-crm-email",
+        contactId: "contact:3",
+        providerRecordId: "00T-sam-crm-email",
+        ownerUsername: "samantha.smith@adventurescientists.org",
+        removalReason: "non_nim_admin_prefixed_email",
       }),
     ]);
   });

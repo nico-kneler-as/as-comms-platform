@@ -3,50 +3,56 @@ import { describe, expect, it } from "vitest";
 import { classifySalesforceTaskMessageKind } from "../src/index.js";
 
 describe("Salesforce Task message kind classification", () => {
-  it("classifies Nim Admin-owned email tasks as auto", () => {
+  it.each(["Checking in", "→ Email: Start your training"])(
+    "classifies Nim Admin-owned email tasks as auto: %s",
+    (subject) => {
+      expect(
+        classifySalesforceTaskMessageKind({
+          channel: "email",
+          taskSubtype: "Email",
+          ownerName: "Nim Admin",
+          ownerUsername: "admin+1@adventurescientists.org",
+          subject,
+        }),
+      ).toEqual({
+        messageKind: "auto",
+        reason: "automated_owner",
+      });
+    },
+  );
+
+  it("classifies an unprefixed Samantha-owned Salesforce send as auto", () => {
     expect(
       classifySalesforceTaskMessageKind({
         channel: "email",
         taskSubtype: "Email",
-        ownerName: "Nim Admin",
-        ownerUsername: "admin+1@adventurescientists.org",
-        subject: "Checking in",
+        ownerName: "Samantha Smith",
+        ownerUsername: "samantha.smith@adventurescientists.org",
+        subject: "Get Trained Today!",
       }),
     ).toEqual({
       messageKind: "auto",
-      reason: "automated_owner",
+      reason: "salesforce_sent_email",
     });
   });
 
-  it("classifies human-owned email tasks as one_to_one when the subject is not workflow-shaped", () => {
-    expect(
-      classifySalesforceTaskMessageKind({
-        channel: "email",
-        taskSubtype: "Email",
-        ownerName: "Volunteer Coordinator",
-        ownerUsername: "coordinator@example.org",
-        subject: "Checking in about your expedition",
-      }),
-    ).toEqual({
-      messageKind: "one_to_one",
-      reason: "human_owned_task",
-    });
-  });
-
-  it("keeps human-owned workflow-shaped subjects out of the auto bucket", () => {
-    expect(
-      classifySalesforceTaskMessageKind({
-        channel: "email",
-        taskSubtype: "Task",
-        ownerName: "Volunteer Coordinator",
-        ownerUsername: "coordinator@example.org",
-        subject: "→ Email: Start your training",
-      }),
-    ).toEqual({
-      messageKind: "one_to_one",
-      reason: "human_owned_task",
-    });
-  });
+  it.each(["→ Email: Re: question", "← Email: question"])(
+    "keeps a prefixed Samantha-owned Task as one_to_one: %s",
+    (subject) => {
+      expect(
+        classifySalesforceTaskMessageKind({
+          channel: "email",
+          taskSubtype: "Task",
+          ownerName: "Samantha Smith",
+          ownerUsername: "samantha.smith@adventurescientists.org",
+          subject,
+        }),
+      ).toEqual({
+        messageKind: "one_to_one",
+        reason: "human_owned_task",
+      });
+    },
+  );
 
   it("classifies workflow-shaped subjects as auto when owner metadata is missing", () => {
     expect(
