@@ -45,11 +45,12 @@ import type {
   SalesforceRecord,
   SimpleTextingRecord,
 } from "@as-comms/integrations";
-import type {
-  Stage1NormalizationService,
-  Stage1PersistenceService,
+import {
+  qualifiesForInboxProjection,
+  rebuildInboxProjectionForContact,
+  type Stage1NormalizationService,
+  type Stage1PersistenceService,
 } from "@as-comms/domain";
-import { qualifiesForInboxProjection } from "@as-comms/domain";
 import type { MailchimpCampaignTailStateRepository } from "@as-comms/db";
 
 import type { Stage1IngestService } from "../ingest/service.js";
@@ -1080,7 +1081,6 @@ export function createStage1WorkerOrchestrationService(input: {
     Stage1NormalizationService,
     | "applyInboxProjection"
     | "applyTimelineProjection"
-    | "prepareInboxProjectionRebuild"
     | "refreshInboxReviewOverlay"
   >;
   readonly persistence: Stage1PersistenceService;
@@ -1548,68 +1548,68 @@ export function createStage1WorkerOrchestrationService(input: {
           : (await input.persistence.repositories.contacts.listAll()).map(
               (contact) => contact.id,
             );
-      const rebuiltContactIds = [...contacts].sort((left, right) =>
+      const contactIds = [...contacts].sort((left, right) =>
         left.localeCompare(right),
       );
+      const rebuiltContactIds: string[] = [];
+      const failedContactIds: string[] = [];
       const missingProjectionSeeds = new Set<string>();
       const discrepancies: Stage1OperationalDiscrepancy[] = [];
       let rebuiltTimelineRows = 0;
       let rebuiltInboxRows = 0;
 
-      for (const contactId of rebuiltContactIds) {
-        const canonicalEvents = [
-          ...(await input.persistence.repositories.canonicalEvents.listByContactId(
-            contactId,
-          )),
-        ].sort(compareEventOrder);
-        const rebuildInboxProjection =
-          payload.projection === "inbox" || payload.projection === "all";
-
-        const inboxProjectionEvents: {
-          readonly canonicalEvent: CanonicalEventRecord;
-          readonly snippet: string;
-        }[] = [];
-
-        for (const event of canonicalEvents) {
-          const projectionSeed = await loadProjectionSeed(
-            input.persistence,
-            event,
-          );
-
-          if (projectionSeed.source === "fallback") {
-            missingProjectionSeeds.add(event.id);
-          }
-
-          if (
-            payload.projection === "timeline" ||
-            payload.projection === "all"
-          ) {
-            await input.normalization.applyTimelineProjection({
-              canonicalEvent: event,
-              summary: projectionSeed.summary,
-            });
-            rebuiltTimelineRows += 1;
-          }
-
-          if (rebuildInboxProjection && qualifiesForProjectionRebuild(event)) {
-            inboxProjectionEvents.push({
-              canonicalEvent: event,
-              snippet: projectionSeed.snippet,
-            });
-          }
-        }
-
-        if (rebuildInboxProjection && inboxProjectionEvents.length > 0) {
-          const inboxProjection =
-            await input.normalization.prepareInboxProjectionRebuild({
+      for (const contactId of contactIds) {
+        try {
+          const canonicalEvents = [
+            ...(await input.persistence.repositories.canonicalEvents.listByContactId(
               contactId,
-              events: inboxProjectionEvents,
-            });
+            )),
+          ].sort(compareEventOrder);
+          const rebuildInboxProjection =
+            payload.projection === "inbox" || payload.projection === "all";
 
-          if (inboxProjection !== null) {
-            await input.persistence.saveInboxProjection(inboxProjection);
-            rebuiltInboxRows += 1;
+          for (const event of canonicalEvents) {
+            if (
+              payload.projection === "timeline" ||
+              payload.projection === "all"
+            ) {
+              const projectionSeed = await loadProjectionSeed(
+                input.persistence,
+                event,
+              );
+
+              if (projectionSeed.source === "fallback") {
+                missingProjectionSeeds.add(event.id);
+              }
+
+              await input.normalization.applyTimelineProjection({
+                canonicalEvent: event,
+                summary: projectionSeed.summary,
+              });
+              rebuiltTimelineRows += 1;
+            }
           }
+
+          if (rebuildInboxProjection) {
+            const inboxProjection = await rebuildInboxProjectionForContact(
+              input.persistence,
+              contactId,
+            );
+
+            if (inboxProjection !== null) {
+              rebuiltInboxRows += 1;
+            }
+          }
+
+          rebuiltContactIds.push(contactId);
+        } catch (error) {
+          failedContactIds.push(contactId);
+          discrepancies.push({
+            code: "inbox_rebuild_contact_failed",
+            severity: "warning",
+            message: formatJobFailureMessage(error),
+            entityIds: [contactId],
+          });
         }
       }
 
@@ -1641,13 +1641,18 @@ export function createStage1WorkerOrchestrationService(input: {
       });
 
       return {
-        outcome: "succeeded",
+        outcome:
+          failedContactIds.length === 0
+            ? "succeeded"
+            : "completed_with_failures",
         jobType: payload.jobType,
         syncState: completedSyncState,
         projection: payload.projection,
         rebuiltContactIds,
         rebuiltTimelineRows,
         rebuiltInboxRows,
+        failedContactCount: failedContactIds.length,
+        failedContactIds,
         missingProjectionSeeds: Array.from(missingProjectionSeeds).sort(
           (left, right) => left.localeCompare(right),
         ),
@@ -1693,6 +1698,8 @@ export function createStage1WorkerOrchestrationService(input: {
         rebuiltContactIds: [],
         rebuiltTimelineRows: 0,
         rebuiltInboxRows: 0,
+        failedContactCount: 0,
+        failedContactIds: [],
         missingProjectionSeeds: [],
         discrepancies: [],
         failure,
