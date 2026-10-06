@@ -167,6 +167,7 @@ function buildExistingProjection(input: {
   readonly bucket: InboxBucket;
   readonly needsFollowUp?: boolean;
   readonly hasUnresolved?: boolean;
+  readonly archivedAt?: string | null;
   readonly lastInboundAt: string | null;
   readonly lastOutboundAt?: string | null;
   readonly lastCanonicalEventId?: string;
@@ -194,7 +195,7 @@ function buildExistingProjection(input: {
     lastOutboundAt,
     lastActivityAt,
     snippet: input.snippet ?? "Existing snippet",
-    archivedAt: null,
+    archivedAt: input.archivedAt ?? null,
     lastCanonicalEventId: input.lastCanonicalEventId ?? "event:existing",
     lastEventType: input.lastEventType ?? "communication.email.inbound",
   };
@@ -337,6 +338,9 @@ function buildReplayInput(
 
 function buildContext(input: {
   readonly events: readonly CanonicalEventRecord[];
+  readonly audienceEventsByContactId?: Readonly<
+    Record<string, readonly CanonicalEventRecord[]>
+  >;
   readonly existingProjection?: InboxProjectionRow | null;
   readonly inboxProjections?: readonly InboxProjectionRow[];
   readonly contacts?: readonly ContactRecord[];
@@ -569,11 +573,12 @@ function buildContext(input: {
         ),
       listByContactId: (contactId) =>
         Promise.resolve(
-          sortEvents(
-            [...canonicalEventsById.values()].filter(
+          sortEvents([
+            ...[...canonicalEventsById.values()].filter(
               (event) => event.contactId === contactId,
             ),
-          ),
+            ...(input.audienceEventsByContactId?.[contactId] ?? []),
+          ]),
         ),
       listByContactIds: (contactIds) =>
         Promise.resolve(
@@ -1902,7 +1907,7 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
     });
   });
 
-  it("uses the same human-outbound rule for live ingest and rebuild folds", async () => {
+  it("matches live per-event apply for a mixed sequence", async () => {
     const events = [
       buildEvent({
         key: "fold-human",
@@ -1931,36 +1936,141 @@ describe("rebuildInboxProjectionForContact bucket semantics", () => {
         occurredAt: "2026-04-24T17:15:00.000Z",
         direction: "inbound",
       }),
-      buildEvent({
-        key: "fold-latest-auto",
-        occurredAt: "2026-04-24T17:20:00.000Z",
-        direction: "outbound",
-        provider: "salesforce",
-        sourceRecordType: "task",
-        messageKind: "auto",
-      }),
     ];
     const liveProjection = events.reduce<InboxProjectionRow | null>(
       (projection, event) =>
         reduceInboxProjection({
           existing: projection,
           canonicalEvent: event,
-          snippet: "Replayed snippet",
+          snippet:
+            event.id === "event:fold-human"
+              ? "Human outbound"
+              : event.id === "event:fold-inbound"
+                ? "Inbound question"
+                : "",
           hasUnresolved: false,
         }),
       null,
     );
-    const context = buildContext({ events, existingProjection: null });
+    const context = buildContext({
+      events,
+      existingProjection: null,
+      gmailMessageDetails: [
+        buildGmailDetail({
+          key: "fold-human",
+          direction: "outbound",
+          bodyTextPreview: "Human outbound",
+        }),
+        buildGmailDetail({
+          key: "fold-inbound",
+          direction: "inbound",
+          bodyTextPreview: "Inbound question",
+        }),
+      ],
+    });
 
     await expect(
-      context.normalization.prepareInboxProjectionRebuild({
-        contactId: contact.id,
-        events: events.map((canonicalEvent) => ({
-          canonicalEvent,
-          snippet: "Replayed snippet",
-        })),
-      }),
+      rebuildInboxProjectionForContact(
+        context.normalization.persistence,
+        contact.id,
+      ),
     ).resolves.toEqual(liveProjection);
+  });
+
+  it.each([
+    {
+      label: "campaign",
+      event: buildEvent({
+        key: "rebuild-campaign-after-human",
+        occurredAt: "2026-04-24T17:10:00.000Z",
+        eventType: "campaign.email.sent",
+        direction: null,
+        provider: "mailchimp",
+        sourceRecordType: "campaign_activity",
+        messageKind: "campaign",
+      }),
+    },
+    {
+      label: "Salesforce auto",
+      event: buildEvent({
+        key: "rebuild-auto-after-human",
+        occurredAt: "2026-04-24T17:10:00.000Z",
+        direction: "outbound",
+        provider: "salesforce",
+        sourceRecordType: "task",
+        messageKind: "auto",
+      }),
+    },
+  ])(
+    "recomputes lastOutboundAt past a stale $label outbound and preserves operator state",
+    async ({ event }) => {
+      const humanOutbound = buildEvent({
+        key: "rebuild-human-before-automated",
+        occurredAt: "2026-04-24T17:00:00.000Z",
+        direction: "outbound",
+      });
+      const context = buildContext({
+        events: [humanOutbound, event],
+        existingProjection: buildExistingProjection({
+          bucket: "Opened",
+          needsFollowUp: true,
+          archivedAt: "2026-04-24T17:11:00.000Z",
+          lastInboundAt: null,
+          lastOutboundAt: event.occurredAt,
+          lastCanonicalEventId: event.id,
+          lastEventType: event.eventType,
+        }),
+      });
+
+      await expect(
+        rebuildInboxProjectionForContact(
+          context.normalization.persistence,
+          contact.id,
+        ),
+      ).resolves.toMatchObject({
+        bucket: "Opened",
+        needsFollowUp: true,
+        archivedAt: "2026-04-24T17:11:00.000Z",
+        lastOutboundAt: humanOutbound.occurredAt,
+      });
+    },
+  );
+
+  it("ignores audience-only events when rebuilding the inbox row", async () => {
+    const ownInbound = buildEvent({
+      key: "rebuild-owned-inbound",
+      occurredAt: "2026-04-24T17:00:00.000Z",
+      direction: "inbound",
+    });
+    const audienceOnly = buildEvent({
+      key: "rebuild-audience-only",
+      contactId: "contact:another-owner",
+      occurredAt: "2026-04-24T17:10:00.000Z",
+      direction: "outbound",
+    });
+    const context = buildContext({
+      events: [ownInbound, audienceOnly],
+      audienceEventsByContactId: {
+        [contact.id]: [audienceOnly],
+      },
+      existingProjection: buildExistingProjection({
+        bucket: "New",
+        lastInboundAt: ownInbound.occurredAt,
+        lastCanonicalEventId: ownInbound.id,
+      }),
+    });
+
+    await expect(
+      rebuildInboxProjectionForContact(
+        context.normalization.persistence,
+        contact.id,
+      ),
+    ).resolves.toMatchObject({
+      contactId: contact.id,
+      bucket: "New",
+      lastActivityAt: ownInbound.occurredAt,
+      lastCanonicalEventId: ownInbound.id,
+    });
   });
 
   it("saves one rebuilt projection for a multi-event contact replay", async () => {

@@ -78,6 +78,38 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
   });
 }
 
+async function seedEmailOnlyContact(
+  context: TestWorkerContext,
+  input: {
+    readonly id: string;
+    readonly email: string;
+  },
+): Promise<void> {
+  await context.normalization.upsertNormalizedContactGraph({
+    contact: {
+      id: input.id,
+      salesforceContactId: null,
+      displayName: input.email,
+      primaryEmail: input.email,
+      primaryPhone: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    identities: [
+      {
+        id: `identity:${input.id}:email`,
+        contactId: input.id,
+        kind: "email",
+        normalizedValue: input.email,
+        isPrimary: true,
+        source: "gmail",
+        verifiedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    memberships: [],
+  });
+}
+
 function buildSalesforceLivePayload(input: {
   readonly syncStateId: string;
   readonly attempt?: number;
@@ -216,6 +248,7 @@ function buildProjectionCanonicalEvent(input: {
 function buildProjectionRebuildPayload(input: {
   readonly jobId: string;
   readonly contactIds?: readonly string[];
+  readonly projection?: "inbox" | "timeline" | "all";
 }) {
   return projectionRebuildBatchPayloadSchema.parse({
     version: 1,
@@ -227,7 +260,7 @@ function buildProjectionRebuildPayload(input: {
     attempt: 1,
     maxAttempts: 3,
     jobType: "projection_rebuild",
-    projection: "inbox",
+    projection: input.projection ?? "inbox",
     contactIds: input.contactIds ?? [contactId],
     includeReviewOverlayRefresh: true,
   });
@@ -280,19 +313,61 @@ describe("Stage 1 worker orchestration service", () => {
       ];
 
       await seedProjectionEvents(context, events);
+      await context.repositories.gmailMessageDetails.upsert({
+        sourceEvidenceId: "source:evt:projection-equivalence-inbound",
+        providerRecordId: "evt:projection-equivalence-inbound",
+        gmailThreadId: "thread:projection-equivalence",
+        rfc822MessageId: null,
+        direction: "inbound",
+        subject: null,
+        fromHeader: null,
+        toHeader: null,
+        ccHeader: null,
+        fromEmails: [],
+        toEmails: [],
+        ccEmails: [],
+        bccEmails: [],
+        snippetClean: "Inbound projection message",
+        bodyTextPreview: "Inbound projection message",
+        capturedMailbox: "orcas@adventurescientists.org",
+        projectInboxAlias: "orcas@adventurescientists.org",
+      });
+      await context.repositories.gmailMessageDetails.upsert({
+        sourceEvidenceId: "source:evt:projection-equivalence-outbound",
+        providerRecordId: "evt:projection-equivalence-outbound",
+        // A separate thread: an in-thread reply is the one case where rebuild
+        // intentionally repairs New -> Opened beyond what live apply does.
+        gmailThreadId: "thread:projection-equivalence-other",
+        rfc822MessageId: null,
+        direction: "outbound",
+        subject: null,
+        fromHeader: null,
+        toHeader: null,
+        ccHeader: null,
+        fromEmails: [],
+        toEmails: [],
+        ccEmails: [],
+        bccEmails: [],
+        snippetClean: "Outbound projection message",
+        bodyTextPreview: "Outbound projection message",
+        capturedMailbox: "orcas@adventurescientists.org",
+        projectInboxAlias: "orcas@adventurescientists.org",
+      });
 
       let expected = null;
       for (const event of events) {
         expected = await context.normalization.applyInboxProjection({
           canonicalEvent: event,
           snippet:
-            event.eventType === "campaign.email.sent"
-              ? "Campaign email sent"
-              : "",
+            event.id === "evt:projection-equivalence-inbound"
+              ? "Inbound projection message"
+              : event.id === "evt:projection-equivalence-outbound"
+                ? "Outbound projection message"
+                : "Campaign email sent",
         });
       }
 
-      await context.repositories.inboxProjection.deleteByContactId(contactId);
+      // Production rebuilds upsert over the existing row; they never delete it.
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
         buildProjectionRebuildPayload({ jobId: "projection-equivalence" }),
@@ -315,13 +390,84 @@ describe("Stage 1 worker orchestration service", () => {
     }
   });
 
-  it("leaves the existing inbox row unchanged when a projection seed load fails mid-contact", async () => {
+  it("ignores audience-only events while retaining their timeline rebuild", async () => {
     const context = await createTestWorkerContext({
       capture: createEmptyCapturePorts(),
     });
 
     try {
       await seedContact(context);
+      const ownerContactId = "contact:audience-event-owner";
+      await seedEmailOnlyContact(context, {
+        id: ownerContactId,
+        email: "audience-event-owner@example.org",
+      });
+      const ownInbound = buildProjectionCanonicalEvent({
+        id: "evt:audience-target-inbound",
+        eventType: "communication.email.inbound",
+        occurredAt: "2026-05-01T09:00:00.000Z",
+      });
+      const audienceOnly = {
+        ...buildProjectionCanonicalEvent({
+          id: "evt:audience-owner-outbound",
+          eventType: "communication.email.outbound",
+          occurredAt: "2026-05-01T10:00:00.000Z",
+        }),
+        contactId: ownerContactId,
+      };
+
+      await seedProjectionEvents(context, [ownInbound, audienceOnly]);
+      await context.repositories.canonicalEventAudience.upsert({
+        canonicalEventId: audienceOnly.id,
+        contactId,
+        participantRole: "direct_recipient",
+        normalizedEmail: "volunteer@example.org",
+      });
+
+      const rebuilt = await context.orchestration.runProjectionRebuildBatch(
+        projectionRebuildBatchPayloadSchema.parse({
+          ...buildProjectionRebuildPayload({
+            jobId: "projection-audience-only",
+            contactIds: [contactId],
+          }),
+          projection: "all",
+        }),
+      );
+
+      expect(rebuilt.outcome).toBe("succeeded");
+      expect(rebuilt.rebuiltTimelineRows).toBe(2);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(contactId),
+      ).resolves.toMatchObject({
+        contactId,
+        lastActivityAt: ownInbound.occurredAt,
+        lastCanonicalEventId: ownInbound.id,
+      });
+      await expect(
+        context.repositories.timelineProjection.findByCanonicalEventId(
+          audienceOnly.id,
+        ),
+      ).resolves.toMatchObject({
+        contactId: ownerContactId,
+        canonicalEventId: audienceOnly.id,
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  it("continues rebuilding other contacts when one contact fails", async () => {
+    const context = await createTestWorkerContext({
+      capture: createEmptyCapturePorts(),
+    });
+
+    try {
+      await seedContact(context);
+      const healthyContactId = "contact:projection-rebuild-healthy";
+      await seedEmailOnlyContact(context, {
+        id: healthyContactId,
+        email: "projection-rebuild-healthy@example.org",
+      });
       const events = [
         buildProjectionCanonicalEvent({
           id: "evt:projection-failure-inbound",
@@ -339,6 +485,14 @@ describe("Stage 1 worker orchestration service", () => {
       if (firstEvent === undefined) {
         throw new Error("Expected at least one seeded projection event.");
       }
+      const healthyEvent = {
+        ...buildProjectionCanonicalEvent({
+          id: "evt:projection-healthy-inbound",
+          eventType: "communication.email.inbound",
+          occurredAt: "2026-05-02T11:00:00.000Z",
+        }),
+        contactId: healthyContactId,
+      };
 
       const existing = {
         contactId,
@@ -354,7 +508,7 @@ describe("Stage 1 worker orchestration service", () => {
         lastEventType: "communication.email.inbound" as const,
       };
 
-      await seedProjectionEvents(context, events);
+      await seedProjectionEvents(context, [...events, healthyEvent]);
       await context.repositories.inboxProjection.upsert(existing);
 
       const listByEntity = vi.spyOn(
@@ -370,13 +524,32 @@ describe("Stage 1 worker orchestration service", () => {
       });
 
       const rebuilt = await context.orchestration.runProjectionRebuildBatch(
-        buildProjectionRebuildPayload({ jobId: "projection-failure" }),
+        buildProjectionRebuildPayload({
+          jobId: "projection-failure",
+          contactIds: [contactId, healthyContactId],
+          projection: "all",
+        }),
       );
 
-      expect(rebuilt.outcome).toBe("failed");
+      expect(rebuilt.outcome).toBe("completed_with_failures");
+      expect(rebuilt.failedContactCount).toBe(1);
+      expect(rebuilt.failedContactIds).toEqual([contactId]);
+      expect(rebuilt.rebuiltContactIds).toEqual([healthyContactId]);
+      expect(rebuilt.discrepancies).toContainEqual({
+        code: "inbox_rebuild_contact_failed",
+        severity: "warning",
+        message: "Injected projection seed failure",
+        entityIds: [contactId],
+      });
       await expect(
         context.repositories.inboxProjection.findByContactId(contactId),
       ).resolves.toEqual(existing);
+      await expect(
+        context.repositories.inboxProjection.findByContactId(healthyContactId),
+      ).resolves.toMatchObject({
+        contactId: healthyContactId,
+        lastCanonicalEventId: healthyEvent.id,
+      });
     } finally {
       await context.dispose();
     }

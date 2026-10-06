@@ -284,13 +284,6 @@ export interface Stage1NormalizationService {
   applyInboxProjection(
     input: InboxProjectionApplyInput,
   ): Promise<InboxProjectionRow | null>;
-  prepareInboxProjectionRebuild(input: {
-    readonly contactId: string;
-    readonly events: readonly {
-      readonly canonicalEvent: CanonicalEventRecord;
-      readonly snippet: string;
-    }[];
-  }): Promise<InboxProjectionRow | null>;
   refreshInboxReviewOverlay(
     input: InboxReviewOverlayRefreshInput,
   ): Promise<InboxProjectionRow | null>;
@@ -1805,19 +1798,26 @@ export async function rebuildInboxProjectionForContact(
 ): Promise<InboxProjectionRow | null> {
   const existing =
     await persistence.repositories.inboxProjection.findByContactId(contactId);
-  const events =
-    await persistence.repositories.canonicalEvents.listByContactId(contactId);
+  // CanonicalEventRepository.listByContactId also returns audience rows for
+  // timeline reads. Inbox state is anchored to the ledger owner, just like
+  // live ingest, so audience-only events must never drive this projection.
+  const events = (
+    await persistence.repositories.canonicalEvents.listByContactId(contactId)
+  ).filter((event) => event.contactId === contactId);
   const qualifyingEvents = events.filter((event) =>
     qualifiesForInboxProjection(event),
   );
 
-  if (qualifyingEvents.length === 0) {
-    if (existing !== null) {
-      await persistence.repositories.inboxProjection.deleteByContactId(
-        contactId,
-      );
-    }
+  if (qualifyingEvents.some((event) => event.contactId !== contactId)) {
+    throw new Error(
+      "Inbox projection rebuild events must all belong to the requested contact.",
+    );
+  }
 
+  if (qualifyingEvents.length === 0) {
+    // Projection rows are FK-restricted by lastCanonicalEventId and must not
+    // disappear from the inbox during a rebuild. The worker only upserts, so
+    // returning null leaves an existing row untouched.
     return null;
   }
 
@@ -3233,47 +3233,6 @@ export function createStage1NormalizationService(
       return projection === null
         ? null
         : persistence.saveInboxProjection(projection);
-    },
-
-    async prepareInboxProjectionRebuild(input) {
-      const events = input.events.map((event) =>
-        inboxProjectionApplyInputSchema.parse(event),
-      );
-      const qualifyingEvents = events.filter((event) =>
-        qualifiesForInboxProjection(event.canonicalEvent),
-      );
-
-      if (qualifyingEvents.length === 0) {
-        return null;
-      }
-
-      if (
-        qualifyingEvents.some(
-          (event) => event.canonicalEvent.contactId !== input.contactId,
-        )
-      ) {
-        throw new Error(
-          "Inbox projection rebuild events must all belong to the requested contact.",
-        );
-      }
-
-      const [existing, hasUnresolved] = await Promise.all([
-        persistence.repositories.inboxProjection.findByContactId(
-          input.contactId,
-        ),
-        contactHasUnresolved(persistence, input.contactId),
-      ]);
-
-      return qualifyingEvents.reduce(
-        (projection, event) =>
-          reduceInboxProjection({
-            existing: projection,
-            canonicalEvent: event.canonicalEvent,
-            snippet: event.snippet,
-            hasUnresolved,
-          }),
-        existing,
-      );
     },
 
     async refreshInboxReviewOverlay(input) {

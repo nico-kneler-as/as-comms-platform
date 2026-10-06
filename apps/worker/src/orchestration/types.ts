@@ -138,11 +138,13 @@ export type Stage1CaptureJobOutcome =
   | Stage1CaptureJobFailure;
 
 export interface Stage1ProjectionRebuildJobOutcome extends Stage1JobOutcomeBase {
-  readonly outcome: "succeeded" | "failed";
+  readonly outcome: "succeeded" | "completed_with_failures" | "failed";
   readonly projection: ProjectionRebuildBatchPayload["projection"];
   readonly rebuiltContactIds: readonly string[];
   readonly rebuiltTimelineRows: number;
   readonly rebuiltInboxRows: number;
+  readonly failedContactCount: number;
+  readonly failedContactIds: readonly string[];
   readonly missingProjectionSeeds: readonly string[];
   readonly discrepancies: readonly Stage1OperationalDiscrepancy[];
   readonly failure: Stage1JobFailure | null;
