@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 
 const dependencyAuditSecretHeader = "x-as-comms-dependency-audit-secret";
 const auditArgs = ["audit", "--audit-level", "high", "--json"];
+// Must match the blocking gate in scripts/security-check.mjs.
+const gateAuditArgs = ["audit", "--audit-level", "high"];
 const reportableSeverities = new Set(["high", "critical"]);
 
 function readRequiredEnv(name) {
@@ -249,28 +251,6 @@ function extractAuditReport(rawOutput) {
   throw new Error("Unable to parse pnpm audit JSON output.");
 }
 
-function readReportableVulnerabilityCount(report) {
-  const counts = report?.metadata?.vulnerabilities;
-
-  if (!counts || typeof counts !== "object") {
-    return null;
-  }
-
-  let total = 0;
-
-  for (const severity of reportableSeverities) {
-    const count = counts[severity];
-
-    if (typeof count !== "number" || !Number.isFinite(count)) {
-      return null;
-    }
-
-    total += count;
-  }
-
-  return total;
-}
-
 function describeSeverityCounts(report) {
   const counts = report?.metadata?.vulnerabilities;
 
@@ -312,24 +292,27 @@ async function main() {
   const report = extractAuditReport([auditResult.stdout, auditResult.stderr]);
   const advisories = collectAdvisories(report);
 
-  // `pnpm audit --json` ignores `--audit-level` when it picks its exit code: with `--json`
-  // it exits 1 whenever the tree carries any advisory, at any severity. The blocking gate
-  // in scripts/security-check.mjs runs the same audit without `--json`, so the verdict we
-  // publish is derived from the report's own severity counts, never from this exit code.
-  const reportableCount = readReportableVulnerabilityCount(report);
-  const mutedCount = Array.isArray(report.muted) ? report.muted.length : 0;
-  const exitStatus = advisories.length > 0 ? 1 : 0;
+  // The JSON report can't give the verdict: `pnpm audit --json` exits 1 on any advisory at
+  // any severity (it ignores `--audit-level`), and `metadata.vulnerabilities` still counts
+  // advisories that `ignoreGhsas` drops from `advisories` without listing them in `muted`.
+  // So we re-run the exact command of the blocking gate (scripts/security-check.mjs) and
+  // publish its verdict.
+  const gateResult = spawnSync("pnpm", gateAuditArgs, {
+    encoding: "utf8",
+  });
 
-  // Backstop for an output-shape change that hides high/critical advisories from both
-  // extractors. `muted` entries are deliberate `ignoreGhsas` exceptions, so they are slack
-  // rather than evidence.
-  if (
-    advisories.length === 0 &&
-    reportableCount !== null &&
-    reportableCount > mutedCount
-  ) {
+  if (gateResult.error) {
+    throw gateResult.error;
+  }
+
+  const exitStatus = gateResult.status === 0 ? 0 : 1;
+
+  // Backstop: the gate fails but neither extractor found an advisory that explains it —
+  // either the JSON shape changed or the audit itself errored (e.g. registry unreachable).
+  if (exitStatus === 1 && advisories.length === 0) {
+    const detail = (gateResult.stderr || gateResult.stdout || "").trim().slice(-2000);
     throw new Error(
-      `pnpm audit counted ${String(reportableCount)} high/critical vulnerabilities but none could be normalized into advisories.`,
+      `Blocking pnpm audit exited ${String(gateResult.status ?? "unknown")} but no high/critical advisories could be normalized from the JSON report.${detail ? `\n${detail}` : ""}`,
     );
   }
 
@@ -354,7 +337,7 @@ async function main() {
   }
 
   console.log(
-    `Posted dependency audit summary (${String(advisories.length)} high/critical advisories, exit status ${String(exitStatus)}). pnpm audit exited ${String(auditResult.status ?? "unknown")}; ${describeSeverityCounts(report)}.`,
+    `Posted dependency audit summary (${String(advisories.length)} high/critical advisories, exit status ${String(exitStatus)}). pnpm audit --json exited ${String(auditResult.status ?? "unknown")}; ${describeSeverityCounts(report)}.`,
   );
 }
 
