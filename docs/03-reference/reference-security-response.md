@@ -156,12 +156,19 @@ the CI gate and posts a compact summary to
 **`--json` breaks `--audit-level`.** The feed script asks for JSON, and with `--json`
 pnpm ignores `--audit-level` when it sets its exit code: it exits 1 whenever the tree
 carries *any* advisory, even low or moderate. The blocking gate omits `--json` and so
-exits 0 correctly. `scripts/dependency-audit-feed.mjs` therefore derives its verdict
-from `metadata.vulnerabilities` in the report, never from the process exit code, and the
-`exitStatus` it posts is the blocking-audit verdict rather than pnpm's raw exit. Before
-2026-08-25 it treated that exit code as authoritative and crashed on every clean-of-highs
-run — the feed only worked while high advisories existed, so #688 and #690 clearing them
-took it down.
+exits 0 correctly. Before 2026-08-25 the feed treated that exit code as authoritative and
+crashed on every clean-of-highs run — the feed only worked while high advisories existed,
+so #688 and #690 clearing them took it down.
+
+**`metadata.vulnerabilities` counts ignored advisories too.** The 2026-08-25 fix derived
+the verdict from those counts instead, which broke the first time `ignoreGhsas` was the
+only thing holding back highs (2026-10-07, after #729): pnpm drops ignored entries from
+`advisories` but leaves them in the counts and does not list them in `muted`, so the
+feed's backstop saw "2 high counted, 0 extracted" and crashed. Since then
+`scripts/dependency-audit-feed.mjs` re-runs the gate's exact command
+(`pnpm audit --audit-level high`, no `--json`) and posts its exit code as `exitStatus`;
+the JSON run is used only to list the advisories. Rule of thumb: **feed red + CI green =
+the feed's reading of the JSON is wrong, not the dependency tree.**
 
 The CI-only gate (`pnpm audit --audit-level high`, `scripts/security-check.mjs`)
 blocks merges on high/critical advisories. Entries in `ignoreGhsas` are
@@ -170,6 +177,8 @@ deliberate exceptions; each one needs a reason here.
 | GHSA | Package | Why ignored |
 | --- | --- | --- |
 | GHSA-mh99-v99m-4gvg | brace-expansion 1.1.16 | Dev-only path (`eslint → @eslint/config-array / eslintrc → minimatch@3 → brace-expansion@^1.1.7`), never shipped to production and fed only our own lint globs. The advisory's patched range is `>=5.0.8`, i.e. a major jump: **no patched v1 exists** (1.1.16 is the last v1), and forcing v5 wholesale breaks eslint (`TypeError: expand is not a function` — v5 changed its exports). Real v5 consumers are pinned to `^5.0.8` via overrides. Revisit if eslint ships a minimatch bump. Added 2026-07-27. |
+| GHSA-vfj7-8cjw-p6xm | braces 3.0.3 | No patched release exists (`<=3.0.3`). Reached only through build/lint-time globbing (`tailwindcss → chokidar / fast-glob / micromatch`, `@next/eslint-plugin-next → fast-glob`), which expands our own source globs and never sees user input. Revisit when braces ships a fix. Added 2026-10-06 (#729). |
+| GHSA-6qxp-vccf-f47h | @modelcontextprotocol/sdk 1.26.0 | The flaw is in the SDK's OAuth *client* (the MCP server picks which authorization server receives the token); our `/api/mcp` is a server and does not use the SDK's OAuth client. `mcp-handler` 1.1.0 pins SDK 1.26.0 exactly, so the patched SDK needs the `mcp-handler` 2.x migration. Revisit with that migration. Added 2026-10-06 (#729). |
 
 Before adding an entry: confirm the vulnerable copy is dev-only or otherwise
 unreachable at runtime, try an override first, and record the attempt.
