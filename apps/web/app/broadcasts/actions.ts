@@ -1898,6 +1898,7 @@ export async function configureResendAction(
 
       const child = await transaction.campaigns.campaignRuns.create({
         id: randomUUID(),
+        workspace: parent.workspace,
         kind: parent.kind,
         launchType: parent.launchType,
         projectId: parent.projectId,

@@ -10,7 +10,7 @@ function run(input: {
   readonly resendOfRunId?: string | null;
 }): CampaignRunRecord {
   return {
-    id: input.id, kind: "newsletter", launchType: "normal_email", state: input.state,
+    id: input.id, workspace: "volunteers", kind: "newsletter", launchType: "normal_email", state: input.state,
     projectId: null, name: null, fromEmail: "donate@example.org", fromName: "AS",
     replyToEmail: null, subjectTemplate: "Subject", subjectTemplateB: null,
     abTestEnabled: false, bodyHtmlTemplate: "<p>Body</p>", bodyDesignJson: null,
