@@ -1,6 +1,12 @@
 import { run, type Runner, type TaskList } from "graphile-worker";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 
+import {
+  campaignSendJobMaxAttempts,
+  campaignSendJobName,
+  campaignSendPayloadSchema,
+} from "@as-comms/contracts";
 import {
   closeDatabaseConnection,
   createMailchimpCampaignTailStateRepository,
@@ -93,6 +99,9 @@ import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-sta
 import { createOpsAlertSender } from "./ops-alert/sender.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
+export const defaultCampaignSendPacedThreshold = 5_000;
+export const defaultCampaignSendPacedBatchesPerExecution = 3;
+export const defaultCampaignSendPacedIntervalSeconds = 300;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
 const defaultSynthesisRootPageId = "3278a912921180598688fce711ab0509";
 type ReconcileSalesforceStateMode =
@@ -290,6 +299,64 @@ function readOptionalPositiveIntegerEnv(
   return parsed;
 }
 
+function readOptionalPositiveIntegerEnvOrDefault(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  defaultValue: number,
+  logger: Pick<Console, "warn">,
+): number {
+  const rawValue = readOptionalTrimmedEnv(env[key]);
+
+  if (rawValue === null) {
+    return defaultValue;
+  }
+
+  const parsed = Number(rawValue);
+  if (
+    !/^\d+$/u.test(rawValue) ||
+    !Number.isSafeInteger(parsed) ||
+    parsed <= 0
+  ) {
+    logger.warn(
+      `Invalid ${key}=${JSON.stringify(rawValue)}; using default ${String(defaultValue)}.`,
+    );
+    return defaultValue;
+  }
+
+  return parsed;
+}
+
+export function readCampaignSendPacingConfig(
+  env: NodeJS.ProcessEnv,
+  logger: Pick<Console, "warn"> = console,
+): {
+  readonly thresholdRecipients: number;
+  readonly batchesPerExecution: number;
+  readonly intervalMs: number;
+} {
+  return {
+    thresholdRecipients: readOptionalPositiveIntegerEnvOrDefault(
+      env,
+      "CAMPAIGN_SEND_PACED_THRESHOLD",
+      defaultCampaignSendPacedThreshold,
+      logger,
+    ),
+    batchesPerExecution: readOptionalPositiveIntegerEnvOrDefault(
+      env,
+      "CAMPAIGN_SEND_PACED_BATCHES_PER_EXECUTION",
+      defaultCampaignSendPacedBatchesPerExecution,
+      logger,
+    ),
+    intervalMs:
+      readOptionalPositiveIntegerEnvOrDefault(
+        env,
+        "CAMPAIGN_SEND_PACED_INTERVAL_SECONDS",
+        defaultCampaignSendPacedIntervalSeconds,
+        logger,
+      ) * 1000,
+  };
+}
+
 function buildCampaignSendDependencies(input: {
   readonly connection: DatabaseConnection;
   readonly env: NodeJS.ProcessEnv;
@@ -359,6 +426,7 @@ function buildCampaignSendDependencies(input: {
   const broadcastMessageStream =
     readOptionalTrimmedEnv(input.env.POSTMARK_BROADCAST_STREAM_ID) ??
     "broadcast";
+  const pacing = readCampaignSendPacingConfig(input.env);
 
   return {
     orchestrator: createCampaignSendOrchestrator({
@@ -407,6 +475,20 @@ function buildCampaignSendDependencies(input: {
       postmarkClient,
       appUrl,
       broadcastMessageStream,
+      pacing,
+      async scheduleContinuation(runId, runAt) {
+        const payload = campaignSendPayloadSchema.parse({ runId });
+        await input.connection.db.execute(sql`
+          select graphile_worker.add_job(
+            identifier => ${campaignSendJobName},
+            payload => ${JSON.stringify(payload)}::json,
+            run_at => ${runAt.toISOString()}::timestamptz,
+            job_key => ${`campaign-send:${runId}`},
+            job_key_mode => 'replace',
+            max_attempts => ${campaignSendJobMaxAttempts}
+          )
+        `);
+      },
       newsletterSubscribeUrl:
         readOptionalTrimmedEnv(input.env.NEWSLETTER_SUBSCRIBE_PAGE_URL) ??
         undefined,

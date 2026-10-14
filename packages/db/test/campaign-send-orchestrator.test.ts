@@ -228,6 +228,15 @@ function createOrchestrator(
   postmarkClient: ReturnType<typeof createMockPostmarkClient>,
   batchSize = 500,
   broadcastMessageStream?: string,
+  options: {
+    readonly pacing?: {
+      readonly thresholdRecipients: number;
+      readonly batchesPerExecution: number;
+      readonly intervalMs: number;
+    };
+    readonly scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
+    readonly now?: () => Date;
+  } = {},
 ) {
   const campaigns = createStage5RepositoryBundle(context.db);
 
@@ -246,6 +255,7 @@ function createOrchestrator(
             await campaigns.broadcastWebVersions.storeRendered(runId, rendered);
           },
         },
+        auditEvidence: context.repositories.auditEvidence,
       },
       audienceResolver: createAudienceResolver({
         repositories: {
@@ -291,6 +301,7 @@ function createOrchestrator(
       postmarkClient,
       appUrl: "https://test.example",
       batchSize,
+      ...options,
       ...(broadcastMessageStream === undefined
         ? {}
         : { broadcastMessageStream }),
@@ -668,6 +679,197 @@ describe("Campaign send orchestrator", () => {
     ).toHaveLength(30);
     expect(refreshedRun?.state).toBe("cancelled");
     expect(refreshedRun?.cancelledReason).toBe("operator_cancelled");
+  });
+
+  it("paces large audiences, resumes from pending snapshots, and completes the final chunk", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 50);
+    const now = new Date("2026-05-15T12:00:00.000Z");
+    const continuations: { readonly runId: string; readonly runAt: Date }[] = [];
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({}),
+      10,
+      undefined,
+      {
+        pacing: {
+          thresholdRecipients: 25,
+          batchesPerExecution: 2,
+          intervalMs: 5 * 60 * 1000,
+        },
+        scheduleContinuation: (runId, runAt) => {
+          continuations.push({ runId, runAt });
+          return Promise.resolve();
+        },
+        now: () => now,
+      },
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-paced-send" }),
+    );
+
+    await runtime.orchestrator.freeze(run.id, now);
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    let snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    expect(snapshots.filter((snapshot) => snapshot.deliveryStatus === "sent")).toHaveLength(
+      20,
+    );
+    expect(
+      snapshots.filter((snapshot) => snapshot.deliveryStatus === "pending"),
+    ).toHaveLength(30);
+    await expect(runtime.campaigns.campaignRuns.findById(run.id)).resolves.toMatchObject({
+      state: "sending",
+    });
+    expect(continuations).toEqual([
+      {
+        runId: run.id,
+        runAt: new Date("2026-05-15T12:05:00.000Z"),
+      },
+    ]);
+    const chunkAudit = (
+      await context.repositories.auditEvidence.listByEntity({
+        entityType: "campaign_run",
+        entityId: run.id,
+      })
+    ).find((entry) => entry.action === "campaign_run.chunk_scheduled");
+    expect(chunkAudit?.metadataJson).toEqual({
+      detail: "Scheduled the next paced send chunk.",
+      remainingCount: 30,
+      nextRunAt: "2026-05-15T12:05:00.000Z",
+    });
+
+    await runtime.orchestrator.processSendRequest(run.id);
+    snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    expect(snapshots.filter((snapshot) => snapshot.deliveryStatus === "sent")).toHaveLength(
+      40,
+    );
+    expect(
+      snapshots.filter((snapshot) => snapshot.deliveryStatus === "pending"),
+    ).toHaveLength(10);
+    expect(continuations).toHaveLength(2);
+
+    await runtime.orchestrator.processSendRequest(run.id);
+    snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    expect(snapshots.every((snapshot) => snapshot.deliveryStatus === "sent")).toBe(
+      true,
+    );
+    await expect(runtime.campaigns.campaignRuns.findById(run.id)).resolves.toMatchObject({
+      state: "complete",
+    });
+    expect(continuations).toHaveLength(2);
+  });
+
+  it("does not send or reschedule a paced run cancelled between chunks", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 30);
+    let sentCount = 0;
+    const continuations: string[] = [];
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({
+        onBatch(messages) {
+          sentCount += messages.length;
+        },
+      }),
+      10,
+      undefined,
+      {
+        pacing: {
+          thresholdRecipients: 1,
+          batchesPerExecution: 1,
+          intervalMs: 5 * 60 * 1000,
+        },
+        scheduleContinuation: (runId) => {
+          continuations.push(runId);
+          return Promise.resolve();
+        },
+      },
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-paced-cancelled-between-chunks" }),
+    );
+
+    await runtime.orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await runtime.orchestrator.processSendRequest(run.id);
+    await runtime.orchestrator.cancel(run.id, "operator_cancelled");
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    expect(sentCount).toBe(10);
+    expect(continuations).toEqual([run.id]);
+    await expect(runtime.campaigns.campaignRuns.findById(run.id)).resolves.toMatchObject({
+      state: "cancelled",
+    });
+  });
+
+  it("does not pace runs at the recipient threshold", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 20);
+    const continuations: string[] = [];
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({}),
+      10,
+      undefined,
+      {
+        pacing: {
+          thresholdRecipients: 20,
+          batchesPerExecution: 1,
+          intervalMs: 5 * 60 * 1000,
+        },
+        scheduleContinuation: (runId) => {
+          continuations.push(runId);
+          return Promise.resolve();
+        },
+      },
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-at-pacing-threshold" }),
+    );
+
+    await runtime.orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    expect(snapshots.every((snapshot) => snapshot.deliveryStatus === "sent")).toBe(
+      true,
+    );
+    expect(continuations).toEqual([]);
+    await expect(runtime.campaigns.campaignRuns.findById(run.id)).resolves.toMatchObject({
+      state: "complete",
+    });
+  });
+
+  it("keeps large runs unpaced when pacing is not configured", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 30);
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({}),
+      10,
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-unpaced-without-configuration" }),
+    );
+
+    await runtime.orchestrator.freeze(run.id, new Date("2026-05-15T12:00:00.000Z"));
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+    expect(snapshots.every((snapshot) => snapshot.deliveryStatus === "sent")).toBe(
+      true,
+    );
+    await expect(runtime.campaigns.campaignRuns.findById(run.id)).resolves.toMatchObject({
+      state: "complete",
+    });
   });
 
   it("retries pending rows cleanly after a batch failure", async () => {
