@@ -62,6 +62,7 @@ import {
   sourceEvidenceQuarantine,
   syncState,
   users,
+  userWorkspaces,
   verificationTokens
 } from "./tables.js";
 
@@ -124,6 +125,7 @@ export const databaseSchema = {
   syncState,
   auditPolicyEvidence,
   users,
+  userWorkspaces,
   accounts,
   sessions,
   verificationTokens,

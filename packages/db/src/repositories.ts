@@ -31,6 +31,7 @@ import type {
   Stage2RepositoryBundle,
   UserRecord,
   UserRole,
+  UserWorkspace,
 } from "@as-comms/domain";
 import {
   defineStage1RepositoryBundle,
@@ -54,6 +55,7 @@ import {
   runStateSchema,
   suppressionListRecordSchema,
   updateDraftInputSchema,
+  workspaceSchema,
   type AudienceSnapshotRecord,
   type CampaignRunProjectionRow,
   type CampaignRunRecord,
@@ -76,6 +78,7 @@ import {
   type UpsertNewsletterSuppressionInput,
   type UpdateDraftInput,
   type WebhookDeadLetterFailureKind,
+  type Workspace,
 } from "@as-comms/contracts";
 
 import type { DatabaseConnection } from "./client.js";
@@ -197,6 +200,7 @@ import {
   sourceEvidenceQuarantine,
   syncState,
   users,
+  userWorkspaces,
 } from "./schema/index.js";
 import {
   ensureBroadcastWebVersion,
@@ -349,6 +353,7 @@ export interface Stage5RepositoryBundle {
       readonly limit?: number;
       readonly filterByProjectIds?: readonly string[];
       readonly state?: readonly RunState[];
+      readonly workspace?: Workspace;
     }): Promise<readonly CampaignRunRecord[]>;
     updateDraft(
       id: string,
@@ -483,6 +488,7 @@ export interface Stage5RepositoryBundle {
       readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
       readonly searchQuery?: string;
+      readonly workspace?: Workspace;
     }): Promise<readonly CampaignRunProjectionRow[]>;
     getDetail(
       runId: string,
@@ -493,10 +499,12 @@ export interface Stage5RepositoryBundle {
       readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
       readonly searchQuery?: string;
+      readonly workspace?: Workspace;
     }): Promise<number>;
     countByState(opts?: {
       readonly projectIds?: readonly string[];
       readonly filterByProjectIds?: readonly string[];
+      readonly workspace?: Workspace;
     }): Promise<Partial<Record<RunState, number>>>;
   };
 }
@@ -6959,6 +6967,36 @@ function createStage2RepositoriesInternal(
         return rows.map(mapUserRow);
       },
 
+      async listWorkspaces(userId) {
+        const rows = await db
+          .select({ workspace: userWorkspaces.workspace })
+          .from(userWorkspaces)
+          .where(eq(userWorkspaces.userId, userId));
+
+        return sortWorkspaces(
+          rows.map((row) => workspaceSchema.parse(row.workspace)),
+        );
+      },
+
+      async setWorkspaces(userId, workspaces) {
+        const parsed = workspaceSchema.array().min(1).parse(workspaces);
+        const unique = sortWorkspaces([...new Set(parsed)]);
+
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(userWorkspaces)
+            .where(eq(userWorkspaces.userId, userId));
+          await tx.insert(userWorkspaces).values(
+            unique.map((workspace) => ({
+              userId,
+              workspace,
+            })),
+          );
+        });
+
+        return unique;
+      },
+
       async updateRole(id, role: UserRole) {
         const [row] = await db
           .update(users)
@@ -7026,9 +7064,22 @@ function createStage2RepositoriesInternal(
           })
           .returning();
 
-        return mapUserRow(
+        const mapped = mapUserRow(
           requireRow(row, "Expected user row to be returned from upsert."),
         );
+        const existingWorkspaces = await db
+          .select({ workspace: userWorkspaces.workspace })
+          .from(userWorkspaces)
+          .where(eq(userWorkspaces.userId, mapped.id))
+          .limit(1);
+        if (existingWorkspaces.length === 0) {
+          await db
+            .insert(userWorkspaces)
+            .values({ userId: mapped.id, workspace: "volunteers" })
+            .onConflictDoNothing();
+        }
+
+        return mapped;
       },
     },
 
@@ -7196,9 +7247,23 @@ type OrgSettingsRow = typeof orgSettings.$inferSelect;
 type PostmarkWebhookDeadLetterRow =
   typeof postmarkWebhookDeadLetter.$inferSelect;
 
+const workspaceRank: Readonly<Record<UserWorkspace, number>> = {
+  volunteers: 0,
+  donors: 1,
+};
+
+function sortWorkspaces(
+  workspaces: readonly UserWorkspace[],
+): UserWorkspace[] {
+  return [...workspaces].sort(
+    (left, right) => workspaceRank[left] - workspaceRank[right],
+  );
+}
+
 interface CampaignRunProjectionRowDb {
   readonly runId: string;
   readonly provider: "postmark" | "mailchimp";
+  readonly workspace: Workspace;
   readonly kind: CampaignRunRecord["kind"];
   readonly launchType: CampaignRunRecord["launchType"];
   readonly state: CampaignRunRecord["state"];
@@ -7288,6 +7353,7 @@ function buildCampaignProjectionWhereClause(input: {
   readonly projectIds: readonly string[] | null;
   readonly states: readonly RunState[] | null;
   readonly searchQuery: string | null;
+  readonly workspace: Workspace | null;
 }) {
   const conditions = [];
 
@@ -7316,6 +7382,10 @@ function buildCampaignProjectionWhereClause(input: {
   if (input.searchQuery !== null) {
     const pattern = `%${input.searchQuery.replace(/[\\%_]/g, "\\$&")}%`;
     conditions.push(sql`"subject" ilike ${pattern} escape '\\'`);
+  }
+
+  if (input.workspace !== null) {
+    conditions.push(sql`"workspace" = ${input.workspace}`);
   }
 
   if (conditions.length === 0) {
@@ -7374,6 +7444,7 @@ function normalizeConsentScope(input: {
 function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
   return campaignRunRecordSchema.parse({
     id: row.id,
+    workspace: row.workspace,
     kind: row.kind,
     launchType: row.launchType,
     state: row.state,
@@ -7527,6 +7598,7 @@ function mapCampaignRunProjectionRowDb(
   return campaignRunProjectionRowSchema.parse({
     runId: row.runId,
     provider: row.provider,
+    workspace: row.workspace,
     kind: row.kind,
     launchType: row.launchType,
     state: row.state,
@@ -7553,6 +7625,9 @@ function mapCampaignRunMutationFields(
 
   if ("kind" in input && input.kind !== undefined) {
     values.kind = input.kind;
+  }
+  if ("workspace" in input && input.workspace !== undefined) {
+    values.workspace = input.workspace;
   }
   if ("launchType" in input && input.launchType !== undefined) {
     values.launchType = input.launchType;
@@ -7985,6 +8060,7 @@ export function createStage5RepositoryBundle(
           .insert(campaignRuns)
           .values({
             id: parsed.id,
+            workspace: parsed.workspace,
             kind: parsed.kind,
             launchType: parsed.launchType,
             state: "draft",
@@ -8063,6 +8139,9 @@ export function createStage5RepositoryBundle(
         }
         if (states !== null) {
           predicates.push(inArray(campaignRuns.state, [...states]));
+        }
+        if (opts.workspace !== undefined) {
+          predicates.push(eq(campaignRuns.workspace, opts.workspace));
         }
 
         const whereClause = combinePredicates(...predicates);
@@ -8639,12 +8718,14 @@ export function createStage5RepositoryBundle(
           projectIds,
           states,
           searchQuery,
+          workspace: opts.workspace ?? null,
         });
 
         const result = await db.execute(sql<CampaignRunProjectionRowDb>`
           select
             "run_id" as "runId",
             "provider" as "provider",
+            "workspace" as "workspace",
             "kind" as "kind",
             "launch_type" as "launchType",
             "state" as "state",
@@ -8675,6 +8756,7 @@ export function createStage5RepositoryBundle(
           select
             "run_id" as "runId",
             "provider" as "provider",
+            "workspace" as "workspace",
             "kind" as "kind",
             "launch_type" as "launchType",
             "state" as "state",
@@ -8708,6 +8790,7 @@ export function createStage5RepositoryBundle(
           projectIds,
           states,
           searchQuery,
+          workspace: opts.workspace ?? null,
         });
 
         const result = await db.execute(sql<{
@@ -8734,6 +8817,7 @@ export function createStage5RepositoryBundle(
           projectIds,
           states: null,
           searchQuery: null,
+          workspace: opts.workspace ?? null,
         });
 
         const result = await db.execute(sql<{

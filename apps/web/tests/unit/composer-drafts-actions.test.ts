@@ -9,6 +9,9 @@ const deleteComposerDraft = vi.hoisted(() => vi.fn());
 vi.mock("@/src/server/auth/session", () => ({
   requireSession,
 }));
+vi.mock("@/src/server/auth/workspace-access", () => ({
+  requireVolunteerSession: requireSession,
+}));
 
 vi.mock("@/src/server/stage1-runtime", () => ({
   getStage1WebRuntime,

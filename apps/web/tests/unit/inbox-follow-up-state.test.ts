@@ -10,6 +10,9 @@ vi.mock("next/cache", () => ({
 vi.mock("@/src/server/auth/session", () => ({
   requireSession,
 }));
+vi.mock("@/src/server/auth/workspace-access", () => ({
+  requireVolunteerSession: requireSession,
+}));
 
 import { markInboxNeedsFollowUpAction } from "../../app/inbox/actions";
 

@@ -6,7 +6,7 @@ import { requireApiSession } from "../../../../src/server/auth/api";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers"]);
   if (!session.ok) {
     return session.response;
   }

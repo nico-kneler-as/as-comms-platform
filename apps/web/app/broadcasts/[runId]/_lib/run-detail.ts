@@ -443,6 +443,7 @@ function buildProjectionRun(
 ): CampaignRunRecord {
   return {
     id: projection.runId,
+    workspace: projection.workspace,
     kind: projection.kind,
     launchType: projection.launchType,
     state: projection.state,

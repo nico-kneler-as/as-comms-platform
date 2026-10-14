@@ -17,10 +17,16 @@ import {
   demoteUserAction,
   promoteUserAction,
   reactivateUserAction,
+  setUserWorkspacesAction,
   type UserMutationData,
 } from "../actions";
 import { SettingsSection } from "./settings-section";
 import { TeammateInviteModal } from "./teammate-invite-modal";
+import {
+  WorkspacePicker,
+  workspaceLabel,
+  type WorkspaceOptionValue,
+} from "./workspace-picker";
 
 const AVATAR_TONES = [
   "indigo",
@@ -82,6 +88,7 @@ function mergeUserRow(
   nextUser: UserMutationData,
   currentUserId: string | null,
 ): readonly UserRowViewModel[] {
+  const existing = rows.find((row) => row.userId === nextUser.userId);
   const nextRow: UserRowViewModel = {
     userId: nextUser.userId,
     displayName: nextUser.displayName,
@@ -89,6 +96,7 @@ function mergeUserRow(
     role: nextUser.role,
     status: nextUser.status,
     lastActiveAt: nextUser.lastActiveAt,
+    workspaces: existing?.workspaces ?? ["volunteers"],
   };
   const nextRows = rows.some((row) => row.userId === nextRow.userId)
     ? rows.map((row) => (row.userId === nextRow.userId ? nextRow : row))
@@ -144,12 +152,16 @@ export function AccessSection({
     user: UserRowViewModel,
     nextRole: ManagedRole,
     nextStatus: EditStatus,
+    nextWorkspaces: readonly WorkspaceOptionValue[],
   ) {
     const roleChanged = nextRole !== user.role;
     const currentStatus = userStatusToEditStatus(user.status);
     const statusChanged = nextStatus !== currentStatus && user.status !== "pending";
+    const workspacesChanged =
+      [...nextWorkspaces].sort().join(",") !==
+      [...user.workspaces].sort().join(",");
 
-    if (!roleChanged && !statusChanged) {
+    if (!roleChanged && !statusChanged && !workspacesChanged) {
       setEditingUserId(null);
       return;
     }
@@ -183,8 +195,31 @@ export function AccessSection({
         commitUser(result.data.user);
       }
 
+      if (workspacesChanged) {
+        const formData = buildIdFormData(user.userId);
+        for (const workspace of nextWorkspaces) {
+          formData.append("workspaces", workspace);
+        }
+        const result = await setUserWorkspacesAction(formData);
+        if (!result.ok) {
+          announce(result.message, "error");
+          setSavingUserId(null);
+          return;
+        }
+        setRows((current) =>
+          current.map((row) =>
+            row.userId === result.data.userId
+              ? { ...row, workspaces: result.data.workspaces }
+              : row,
+          ),
+        );
+      }
+
+      const changeCount = [roleChanged, statusChanged, workspacesChanged].filter(
+        Boolean,
+      ).length;
       announce(
-        roleChanged && statusChanged
+        changeCount > 1 || (workspacesChanged && changeCount === 1)
           ? `${user.email} updated.`
           : roleChanged
             ? nextRole === "admin"
@@ -199,7 +234,7 @@ export function AccessSection({
     });
   }
 
-  const colCount = viewModel.isAdmin ? 4 : 3;
+  const colCount = viewModel.isAdmin ? 5 : 4;
 
   return (
     <SettingsSection
@@ -251,6 +286,12 @@ export function AccessSection({
                 className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
               >
                 Role
+              </th>
+              <th
+                scope="col"
+                className={cn("px-5 py-3 text-left", TYPE.label, "tracking-wider")}
+              >
+                Spaces
               </th>
               <th
                 scope="col"
@@ -329,6 +370,12 @@ export function AccessSection({
                       <RoleBadge role={user.role} />
                     </td>
                     <td className="px-5 py-3 align-middle">
+                      <WorkspaceBadges
+                        workspaces={user.workspaces}
+                        isAdmin={user.role === "admin"}
+                      />
+                    </td>
+                    <td className="px-5 py-3 align-middle">
                       <StatusDot status={user.status} />
                     </td>
                     {viewModel.isAdmin ? (
@@ -372,8 +419,8 @@ export function AccessSection({
                           onCancel={() => {
                             setEditingUserId(null);
                           }}
-                          onSave={(nextRole, nextStatus) => {
-                            handleSaveEdit(user, nextRole, nextStatus);
+                          onSave={(nextRole, nextStatus, nextWorkspaces) => {
+                            handleSaveEdit(user, nextRole, nextStatus, nextWorkspaces);
                           }}
                         />
                       </td>
@@ -403,6 +450,32 @@ function RoleBadge({ role }: { readonly role: "admin" | "internal_user" }) {
       )}
     >
       {isAdmin ? "Admin" : "Operator"}
+    </span>
+  );
+}
+
+// ---- Workspace badges ----
+
+function WorkspaceBadges({
+  workspaces,
+  isAdmin,
+}: {
+  readonly workspaces: readonly WorkspaceOptionValue[];
+  readonly isAdmin: boolean;
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {workspaces.map((workspace) => (
+        <span
+          key={workspace}
+          className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200"
+        >
+          {workspaceLabel(workspace)}
+        </span>
+      ))}
+      {isAdmin ? (
+        <span className={cn(TYPE.micro, "text-slate-400")}>(admin: all)</span>
+      ) : null}
     </span>
   );
 }
@@ -489,7 +562,11 @@ interface RowEditPanelProps {
   readonly isOnlyActiveAdmin: boolean;
   readonly isSaving: boolean;
   readonly onCancel: () => void;
-  readonly onSave: (role: ManagedRole, status: EditStatus) => void;
+  readonly onSave: (
+    role: ManagedRole,
+    status: EditStatus,
+    workspaces: readonly WorkspaceOptionValue[],
+  ) => void;
 }
 
 function RowEditPanel({
@@ -503,6 +580,9 @@ function RowEditPanel({
   const [selectedStatus, setSelectedStatus] = useState<EditStatus>(
     userStatusToEditStatus(user.status),
   );
+  const [selectedWorkspaces, setSelectedWorkspaces] = useState([
+    ...user.workspaces,
+  ]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -622,6 +702,12 @@ function RowEditPanel({
         </div>
       </div>
 
+      <WorkspacePicker
+        value={selectedWorkspaces}
+        disabled={isSaving}
+        onChange={setSelectedWorkspaces}
+      />
+
       <div className="flex items-center justify-end gap-2">
         <Button
           type="button"
@@ -637,7 +723,7 @@ function RowEditPanel({
           size="sm"
           disabled={isSaving}
           onClick={() => {
-            onSave(selectedRole, selectedStatus);
+            onSave(selectedRole, selectedStatus, selectedWorkspaces);
           }}
         >
           {isSaving ? "Saving…" : "Save changes"}

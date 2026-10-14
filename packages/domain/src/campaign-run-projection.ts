@@ -1,4 +1,8 @@
-import type { CampaignRunProjectionRow, RunState } from "@as-comms/contracts";
+import type {
+  CampaignRunProjectionRow,
+  RunState,
+  Workspace,
+} from "@as-comms/contracts";
 
 export interface CampaignRunProjectionRepositories {
   readonly campaignRunProjection: {
@@ -8,6 +12,7 @@ export interface CampaignRunProjectionRepositories {
       readonly states?: readonly RunState[];
       readonly projectIds?: readonly string[];
       readonly searchQuery?: string;
+      readonly workspace?: Workspace;
     }): Promise<readonly CampaignRunProjectionRow[]>;
     getDetail(
       runId: string,
@@ -17,9 +22,11 @@ export interface CampaignRunProjectionRepositories {
       readonly states?: readonly RunState[];
       readonly projectIds?: readonly string[];
       readonly searchQuery?: string;
+      readonly workspace?: Workspace;
     }): Promise<number>;
     countByState(opts?: {
       readonly projectIds?: readonly string[];
+      readonly workspace?: Workspace;
     }): Promise<Partial<Record<RunState, number>>>;
   };
 }
@@ -31,6 +38,7 @@ export interface CampaignRunProjectionReader {
     states?: RunState[];
     projectIds?: string[];
     searchQuery?: string;
+    workspace?: Workspace;
   }): Promise<CampaignRunProjectionRow[]>;
   getDetail(
     runId: string,
@@ -40,9 +48,11 @@ export interface CampaignRunProjectionReader {
     states?: RunState[];
     projectIds?: string[];
     searchQuery?: string;
+    workspace?: Workspace;
   }): Promise<number>;
   countByState(opts: {
     projectIds?: string[];
+    workspace?: Workspace;
   }): Promise<Partial<Record<RunState, number>>>;
 }
 
@@ -62,6 +72,9 @@ export function createCampaignRunProjectionReader(deps: {
           ...(opts.searchQuery === undefined
             ? {}
             : { searchQuery: opts.searchQuery }),
+          ...(opts.workspace === undefined
+            ? {}
+            : { workspace: opts.workspace }),
         })),
       ];
     },
@@ -79,6 +92,9 @@ export function createCampaignRunProjectionReader(deps: {
         ...(opts.searchQuery === undefined
           ? {}
           : { searchQuery: opts.searchQuery }),
+        ...(opts.workspace === undefined
+          ? {}
+          : { workspace: opts.workspace }),
       });
     },
 
@@ -87,6 +103,9 @@ export function createCampaignRunProjectionReader(deps: {
         ...(opts.projectIds === undefined
           ? {}
           : { projectIds: opts.projectIds }),
+        ...(opts.workspace === undefined
+          ? {}
+          : { workspace: opts.workspace }),
       });
     },
   };

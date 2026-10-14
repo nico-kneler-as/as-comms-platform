@@ -22,6 +22,7 @@ const actionMocks = vi.hoisted(() => ({
   inviteUserAction: vi.fn(),
   promoteUserAction: vi.fn(),
   reactivateUserAction: vi.fn(),
+  setUserWorkspacesAction: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -40,6 +41,7 @@ vi.mock("lucide-react", () => ({
   Flag: iconMock("Flag"),
   Inbox: iconMock("Inbox"),
   MailOpen: iconMock("MailOpen"),
+  Pencil: iconMock("Pencil"),
   Send: iconMock("Send"),
   Sparkle: iconMock("Sparkle"),
   UserPlus: iconMock("UserPlus"),
@@ -132,6 +134,7 @@ vi.mock("@/app/settings/actions", () => ({
   inviteUserAction: actionMocks.inviteUserAction,
   promoteUserAction: actionMocks.promoteUserAction,
   reactivateUserAction: actionMocks.reactivateUserAction,
+  setUserWorkspacesAction: actionMocks.setUserWorkspacesAction,
 }));
 
 vi.mock("../../app/settings/actions", () => ({
@@ -140,6 +143,7 @@ vi.mock("../../app/settings/actions", () => ({
   inviteUserAction: actionMocks.inviteUserAction,
   promoteUserAction: actionMocks.promoteUserAction,
   reactivateUserAction: actionMocks.reactivateUserAction,
+  setUserWorkspacesAction: actionMocks.setUserWorkspacesAction,
 }));
 
 import { AccessSection } from "../../app/settings/_components/access-section";
@@ -177,6 +181,7 @@ afterEach(async () => {
   actionMocks.inviteUserAction.mockReset();
   actionMocks.promoteUserAction.mockReset();
   actionMocks.reactivateUserAction.mockReset();
+  actionMocks.setUserWorkspacesAction.mockReset();
   routerRefresh.mockReset();
 });
 
@@ -390,10 +395,39 @@ function buildAccessViewModel(): AccessSettingsViewModel {
         role: "admin",
         status: "active",
         lastActiveAt: "2026-04-24T12:00:00.000Z",
+        workspaces: ["volunteers"],
       },
     ],
     internalUsers: [],
   };
+}
+
+function buildAccessViewModelWithOperator(): AccessSettingsViewModel {
+  const base = buildAccessViewModel();
+  return {
+    ...base,
+    internalUsers: [
+      {
+        userId: "user:devynn",
+        displayName: "Devynn",
+        email: "devynn@adventurescientists.org",
+        role: "internal_user",
+        status: "active",
+        lastActiveAt: "2026-10-14T12:00:00.000Z",
+        workspaces: ["volunteers"],
+      },
+    ],
+  };
+}
+
+function findCheckbox(container: HTMLElement, text: string): HTMLButtonElement {
+  const button = Array.from(
+    container.querySelectorAll('button[role="checkbox"]'),
+  ).find((element) => normalizeText(element.textContent).includes(text));
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Checkbox not found: ${text}`);
+  }
+  return button;
 }
 
 function ModalHarness() {
@@ -424,6 +458,68 @@ function successfulInviteResult() {
     },
   };
 }
+
+describe("teammate spaces", () => {
+  it("defaults an invite to the Volunteers space and keeps at least one space", async () => {
+    const { container } = await mount(
+      createElement(TeammateInviteModal, {
+        open: true,
+        onClose: vi.fn(),
+      }),
+    );
+
+    const volunteers = findCheckbox(container, "Volunteers");
+    const donors = findCheckbox(container, "Donors");
+    expect(volunteers.getAttribute("aria-checked")).toBe("true");
+    expect(volunteers.disabled).toBe(true);
+    expect(donors.getAttribute("aria-checked")).toBe("false");
+
+    await click(donors);
+    expect(findCheckbox(container, "Donors").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(findCheckbox(container, "Volunteers").disabled).toBe(false);
+
+    await click(findCheckbox(container, "Volunteers"));
+    expect(
+      findCheckbox(container, "Volunteers").getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(findCheckbox(container, "Donors").disabled).toBe(true);
+  });
+
+  it("shows each teammate's spaces and saves a change of spaces", async () => {
+    actionMocks.setUserWorkspacesAction.mockResolvedValue({
+      ok: true,
+      requestId: "request-spaces",
+      data: { userId: "user:devynn", workspaces: ["donors"] },
+    });
+    const { container } = await mount(
+      createElement(AccessSection, {
+        viewModel: buildAccessViewModelWithOperator(),
+      }),
+    );
+
+    expect(getText(container)).toContain("Spaces");
+    expect(getText(container)).toContain("(admin: all)");
+
+    const edit = container.querySelector('button[aria-label="Edit Devynn"]');
+    if (!(edit instanceof HTMLButtonElement)) {
+      throw new Error("Edit button not found");
+    }
+    await click(edit);
+    await click(findCheckbox(container, "Donors"));
+    await click(findCheckbox(container, "Volunteers"));
+    await click(findButton(container, "Save changes"));
+
+    expect(actionMocks.setUserWorkspacesAction).toHaveBeenCalledTimes(1);
+    const formData = actionMocks.setUserWorkspacesAction.mock
+      .calls[0]?.[0] as FormData;
+    expect(formData.get("id")).toBe("user:devynn");
+    expect(formData.getAll("workspaces")).toEqual(["donors"]);
+    expect(actionMocks.promoteUserAction).not.toHaveBeenCalled();
+    expect(actionMocks.demoteUserAction).not.toHaveBeenCalled();
+  });
+});
 
 describe("teammate invite modal", () => {
   it("opens when Invite button is clicked from Access", async () => {

@@ -5,6 +5,10 @@ import { hasAuthorizedGoogleWorkspaceEmail } from "../../auth/google-sign-in-pol
 import { getSettingsRepositories } from "../../stage1-runtime";
 import { MCP_READ_SCOPE } from "./core";
 import { resolveMcpOAuthMetadataConfig } from "./metadata";
+import {
+  canAccessWorkspace,
+  loadWorkspaceAccess,
+} from "../../auth/workspace-rules";
 
 export function getMcpOAuthMetadataConfigFromEnv() {
   return resolveMcpOAuthMetadataConfig(process.env.MCP_PUBLIC_URL ?? "");
@@ -52,6 +56,12 @@ export async function findAuthorizedMcpUserById(
     hasAuthorizedGoogleWorkspaceEmail(user.email);
 
   if (!isActiveOperator) {
+    return null;
+  }
+
+  // The connector exposes volunteer data (inbox, contacts, workload), so a
+  // donors-only teammate is not authorized for it.
+  if (!canAccessWorkspace(await loadWorkspaceAccess(user), "volunteers")) {
     return null;
   }
 

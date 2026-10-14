@@ -16,7 +16,7 @@ import {
   smsMetrics,
   toE164,
 } from "@as-comms/domain";
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import {
   sendComposerGmailMessage,
   type GmailSendError,
@@ -939,7 +939,7 @@ export async function loadProjectMetricContacts(input: {
   readonly projectId: string;
   readonly metricKey: ProjectMetricKey;
 }): Promise<{ readonly rows: readonly ProjectMetricContactRow[] }> {
-  await requireSession();
+  await requireVolunteerSession();
 
   const runtime = await getStage1WebRuntime();
   const [project] = await runtime.repositories.projectDimensions.listByIds([
@@ -996,7 +996,7 @@ export async function searchContactsAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -1336,7 +1336,7 @@ export async function resolveSmsConsentAction(rawInput: {
   };
 }> {
   try {
-    await requireSession();
+    await requireVolunteerSession();
   } catch {
     return {
       ok: true,
@@ -1388,7 +1388,7 @@ export async function getSmsConsentStatusAction(input: {
   readonly contactId: string;
 }): Promise<SmsConsentStatusActionResult> {
   try {
-    await requireSession();
+    await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return {
@@ -1436,7 +1436,7 @@ export async function setSmsConsentAction(input: {
 }): Promise<SmsConsentStatusActionResult> {
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return {
@@ -1528,7 +1528,7 @@ export async function sendSmsAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch {
     return {
       ok: false,
@@ -1741,7 +1741,7 @@ async function updateNeedsFollowUp(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -1826,7 +1826,7 @@ export async function draftWithAiAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -1945,7 +1945,7 @@ export async function createNoteAction(rawInput: {
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -2044,7 +2044,7 @@ export async function updateNoteAction(rawInput: {
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -2135,7 +2135,7 @@ export async function deleteNoteAction(rawInput: {
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -2230,7 +2230,7 @@ export async function sendComposerAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -2565,7 +2565,7 @@ async function setContactArchivedFlag(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -2646,7 +2646,7 @@ async function updateInboxBucket(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);

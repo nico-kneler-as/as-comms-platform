@@ -217,6 +217,46 @@ describe("Stage 1 contracts", () => {
     }
   });
 
+  it("reads runs stored before workspaces existed as volunteer runs", () => {
+    const legacyRun = campaignRunRecordSchema.parse({
+      id: "run_legacy_1",
+      kind: "newsletter",
+      launchType: "html_email",
+      state: "complete",
+      projectId: null,
+      name: "October newsletter",
+      createdAt: "2026-10-01T16:00:00.000Z",
+      updatedAt: "2026-10-01T18:00:00.000Z",
+    });
+    expect(legacyRun.workspace).toBe("volunteers");
+
+    const donorRun = campaignRunRecordSchema.parse({
+      id: "run_donor_1",
+      workspace: "donors",
+      kind: "newsletter",
+      launchType: "html_email",
+      state: "draft",
+      projectId: null,
+      name: "Giving Tuesday",
+      createdAt: "2026-10-14T16:00:00.000Z",
+      updatedAt: "2026-10-14T16:00:00.000Z",
+    });
+    expect(donorRun.workspace).toBe("donors");
+
+    expect(
+      campaignRunRecordSchema.safeParse({
+        id: "run_bad_1",
+        workspace: "finance",
+        kind: "newsletter",
+        launchType: "html_email",
+        state: "draft",
+        projectId: null,
+        createdAt: "2026-10-14T16:00:00.000Z",
+        updatedAt: "2026-10-14T16:00:00.000Z",
+      }).success,
+    ).toBe(false);
+  });
+
   it("allows a project-kind run with no project once its audience is a CSV", () => {
     // SMS runs are always kind='project', and a CSV audience defines its own
     // recipients with no project (PRD #674). The projectId requirement was

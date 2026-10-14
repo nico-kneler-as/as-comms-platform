@@ -11,7 +11,7 @@ export async function DELETE(
     }>;
   },
 ) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers", "donors"]);
   if (!session.ok) {
     return session.response;
   }

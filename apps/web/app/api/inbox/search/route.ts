@@ -36,7 +36,7 @@ const querySchema = z.object({
  * union return type would be confusing for the client.
  */
 export async function GET(request: Request) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers"]);
   if (!session.ok) {
     return session.response;
   }

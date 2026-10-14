@@ -27,7 +27,7 @@ export async function GET(
     }>;
   },
 ) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers"]);
   if (!session.ok) {
     return session.response;
   }

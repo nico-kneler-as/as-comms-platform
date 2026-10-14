@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 
 import {
   createCampaignWizardDraft,
@@ -18,7 +18,7 @@ export default async function NewCampaignPage({
   }>;
 }) {
   const params = (await searchParams) ?? {};
-  const currentUser = await requireSession();
+  const currentUser = await requireVolunteerSession();
 
   if (!params.runId) {
     const created = await createCampaignWizardDraft();

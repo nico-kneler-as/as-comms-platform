@@ -41,7 +41,8 @@ import { z } from "zod";
 
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
 
-import { requireAdmin, requireSession } from "@/src/server/auth/session";
+import { requireAdmin } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import { readWebEnv } from "@/src/server/env";
 import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
@@ -847,7 +848,7 @@ export async function setBroadcastWebVersionPublished(
   runId: string,
   published: boolean,
 ): Promise<UiSuccess<BroadcastWebVersionActionData> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -908,7 +909,7 @@ export async function setBroadcastWebVersionPublished(
 export async function publishBroadcastWebVersionNow(
   runId: string,
 ): Promise<UiSuccess<BroadcastWebVersionActionData> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -1469,7 +1470,7 @@ export async function testSend(
   runId: string,
   recipientEmail: string,
 ): Promise<UiSuccess<CampaignTestSendData> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
 
   try {
     const parsed = z
@@ -1648,7 +1649,7 @@ export async function listCampaignRecipients(input: {
   readonly limit?: number;
   readonly offset?: number;
 }): Promise<UiSuccess<RecipientQueryResult> | UiError> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const parsed = listCampaignRecipientsInputSchema.parse(input);
@@ -1821,7 +1822,7 @@ export async function cancel(
 export async function duplicateCampaignRun(
   runId: string,
 ): Promise<UiSuccess<{ readonly runId: string }> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();

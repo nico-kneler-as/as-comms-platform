@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import { getAiProviderConfig } from "@/src/server/ai/provider";
 import { loadGeneralVoiceEntry } from "@/src/server/ai/retriever";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
@@ -94,7 +94,7 @@ export async function polishTextAction(input: {
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);

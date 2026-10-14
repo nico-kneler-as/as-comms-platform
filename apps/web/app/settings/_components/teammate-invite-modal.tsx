@@ -17,6 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { WorkspacePicker, type WorkspaceOptionValue } from "./workspace-picker";
+
 type InviteRole = "operator" | "admin";
 
 interface TeammateInviteModalProps {
@@ -58,6 +60,9 @@ export function TeammateInviteModal({
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InviteRole>("operator");
+  const [workspaces, setWorkspaces] = useState<WorkspaceOptionValue[]>([
+    "volunteers",
+  ]);
   const [isPending, setIsPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -71,6 +76,7 @@ export function TeammateInviteModal({
   function resetForm() {
     setEmail("");
     setRole("operator");
+    setWorkspaces(["volunteers"]);
     setErrorMessage(null);
   }
 
@@ -96,6 +102,9 @@ export function TeammateInviteModal({
       const formData = new FormData();
       formData.set("email", normalizedEmail);
       formData.set("role", roleToActionValue(role));
+      for (const workspace of workspaces) {
+        formData.append("workspaces", workspace);
+      }
 
       const result = await inviteUserAction(formData);
       if (!result.ok) {
@@ -232,6 +241,15 @@ export function TeammateInviteModal({
                 ))}
               </div>
             </div>
+
+            <WorkspacePicker
+              value={workspaces}
+              disabled={isPending}
+              onChange={(next) => {
+                setWorkspaces(next);
+                setErrorMessage(null);
+              }}
+            />
 
             {errorMessage ? (
               <p role="alert" className={cn(TYPE.bodySm, "text-rose-700")}>

@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { requireSession } from "@/src/server/auth/session";
+import {
+  railAccessFor,
+  requireWorkspace,
+} from "@/src/server/auth/workspace-access";
 import { readWebEnv } from "@/src/server/env";
 import { getInboxDraftList } from "@/src/server/inbox/drafts";
 
@@ -42,12 +45,16 @@ export default async function InboxLayout({
 }: {
   readonly children: ReactNode;
 }) {
-  const currentUser = await requireSession().catch((error: unknown) => {
+  const access = await requireWorkspace("volunteers").catch((error: unknown) => {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       redirect("/auth/sign-in");
     }
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect("/");
+    }
     throw error;
   });
+  const currentUser = access.user;
   const env = readWebEnv();
 
   const [list, drafts, composerAliases, smsSenders, healthBanner] = await Promise.all([
@@ -74,6 +81,7 @@ export default async function InboxLayout({
         displayName: currentUser.name ?? currentUser.email,
         email: currentUser.email
       }}
+      railAccess={railAccessFor(access)}
     >
       {children}
     </InboxShell>

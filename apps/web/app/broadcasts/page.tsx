@@ -6,7 +6,7 @@ import type { CampaignRunProjectionRow, RunState } from "@as-comms/contracts";
 import { createCampaignRunProjectionReader } from "@as-comms/domain";
 
 import { Button } from "@/components/ui/button";
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
 import { CampaignRow, type CampaignRowViewModel } from "./_components/campaign-row";
@@ -121,6 +121,7 @@ function coerceIsoTimestamp(value: Date | string | null): string | null {
 interface CampaignProjectionSqlRow {
   readonly runId: string;
   readonly provider: "postmark";
+  readonly workspace: "volunteers";
   readonly kind: CampaignRunProjectionRow["kind"];
   readonly launchType: CampaignRunProjectionRow["launchType"];
   readonly state: CampaignRunProjectionRow["state"];
@@ -166,7 +167,10 @@ function buildPostmarkProjectionWhereClause(input: {
   readonly projectIds: readonly string[] | null;
   readonly searchQuery: string | null;
 }) {
-  const conditions = [sql`"provider" = 'postmark'`];
+  const conditions = [
+    sql`"provider" = 'postmark'`,
+    sql`"workspace" = 'volunteers'`,
+  ];
 
   if (input.projectIds !== null) {
     conditions.push(
@@ -204,6 +208,7 @@ function mapProjectionSqlRow(
   return {
     runId: row.runId,
     provider: row.provider,
+    workspace: row.workspace,
     kind: row.kind,
     launchType: row.launchType,
     state: row.state,
@@ -243,6 +248,7 @@ async function listRecentPostmarkRows(input: {
         : { searchQuery: input.searchQuery }),
       limit: input.limit,
       offset: input.offset,
+      workspace: "volunteers",
     })).filter((row) => row.provider === "postmark");
   }
 
@@ -250,6 +256,7 @@ async function listRecentPostmarkRows(input: {
     select
       "run_id" as "runId",
       "provider" as "provider",
+      "workspace" as "workspace",
       "kind" as "kind",
       "launch_type" as "launchType",
       "state" as "state",
@@ -300,6 +307,7 @@ async function countPostmarkRows(input: {
       ...(input.searchQuery.length === 0
         ? {}
         : { searchQuery: input.searchQuery }),
+      workspace: "volunteers",
     });
   }
 
@@ -333,6 +341,7 @@ async function countPostmarkRowsByState(input: {
       ...(input.selectedProjectIds.length === 0
         ? {}
         : { projectIds: [...input.selectedProjectIds] }),
+      workspace: "volunteers",
     });
   }
 
@@ -555,7 +564,7 @@ export default async function CampaignsPage({
   readonly searchParams?: Promise<CampaignsSearchParams>;
 }) {
   const params: CampaignsSearchParams = (await searchParams) ?? {};
-  const currentUser = await requireSession();
+  const currentUser = await requireVolunteerSession();
   const runtime = await getStage1WebRuntime();
 
   const activeFilterId = parseFilterId(params.state);

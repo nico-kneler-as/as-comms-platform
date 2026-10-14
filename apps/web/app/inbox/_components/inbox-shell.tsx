@@ -8,7 +8,10 @@ import type {
   InboxSmsSenderOption,
 } from "../_lib/view-models";
 import type { InboxIntegrationHealthBannerViewModel } from "../_lib/integration-health";
-import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
+import {
+  PrimaryIconRail,
+  type PrimaryRailAccess,
+} from "@/app/_components/primary-icon-rail";
 
 import { IntegrationHealthBanner } from "./integration-health-banner";
 import { InboxClientProvider } from "./inbox-client-provider";
@@ -33,6 +36,7 @@ interface ShellProps {
     readonly displayName: string;
     readonly email: string;
   };
+  readonly railAccess: PrimaryRailAccess;
   readonly children: ReactNode;
 }
 
@@ -56,6 +60,7 @@ export function InboxShell({
   healthBanner,
   currentActorId,
   operator,
+  railAccess,
   children
 }: ShellProps) {
   return (
@@ -70,7 +75,7 @@ export function InboxShell({
         <InboxNotificationsOrchestrator
           unreadCount={initialList.totals.unread}
         />
-        <PrimaryIconRail operator={operator} />
+        <PrimaryIconRail operator={operator} access={railAccess} />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <IntegrationHealthBanner banner={healthBanner} />

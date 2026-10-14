@@ -39,7 +39,8 @@ import {
 
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
-import { requireAdmin, requireSession } from "@/src/server/auth/session";
+import { requireAdmin } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import {
   countBroadcastUploadedRecipients,
   getStage1WebRuntime,
@@ -235,7 +236,7 @@ export interface ComposePreviewData {
 export async function loadSelectedAliasSignatureAction(input: {
   readonly aliasEmail: string | null;
 }): Promise<UiResult<string>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -1321,7 +1322,7 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
 export async function getCampaignWizardDraft(
   runId: string,
 ): Promise<CampaignWizardDraftData | null> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
   const runtime = await getStage1WebRuntime();
   const run = await runtime.campaigns.campaignRuns.findById(runId);
   if (run === null) {
@@ -1332,7 +1333,7 @@ export async function getCampaignWizardDraft(
 }
 
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
-  await requireSession();
+  await requireVolunteerSession();
   const runtime = await getStage1WebRuntime();
   const allConnectedProjects = (
     await runtime.settings.projects.listAll()
@@ -1492,7 +1493,7 @@ export async function resolveAudienceCountAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
 }): Promise<UiResult<AudienceCountData>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
@@ -1545,7 +1546,7 @@ export async function previewAudienceAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const criteria = audienceCriteriaSchema.parse(input.criteria);
@@ -1626,7 +1627,7 @@ export async function loadComposePreviewAction(input: {
   readonly bodyTextTemplate: string;
   readonly sampleIndex: number;
 }): Promise<UiResult<ComposePreviewData>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -1796,7 +1797,7 @@ export async function searchProjectVolunteersAction(input: {
   readonly aliasProjectIds: readonly string[];
   readonly query: string;
 }): Promise<UiResult<readonly AudienceVolunteerSearchRow[]>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   const aliasProjectIds = input.aliasProjectIds
     .map((projectId) => projectId.trim())
@@ -1906,7 +1907,7 @@ export async function searchProjectVolunteersAction(input: {
 export async function searchNewsletterSubscribersAction(input: {
   readonly query: string;
 }): Promise<UiResult<readonly AudienceNewsletterSubscriberSearchRow[]>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   const query = input.query.trim();
   if (query.length < 2) {
@@ -1937,7 +1938,7 @@ export async function loadMemberStatusCountsForProjects(
   projectIds: readonly string[],
   channel: MemberStatusCountChannel = "email",
 ): Promise<UiResult<AudienceStatusCounts>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   const normalizedProjectIds = projectIds
     .map((projectId) => projectId.trim())
@@ -2098,7 +2099,7 @@ export async function uploadBroadcastAudienceCsvAction(input: {
   readonly runId: string;
   readonly csvText: string;
 }): Promise<UiResult<CsvUploadSummary>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -2143,7 +2144,7 @@ export async function uploadBroadcastAudienceCsvAction(input: {
 export async function loadSmsCsvAudienceSummaryAction(input: {
   readonly runId: string;
 }): Promise<UiResult<SmsCsvAudienceSummary>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const runtime = await getStage1WebRuntime();
@@ -2173,7 +2174,7 @@ export async function loadSmsCsvAudienceSummaryAction(input: {
 export async function saveCampaignWizardDraftAction(
   input: CampaignWizardDraftSaveInput,
 ): Promise<UiResult<CampaignWizardDraftData>> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
 
   try {
     const parsed = campaignWizardDraftSaveInputSchema.parse(input);
@@ -2230,7 +2231,7 @@ export async function saveCampaignWizardDraftAction(
 export async function confirmCampaignWizardDraftCurrentAction(
   input: Pick<CampaignWizardDraftSaveInput, "runId" | "observedUpdatedAt">,
 ): Promise<UiResult<{ readonly updatedAt: string }>> {
-  await requireSession();
+  await requireVolunteerSession();
 
   try {
     const parsed = campaignWizardDraftBaselineSchema.parse(input);

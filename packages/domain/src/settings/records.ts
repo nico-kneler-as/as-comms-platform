@@ -1,4 +1,5 @@
 export type UserRole = "admin" | "operator";
+export type UserWorkspace = "volunteers" | "donors";
 
 export interface UserRecord {
   readonly id: string;
