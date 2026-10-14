@@ -280,6 +280,11 @@ function createOrchestrator(
           campaignRuns: campaigns.campaignRuns,
           contactConsent: campaigns.contactConsent,
           suppressionList: campaigns.suppressionList,
+          newsletterSuppressions: {
+            isSuppressed: async (email) =>
+              (await campaigns.newsletterSuppressions.findByEmail(email)) !==
+              null,
+          },
         },
       }),
       mergeRenderer: createMergeRenderer(),
@@ -739,6 +744,73 @@ describe("Campaign send orchestrator", () => {
     const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
 
     expect(snapshot?.deliveryStatus).toBe("suppressed_at_send");
+  });
+
+  it("re-checks newsletter suppressions at delivery time", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await context.db.insert(newsletterSubscribers).values({
+      id: "22222222-2222-2222-2222-222222222222",
+      email: "subscriber@example.org",
+      firstName: "Subscriber",
+      status: "subscribed",
+      source: "mailchimp_import",
+    });
+    const sendBatch = vi.fn();
+    const runtime = createOrchestrator(
+      context,
+      createMockPostmarkClient({ onBatch: sendBatch }),
+    );
+    const run = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-newsletter-delivery-recheck",
+        kind: "newsletter",
+        launchType: "html_email",
+        projectId: null,
+        fromEmail: "info@adventurescientists.org",
+        audienceCriteria: {
+          projectId: null,
+          projectIds: [],
+          statuses: [],
+          contactIds: [],
+          newsletterSubscriberIds: [],
+          expeditionIds: [],
+          lastActivityWindow: "all_time",
+          hasReplied: "either",
+          hasClicked: "either",
+        },
+      }),
+    );
+
+    await runtime.campaigns.audienceSnapshots.bulkInsert(run.id, [
+      {
+        id: "snapshot-newsletter-delivery-recheck",
+        contactId: null,
+        newsletterSubscriberId: "22222222-2222-2222-2222-222222222222",
+        frozenEmail: "subscriber@example.org",
+        frozenFirstName: "Subscriber",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+        unsubscribeToken: "token-newsletter-delivery-recheck",
+        deliveryStatus: "pending",
+      },
+    ]);
+    await runtime.campaigns.campaignRuns.transitionState(run.id, "draft", "scheduled", {
+      audienceSize: 1,
+      scheduledAt: new Date().toISOString(),
+    });
+    await runtime.campaigns.newsletterSuppressions.upsert({
+      email: "subscriber@example.org",
+      reason: "unsubscribed",
+      source: "recipient_click",
+    });
+    await runtime.orchestrator.processSendRequest(run.id);
+
+    const [snapshot] = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+
+    expect(snapshot?.deliveryStatus).toBe("suppressed_at_send");
+    expect(sendBatch).not.toHaveBeenCalled();
   });
 
   it("renders subject A and subject B per recipient variant assignment", async () => {

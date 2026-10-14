@@ -288,6 +288,11 @@ function createCampaignSendOrchestratorForRepositories(input: {
         campaignRuns: input.campaigns.campaignRuns,
         contactConsent: input.campaigns.contactConsent,
         suppressionList: input.campaigns.suppressionList,
+        newsletterSuppressions: {
+          isSuppressed: async (email) =>
+            (await input.campaigns.newsletterSuppressions.findByEmail(email)) !==
+            null,
+        },
       },
     }),
     mergeRenderer: createMergeRenderer(),
@@ -594,6 +599,12 @@ async function freezeNewsletterAudienceForSend(input: {
       campaignRuns: input.transaction.campaigns.campaignRuns,
       contactConsent: input.transaction.campaigns.contactConsent,
       suppressionList: input.transaction.campaigns.suppressionList,
+      newsletterSuppressions: {
+        isSuppressed: async (email) =>
+          (await input.transaction.campaigns.newsletterSuppressions.findByEmail(
+            email,
+          )) !== null,
+      },
     },
   });
   const exclusions = await exclusionFilter.applyExclusions(

@@ -16,6 +16,9 @@ interface ExclusionFilterRepositories {
   readonly suppressionList: {
     isSuppressed(normalizedEmail: string, at: Date): Promise<boolean>;
   };
+  readonly newsletterSuppressions: {
+    isSuppressed(normalizedEmail: string): Promise<boolean>;
+  };
 }
 
 export interface ExclusionFilter {
@@ -33,6 +36,15 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function requiresNewsletterSuppressionCheck(run: CampaignRunRecord): boolean {
+  return (
+    run.launchType !== "sms" &&
+    (run.kind === "newsletter" ||
+      (run.projectId === null &&
+        run.audienceCriteria.initialFilter === "csv_upload"))
+  );
+}
+
 async function resolveExclusionReason(
   repositories: ExclusionFilterRepositories,
   run: CampaignRunRecord,
@@ -41,6 +53,15 @@ async function resolveExclusionReason(
 ): Promise<ExcludedMember["reason"] | null> {
   if (await repositories.suppressionList.isSuppressed(normalizeEmail(member.frozenEmail), at)) {
     return "suppressed";
+  }
+
+  if (
+    requiresNewsletterSuppressionCheck(run) &&
+    await repositories.newsletterSuppressions.isSuppressed(
+      normalizeEmail(member.frozenEmail),
+    )
+  ) {
+    return "opted_out_newsletter";
   }
 
   if (
