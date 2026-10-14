@@ -259,13 +259,15 @@ Recommended build and start commands:
 - worker build: `pnpm --filter @as-comms/worker build`
 - worker start: `WORKER_BOOT_MODE=run pnpm --filter @as-comms/worker start`
 - Gmail capture build: `pnpm --filter @as-comms/gmail-capture build`
-- Gmail capture start: `pnpm --filter @as-comms/gmail-capture start`
+- Gmail capture start: `node apps/gmail-capture/dist/index.js` (see below)
 - Salesforce capture build: `pnpm --filter @as-comms/salesforce-capture build`
 - Salesforce capture start: `pnpm --filter @as-comms/salesforce-capture start`
 - Mailchimp capture build: `pnpm --filter @as-comms/mailchimp-capture build`
 - Mailchimp capture start: `pnpm --filter @as-comms/mailchimp-capture start`
 - SMS capture build: `pnpm --filter @as-comms/sms-capture build`
 - SMS capture start: `pnpm --filter @as-comms/sms-capture start`
+
+`gmail-capture` and the web app (`as-comms-platform`) have volumes, so Railway stops the old container before starting the new one, and by default sends SIGKILL right after SIGTERM. Both services therefore start `node` directly (web: `node apps/web/node_modules/next/dist/bin/next start apps/web`) and set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS=10`. Through `pnpm --filter … start`, pnpm runs the script under dash (`sh -c`), dash dies on the forwarded SIGTERM, pnpm exits 1, and every deploy raised a false "Deployment crashed" alert.
 
 `salesforce-capture` carries its own `railway.json` with a dependency-inclusive build; a build command set in the Railway dashboard **overrides** it, so leave the dashboard field empty for that service.
 

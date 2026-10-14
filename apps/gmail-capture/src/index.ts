@@ -563,9 +563,55 @@ export async function startGmailCaptureServer(
   });
 }
 
+interface ShutdownProcess {
+  once(event: NodeJS.Signals, listener: () => void): unknown;
+  exit(code: number): void;
+}
+
+/**
+ * Railway stops the old container with SIGTERM on every deploy. Without a
+ * handler, node as PID 1 ignores it until the SIGKILL and Railway records the
+ * stop as a crash. Stop accepting requests (closing the server also ends the
+ * DB pool) and exit 0; a request still running after `graceMs` doesn't block
+ * the exit.
+ */
+export function exitCleanlyOnShutdown(
+  server: Server,
+  options: {
+    readonly graceMs?: number;
+    readonly processLike?: ShutdownProcess;
+  } = {},
+): void {
+  const processLike = options.processLike ?? process;
+  const graceMs = options.graceMs ?? 8_000;
+  let stopping = false;
+
+  const stop = (signal: NodeJS.Signals) => {
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    console.info(`Gmail capture service received ${signal}; shutting down.`);
+    setTimeout(() => {
+      processLike.exit(0);
+    }, graceMs).unref();
+    server.close(() => {
+      processLike.exit(0);
+    });
+    server.closeIdleConnections();
+  };
+
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    processLike.once(signal, () => {
+      stop(signal);
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const config = readGmailCaptureRuntimeConfig(process.env);
-  await startGmailCaptureServer(config);
+  const server = await startGmailCaptureServer(config);
+  exitCleanlyOnShutdown(server);
   console.info(
     `Gmail capture service is listening on http://${config.host}:${String(config.port)}`,
   );
