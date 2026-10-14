@@ -25,6 +25,7 @@ import {
   renderBroadcastWebVersion,
 } from "./broadcast-web-version-render.js";
 import type { AudienceResolver } from "./audience-resolver.js";
+import { composeAudience, type AudienceCompositionExclusion } from "./compose-audience.js";
 import type { ExclusionFilter } from "./exclusion-filter.js";
 import type { MergeRenderer } from "./merge-renderer.js";
 import type {
@@ -36,7 +37,11 @@ export interface CampaignSendOrchestrator {
   freeze(
     runId: string,
     at: Date,
-  ): Promise<{ audienceSize: number; excludedCount: number }>;
+  ): Promise<{ audienceSize: number; excludedCount: number; excludedByReason: Readonly<Record<string, number>> }>;
+  preview(
+    runId: string,
+    at: Date,
+  ): Promise<{ total: number; excludedByReason: Readonly<Record<string, number>>; consentExcluded: number }>;
   processSendRequest(runId: string): Promise<void>;
   cancel(runId: string, reason: string): Promise<void>;
 }
@@ -256,11 +261,11 @@ function filterAudienceMembersBySelectedContacts(
   rows: readonly AudienceMember[],
   run: CampaignRunRecord,
 ): readonly AudienceMember[] {
-  if (run.audienceCriteria.contactIds.length === 0) {
+  if ((run.audienceCriteria.contactIds?.length ?? 0) === 0) {
     return rows;
   }
 
-  const selectedContactIds = new Set(run.audienceCriteria.contactIds);
+  const selectedContactIds = new Set(run.audienceCriteria.contactIds ?? []);
   return rows.filter(
     (row) => row.contactId !== null && selectedContactIds.has(row.contactId),
   );
@@ -309,12 +314,59 @@ async function readFrozenResult(
   repositories: CampaignSendRepositories,
   runId: string,
   audienceSize: number | null,
-): Promise<{ audienceSize: number; excludedCount: number }> {
+): Promise<{ audienceSize: number; excludedCount: number; excludedByReason: Readonly<Record<string, number>> }> {
   const snapshots = await repositories.audienceSnapshots.listForRun(runId);
   return {
     audienceSize: audienceSize ?? snapshots.length,
     excludedCount: 0,
+    excludedByReason: {},
   };
+}
+
+/**
+ * A run narrowed to Salesforce lists, or carrying exclusions, must never be
+ * frozen without the sets that narrow it: falling back to "no sets" would send
+ * to the whole newsletter list. Same for the newsletter base itself.
+ */
+function assertAudienceDependencies(
+  run: CampaignRunRecord,
+  deps: {
+    readonly hasLoadAudienceSets: boolean;
+    readonly hasResolveNewsletterAudience: boolean;
+  },
+): void {
+  const criteria = run.audienceCriteria;
+  if (criteria.initialFilter === "salesforce_lists") {
+    if ((criteria.salesforceListIds ?? []).length === 0) {
+      throw new Error(
+        `Campaign run ${run.id} targets Salesforce campaigns but none are selected.`,
+      );
+    }
+  }
+  const exclusions = criteria.exclusions;
+  const hasExclusions =
+    exclusions !== undefined &&
+    (exclusions.salesforceListIds.length > 0 ||
+      exclusions.useUploadedExclusions ||
+      exclusions.previousRuns.length > 0);
+  if (
+    (criteria.initialFilter === "salesforce_lists" || hasExclusions) &&
+    !deps.hasLoadAudienceSets
+  ) {
+    throw new Error(
+      `Campaign run ${run.id} needs audience sets but no loader is configured.`,
+    );
+  }
+  if (
+    run.kind === "newsletter" &&
+    (criteria.initialFilter === "all_available" ||
+      criteria.initialFilter === "salesforce_lists") &&
+    !deps.hasResolveNewsletterAudience
+  ) {
+    throw new Error(
+      `Campaign run ${run.id} needs the newsletter audience but no resolver is configured.`,
+    );
+  }
 }
 
 function readPacingDependencies(input: {
@@ -343,6 +395,14 @@ export function createCampaignSendOrchestrator(deps: {
     run: CampaignRunRecord,
     at: Date,
   ) => Promise<readonly AudienceMember[]>;
+  resolveNewsletterAudience?: () => Promise<readonly AudienceMember[]>;
+  loadAudienceSets?: (
+    run: CampaignRunRecord,
+    at: Date,
+  ) => Promise<{
+    readonly includeEmails: ReadonlySet<string> | null;
+    readonly exclusions: readonly AudienceCompositionExclusion[];
+  }>;
   exclusionFilter: ExclusionFilter;
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
@@ -394,6 +454,7 @@ export function createCampaignSendOrchestrator(deps: {
           return {
             audienceSize: run.audienceSize ?? snapshots.length,
             excludedCount: 0,
+            excludedByReason: {},
           };
         }
       }
@@ -401,15 +462,32 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
       }
 
+      assertAudienceDependencies(run, {
+        hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
+        hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
+      });
       const members =
         run.audienceCriteria.initialFilter === "csv_upload"
           ? await deps.resolveUploadedAudience?.(run, at) ?? []
+          : run.kind === "newsletter" &&
+              (run.audienceCriteria.initialFilter === "all_available" ||
+                run.audienceCriteria.initialFilter === "salesforce_lists")
+            ? await deps.resolveNewsletterAudience?.() ?? []
           : filterAudienceMembersBySelectedContacts(
               await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
               run,
             );
+      const sets = await deps.loadAudienceSets?.(run, at) ?? {
+        includeEmails: null,
+        exclusions: [],
+      };
+      const composed = composeAudience({
+        base: members,
+        includeEmails: sets.includeEmails,
+        exclusions: sets.exclusions,
+      });
       const exclusions = await deps.exclusionFilter.applyExclusions(
-        members,
+        composed.members,
         runId,
         at,
       );
@@ -438,10 +516,43 @@ export function createCampaignSendOrchestrator(deps: {
         });
       }
 
+      await appendCampaignAudit(deps.repositories, {
+        runId,
+        action: "campaign_run.audience_frozen",
+        occurredAt: at.toISOString(),
+        detail: "Audience resolved, composed, and checked against consent.",
+        metadataJson: {
+          excludedByReason: composed.excludedByReason,
+          consentExcluded: exclusions.excluded.length,
+        },
+      });
+
       return {
         audienceSize: exclusions.eligible.length,
-        excludedCount: exclusions.excluded.length,
+        excludedCount: Object.values(composed.excludedByReason).reduce((total, count) => total + count, 0) + exclusions.excluded.length,
+        excludedByReason: composed.excludedByReason,
       };
+    },
+
+    async preview(runId, at) {
+      const run = await deps.repositories.campaignRuns.findById(runId);
+      if (run === null) throw new Error(`Campaign run ${runId} was not found.`);
+      assertAudienceDependencies(run, {
+        hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
+        hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
+      });
+      const base = run.audienceCriteria.initialFilter === "csv_upload"
+        ? await deps.resolveUploadedAudience?.(run, at) ?? []
+        : run.kind === "newsletter" &&
+            (run.audienceCriteria.initialFilter === "all_available" || run.audienceCriteria.initialFilter === "salesforce_lists")
+          ? await deps.resolveNewsletterAudience?.() ?? []
+          : filterAudienceMembersBySelectedContacts(
+              await deps.audienceResolver.resolveAudience(run.audienceCriteria, at), run,
+            );
+      const sets = await deps.loadAudienceSets?.(run, at) ?? { includeEmails: null, exclusions: [] };
+      const composed = composeAudience({ base, includeEmails: sets.includeEmails, exclusions: sets.exclusions });
+      const consent = await deps.exclusionFilter.applyExclusions(composed.members, runId, at);
+      return { total: consent.eligible.length, excludedByReason: composed.excludedByReason, consentExcluded: consent.excluded.length };
     },
 
     async processSendRequest(runId) {

@@ -83,6 +83,13 @@ import {
 
 import type { DatabaseConnection } from "./client.js";
 import {
+  clearBroadcastUploadedExclusionsForRun,
+  emailsForPreviousRunAudience,
+  listBroadcastUploadedExclusionsForRun,
+  loadAudienceSetsForRun,
+  upsertBroadcastUploadedExclusionsForRun,
+} from "./audience-composition-repository.js";
+import {
   getNewsletterSubscriberByEmail,
   getNewsletterSubscriberById,
   getNewsletterSuppressionByEmail,
@@ -345,6 +352,16 @@ export class StaleCampaignRunDraftError extends Error {
 
 export interface Stage5RepositoryBundle {
   readonly salesforceAudienceLists: SalesforceAudienceListsRepository;
+  readonly audienceComposition: {
+    listUploadedExclusions(runId: string): Promise<readonly string[]>;
+    upsertUploadedExclusions(runId: string, emails: readonly string[]): Promise<number>;
+    clearUploadedExclusions(runId: string): Promise<void>;
+    emailsForPreviousRun(
+      runId: string,
+      audience: "recipients" | "openers" | "clickers",
+    ): Promise<readonly string[]>;
+    loadSets(run: CampaignRunRecord): ReturnType<typeof loadAudienceSetsForRun>;
+  };
   readonly campaignRuns: {
     create(input: CreateDraftInput): Promise<CampaignRunRecord>;
     findById(id: string): Promise<CampaignRunRecord | null>;
@@ -8052,6 +8069,16 @@ export function createStage5RepositoryBundle(
 
   return defineStage5RepositoryBundle({
     salesforceAudienceLists: createSalesforceAudienceListsRepository(db),
+    audienceComposition: {
+      listUploadedExclusions: (runId) => listBroadcastUploadedExclusionsForRun(db, runId),
+      upsertUploadedExclusions: (runId, emails) =>
+        upsertBroadcastUploadedExclusionsForRun(db, runId, emails),
+      clearUploadedExclusions: (runId) =>
+        clearBroadcastUploadedExclusionsForRun(db, runId),
+      emailsForPreviousRun: (runId, audience) =>
+        emailsForPreviousRunAudience(db, runId, audience),
+      loadSets: (run) => loadAudienceSetsForRun(db, run),
+    },
     campaignRuns: {
       async create(input) {
         const parsed = createDraftInputSchema.parse(input);

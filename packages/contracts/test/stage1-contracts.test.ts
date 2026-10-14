@@ -189,6 +189,25 @@ describe("Stage 1 contracts", () => {
     expect(parsedUnknownMode.success).toBe(false);
   });
 
+  it("upgrades legacy audience criteria and validates Salesforce-list mode idempotently", () => {
+    const legacy = {
+      projectId: "project-1", projectIds: ["project-1"], statuses: ["Approved"],
+      contactIds: [], newsletterSubscriberIds: [], expeditionIds: [],
+      lastActivityWindow: "all_time", hasReplied: "either", hasClicked: "either",
+    };
+    const parsed = audienceCriteriaSchema.parse(legacy);
+    expect(parsed.exclusions).toEqual({ salesforceListIds: [], useUploadedExclusions: false, previousRuns: [] });
+    expect(audienceCriteriaSchema.parse(parsed)).toEqual(parsed);
+    // A draft may pick the mode before any campaign; sending enforces a selection.
+    expect(audienceCriteriaSchema.parse({ initialFilter: "salesforce_lists" }).salesforceListIds).toEqual([]);
+    expect(audienceCriteriaSchema.parse({ initialFilter: "salesforce_lists", salesforceListIds: [" campaign:1 "] }).salesforceListIds).toEqual(["campaign:1"]);
+    expect(campaignRunRecordSchema.safeParse({
+      id: "project-lists", kind: "project", launchType: "normal_email", projectId: "project-1", state: "draft",
+      audienceCriteria: { initialFilter: "salesforce_lists", salesforceListIds: ["campaign:1"] },
+      createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+    }).success).toBe(false);
+  });
+
   it("accepts every campaign email activity type on a timeline item", () => {
     // The timeline schema used to keep its own narrower copy of this enum,
     // omitting delivered/bounced/complained. Once the Postmark webhook began

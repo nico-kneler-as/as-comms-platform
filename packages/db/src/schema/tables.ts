@@ -1673,6 +1673,27 @@ export const broadcastUploadedRecipients = pgTable(
   ],
 );
 
+export const broadcastUploadedExclusions = pgTable(
+  "broadcast_uploaded_exclusions",
+  {
+    id: text("id").primaryKey(),
+    campaignRunId: text("campaign_run_id")
+      .notNull()
+      .references(() => campaignRuns.id, { onDelete: "cascade" }),
+    normalizedEmail: text("normalized_email").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    uniqueIndex("broadcast_uploaded_exclusions_run_email_unique").on(
+      table.campaignRunId,
+      table.normalizedEmail,
+    ),
+    index("broadcast_uploaded_exclusions_campaign_run_id_idx").on(
+      table.campaignRunId,
+    ),
+  ],
+);
+
 export const broadcastLinkClicks = pgTable(
   "broadcast_link_clicks",
   {

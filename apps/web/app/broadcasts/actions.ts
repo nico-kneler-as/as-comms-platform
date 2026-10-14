@@ -25,6 +25,7 @@ import {
   createCampaignSendOrchestrator,
   createExclusionFilter,
   createMergeRenderer,
+  composeAudience,
   formatOrgAddress,
   normalizeAliasEmail,
   planSmsBroadcastFreeze,
@@ -50,6 +51,7 @@ import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
   listBroadcastUploadedRecipients,
+  listSendableNewsletterSubscribers,
   withStage1WebTransaction,
   type Stage1WebTransaction,
   type Stage1WebRuntime,
@@ -284,6 +286,18 @@ function createCampaignSendOrchestratorForRepositories(input: {
         },
       );
     },
+    resolveNewsletterAudience: async () => {
+      return (await listSendableNewsletterSubscribers()).map((subscriber) => ({
+        contactId: null,
+        newsletterSubscriberId: subscriber.id,
+        frozenEmail: subscriber.email,
+        frozenFirstName: subscriber.firstName ?? null,
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: null,
+      }));
+    },
+    loadAudienceSets: (run) => input.campaigns.audienceComposition.loadSets(run),
     exclusionFilter: createExclusionFilter({
       repositories: {
         campaignRuns: input.campaigns.campaignRuns,
@@ -608,8 +622,18 @@ async function freezeNewsletterAudienceForSend(input: {
       },
     },
   });
+  if (
+    run.audienceCriteria.initialFilter === "salesforce_lists" &&
+    (run.audienceCriteria.salesforceListIds ?? []).length === 0
+  ) {
+    throw new Error("Choose at least one Salesforce campaign before sending.");
+  }
+  const composed = composeAudience({
+    base: members,
+    ...(await input.transaction.campaigns.audienceComposition.loadSets(run)),
+  });
   const exclusions = await exclusionFilter.applyExclusions(
-    members,
+    composed.members,
     input.runId,
     input.at,
   );
@@ -645,7 +669,9 @@ async function freezeNewsletterAudienceForSend(input: {
 
   return {
     audienceSize: exclusions.eligible.length,
-    excludedCount: exclusions.excluded.length,
+    excludedCount:
+      Object.values(composed.excludedByReason).reduce((total, count) => total + count, 0) +
+      exclusions.excluded.length,
   };
 }
 
@@ -1505,7 +1531,7 @@ export async function testSend(
         fromEmail: run.fromEmail,
         projectId: run.projectId,
       }),
-      run.audienceCriteria.contactIds,
+      run.audienceCriteria.contactIds ?? [],
     );
     const sample = audience[0];
     if (sample === undefined) {

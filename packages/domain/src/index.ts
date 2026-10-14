@@ -9,6 +9,7 @@ export * from "./canonical-event-audience.js";
 export * from "./campaign-run-projection.js";
 export * from "./campaign-send-orchestrator.js";
 export * from "./campaign-types.js";
+export * from "./compose-audience.js";
 export * from "./consent-ledger.js";
 export * from "./contact-email-resolution.js";
 export * from "./contact-resolution.js";

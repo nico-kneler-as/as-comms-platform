@@ -112,6 +112,7 @@ export function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "salesforce_lists":
     case "project_status":
     case "specific":
       return true;
@@ -122,7 +123,9 @@ export function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
   if (draft.audienceCriteria.initialFilter !== undefined) {
-    return draft.audienceCriteria.initialFilter;
+    return draft.audienceCriteria.initialFilter === "salesforce_lists"
+      ? "all_available"
+      : draft.audienceCriteria.initialFilter;
   }
 
   if (
