@@ -13,6 +13,8 @@ function labelForAction(action: string): string {
       return "Started";
     case "campaign_run.batch_sent":
       return "Batch sent";
+    case "campaign_run.chunk_scheduled":
+      return "Next chunk scheduled";
     case "campaign_run.completed":
       return "Completed";
     case "campaign_run.cancelled":

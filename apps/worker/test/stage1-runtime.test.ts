@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   gmailHistoricalCaptureBatchJobName,
   gmailHistoricalCaptureBatchPayloadSchema,
 } from "@as-comms/contracts";
 
-import { buildWorkerCrontab, readWorkerConfig } from "../src/runtime.js";
+import {
+  buildWorkerCrontab,
+  readCampaignSendPacingConfig,
+  readWorkerConfig,
+} from "../src/runtime.js";
 import { dailyOpsDigestJobName } from "../src/jobs/daily-ops-digest/index.js";
 import { dedupHistoricalLedgerJobName } from "../src/jobs/dedup-historical-ledger.js";
 import { pollInboxReadStateJobName } from "../src/jobs/poll-inbox-read-state.js";
@@ -94,6 +98,34 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
 }
 
 describe("Stage 1 worker runtime task registration", () => {
+  it("uses default paced-send configuration when the optional env is absent", () => {
+    expect(readCampaignSendPacingConfig({})).toEqual({
+      thresholdRecipients: 5_000,
+      batchesPerExecution: 3,
+      intervalMs: 300_000,
+    });
+  });
+
+  it("falls back to paced-send defaults and warns once for each invalid env value", () => {
+    const warn = vi.fn();
+
+    expect(
+      readCampaignSendPacingConfig(
+        {
+          CAMPAIGN_SEND_PACED_THRESHOLD: "0",
+          CAMPAIGN_SEND_PACED_BATCHES_PER_EXECUTION: "1.5",
+          CAMPAIGN_SEND_PACED_INTERVAL_SECONDS: "five minutes",
+        },
+        { warn },
+      ),
+    ).toEqual({
+      thresholdRecipients: 5_000,
+      batchesPerExecution: 3,
+      intervalMs: 300_000,
+    });
+    expect(warn).toHaveBeenCalledTimes(3);
+  });
+
   it("accepts narrowed launch-scope env with only Gmail and Salesforce capture ports", () => {
     const config = readWorkerConfig(launchScopeEnv);
 

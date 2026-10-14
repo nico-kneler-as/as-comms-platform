@@ -41,6 +41,17 @@ export interface CampaignSendOrchestrator {
   cancel(runId: string, reason: string): Promise<void>;
 }
 
+export interface CampaignSendPacingConfig {
+  readonly thresholdRecipients: number;
+  readonly batchesPerExecution: number;
+  readonly intervalMs: number;
+}
+
+interface CampaignSendPacingDependencies {
+  readonly config: CampaignSendPacingConfig;
+  readonly scheduleContinuation: (runId: string, runAt: Date) => Promise<void>;
+}
+
 interface PostmarkBatchSendResult {
   readonly ErrorCode: number;
   readonly Message: string;
@@ -306,6 +317,25 @@ async function readFrozenResult(
   };
 }
 
+function readPacingDependencies(input: {
+  readonly pacing?: CampaignSendPacingConfig;
+  readonly scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
+}): CampaignSendPacingDependencies | undefined {
+  if (input.pacing === undefined) {
+    return undefined;
+  }
+  if (input.scheduleContinuation === undefined) {
+    throw new Error(
+      "createCampaignSendOrchestrator requires scheduleContinuation when pacing is configured.",
+    );
+  }
+
+  return {
+    config: input.pacing,
+    scheduleContinuation: input.scheduleContinuation,
+  };
+}
+
 export function createCampaignSendOrchestrator(deps: {
   repositories: CampaignSendRepositories;
   audienceResolver: AudienceResolver;
@@ -320,6 +350,8 @@ export function createCampaignSendOrchestrator(deps: {
   broadcastMessageStream?: string;
   newsletterSubscribeUrl?: string | undefined;
   batchSize?: number;
+  pacing?: CampaignSendPacingConfig;
+  scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
   logger?: Pick<Console, "error" | "info" | "warn">;
   now?: () => Date;
 }): CampaignSendOrchestrator {
@@ -344,6 +376,7 @@ export function createCampaignSendOrchestrator(deps: {
       "createCampaignSendOrchestrator requires a non-empty appUrl for unsubscribe links.",
     );
   }
+  const pacingDependencies = readPacingDependencies(deps);
 
   return {
     async freeze(runId, at) {
@@ -462,9 +495,17 @@ export function createCampaignSendOrchestrator(deps: {
           : await deps.repositories.settingsProjects.findById(run.projectId);
       const projectAlias = project?.projectAlias ?? null;
 
-      const snapshots = (await deps.repositories.audienceSnapshots.listForRun(runId)).filter(
+      const allSnapshots = await deps.repositories.audienceSnapshots.listForRun(runId);
+      const snapshots = allSnapshots.filter(
         (snapshot) => snapshot.deliveryStatus === "pending",
       );
+      const pacing = pacingDependencies;
+      const isPaced =
+        pacing !== undefined &&
+        (run.audienceSize ?? allSnapshots.length) > pacing.config.thresholdRecipients;
+      const executionRecipientLimit = isPaced
+        ? Math.min(snapshots.length, batchSize * pacing.config.batchesPerExecution)
+        : snapshots.length;
       const senderAliasEmail = normalizeAliasEmail(
         run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? null,
       );
@@ -508,7 +549,7 @@ export function createCampaignSendOrchestrator(deps: {
         }
       }
 
-      for (let index = 0; index < snapshots.length; index += batchSize) {
+      for (let index = 0; index < executionRecipientLimit; index += batchSize) {
         const stateCheck = await deps.repositories.campaignRuns.findById(runId);
         if (stateCheck?.state === "cancelled") {
           return;
@@ -697,6 +738,22 @@ export function createCampaignSendOrchestrator(deps: {
         (snapshot) => snapshot.deliveryStatus === "pending",
       );
       if (remaining.length > 0) {
+        if (isPaced) {
+          const nextRunAt = new Date(
+            now().getTime() + pacing.config.intervalMs,
+          );
+          await pacing.scheduleContinuation(runId, nextRunAt);
+          await appendCampaignAudit(deps.repositories, {
+            runId,
+            action: "campaign_run.chunk_scheduled",
+            occurredAt: now().toISOString(),
+            detail: "Scheduled the next paced send chunk.",
+            metadataJson: {
+              remainingCount: remaining.length,
+              nextRunAt: nextRunAt.toISOString(),
+            },
+          });
+        }
         return;
       }
 
