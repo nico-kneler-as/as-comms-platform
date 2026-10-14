@@ -11,7 +11,7 @@ vi.mock("next/link", () => ({ default: ({ children, ...props }: React.ComponentP
 vi.mock("@/app/broadcasts/actions", () => ({ cancelResendAction: vi.fn() }));
 
 import { DonorAudienceStep } from "../../app/donors/_components/donor-audience-step";
-import { DonorExcludeStep } from "../../app/donors/_components/donor-exclude-step";
+import { DonorExcludeStep, describeExclusionReason } from "../../app/donors/_components/donor-exclude-step";
 import { DonorResendStep } from "../../app/donors/_components/donor-resend-step";
 import { DonorResendPanel } from "../../app/donors/_components/donor-resend-panel";
 
@@ -27,11 +27,23 @@ describe("donor appeal audience and exclusions", () => {
   });
 
   it("shows the Insiders default and preview reason counts", () => {
-    const markup = renderToStaticMarkup(<DonorExcludeStep excludeInsiders selectedListIds={[]} previousRun={null} earlierAppeals={[]} lists={lists} csvSummary={{ acceptedCount: 4, invalidSkippedCount: 1 }} preview={{ total: 92, consentExcluded: 3, excludedByReason: { insiders: 4 } }} onExcludeInsidersChange={() => undefined} onSelectedListIdsChange={() => undefined} onPreviousRunChange={() => undefined} onCsvChange={() => undefined} onClearCsv={() => undefined} />);
+    const markup = renderToStaticMarkup(<DonorExcludeStep excludeInsiders selectedListIds={[]} previousRun={null} earlierAppeals={[]} lists={lists} csvSummary={{ acceptedCount: 4, invalidSkippedCount: 1 }} preview={{ total: 92, consentExcluded: 3, excludedByReason: { "salesforce_list:insiders": 4 } }} onExcludeInsidersChange={() => undefined} onSelectedListIdsChange={() => undefined} onPreviousRunChange={() => undefined} onCsvChange={() => undefined} onClearCsv={() => undefined} />);
     expect(markup).toContain("Don&#x27;t send to Insiders");
     expect(markup).toContain("92 people will receive this");
-    expect(markup).toContain("4 skipped: insiders");
+    expect(markup).toContain("4 skipped · Insiders");
     expect(markup).toContain("3 removed because they unsubscribed or bounced");
+  });
+});
+
+describe("exclusion reason labels", () => {
+  it("names campaigns, uploads and earlier appeals in plain words", () => {
+    const campaignLists = [{ id: "campaign:701A", name: "2023 Letter A" }];
+    const earlier = [{ id: "run-9", name: "Giving Tuesday 2025" }];
+    expect(describeExclusionReason("salesforce_list:insiders", campaignLists, earlier)).toBe("Insiders");
+    expect(describeExclusionReason("salesforce_list:campaign:701A", campaignLists, earlier)).toBe('In "2023 Letter A"');
+    expect(describeExclusionReason("uploaded_exclusions", campaignLists, earlier)).toBe("On your uploaded list");
+    expect(describeExclusionReason("previous_run:run-9:openers", campaignLists, earlier)).toBe('Already opened "Giving Tuesday 2025"');
+    expect(describeExclusionReason("previous_run:run-9:recipients", campaignLists, earlier)).toBe('Already got "Giving Tuesday 2025"');
   });
 });
 
