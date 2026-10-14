@@ -33,10 +33,12 @@ export function DonorAppealWizard({ draft: initialDraft, bootstrap: initialBoots
   const [criteria, setCriteria] = useState(initialDraft.audienceCriteria);
   const [preview, setPreview] = useState<DonorAudiencePreview | null>(null);
   const [csvSummary, setCsvSummary] = useState<{ readonly acceptedCount: number; readonly invalidSkippedCount: number } | null>(null);
-  const [resendEnabled, setResendEnabled] = useState(false);
-  const [resendDays, setResendDays] = useState(3);
-  const [resendSubject, setResendSubject] = useState("");
-  const [resendPreheader, setResendPreheader] = useState("");
+  // Reopening an appeal keeps its reminder: starting from "off" would cancel
+  // it when Devynn passes the Resend step.
+  const [resendEnabled, setResendEnabled] = useState(initialDraft.resend !== null);
+  const [resendDays, setResendDays] = useState(initialDraft.resend?.delayDays ?? 3);
+  const [resendSubject, setResendSubject] = useState(initialDraft.resend?.subject ?? "");
+  const [resendPreheader, setResendPreheader] = useState(initialDraft.resend?.preheader ?? "");
   const [scheduleAt, setScheduleAt] = useState("");
   const [busy, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);

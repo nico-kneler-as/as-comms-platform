@@ -30,7 +30,7 @@ import {
 } from "@/app/broadcasts/[runId]/_lib/run-detail";
 import { requireWorkspace } from "@/src/server/auth/workspace-access";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
-import { DonorResendPanel } from "@/app/donors/_components/donor-resend-panel";
+import { ResendPanel } from "@/app/_components/audience-exclusions/resend-panel";
 
 type DetailPromise = Promise<RunDetailModel | null>;
 
@@ -90,7 +90,7 @@ async function RightRailSection({ modelPromise, showResendPanel }: { readonly mo
       <SendDetailsPanel model={model} />
       <WebVersionPanel runId={model.run.id} webVersion={model.webVersion} />
       <AudienceCriteriaPanel model={model} />
-      {showResendPanel ? <DonorResendPanel parentRunId={model.run.id} child={resend === null ? null : { id: resend.id, state: resend.state, scheduledAt: resend.scheduledAt, audienceSize: resend.audienceSize }} /> : null}
+      {showResendPanel ? <ResendPanel parentRunId={model.run.id} child={resend === null ? null : { id: resend.id, state: resend.state, scheduledAt: resend.scheduledAt, audienceSize: resend.audienceSize }} workspace={model.run.workspace} detailHref={(runId) => `${model.run.workspace === "donors" ? "/donors" : "/broadcasts"}/${encodeURIComponent(runId)}`} /> : null}
       {model.provider === "mailchimp" ? null : (
         <RunAuditLog entries={model.auditEntries} />
       )}

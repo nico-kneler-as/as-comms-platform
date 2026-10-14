@@ -8,6 +8,7 @@ export type CampaignWizardStepId =
   | "launch"
   | "setup"
   | "audience"
+  | "exclude"
   | "compose"
   | "preview"
   | "review";

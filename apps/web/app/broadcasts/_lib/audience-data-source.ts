@@ -55,6 +55,10 @@ import {
   searchNewsletterSubscribers,
 } from "@/src/server/stage1-runtime";
 import { parseRecipientCsv } from "@/src/lib/parse-recipient-csv";
+import {
+  readConfiguredResend,
+  type ConfiguredResend,
+} from "@/src/server/campaigns/configured-resend";
 
 import { deriveInitials } from "./campaign-preview";
 
@@ -219,6 +223,8 @@ export interface CampaignWizardDraftData {
   readonly scheduledAt: string | null;
   readonly updatedAt: string;
   readonly operatorEmail: string;
+  /** The reminder already configured on this draft, so reopening keeps it. */
+  readonly resend?: ConfiguredResend | null;
 }
 
 export interface ComposePreviewWarningContact {
@@ -559,6 +565,14 @@ function toStoredAudienceCriteria(
     statuses: criteria.statuses,
     contactIds: criteria.contactIds ?? [],
     newsletterSubscriberIds: criteria.newsletterSubscriberIds ?? [],
+    // Exclusions (and Salesforce lists) must survive a wizard save; dropping
+    // them here silently sent to everyone the composer was meant to skip.
+    ...(criteria.salesforceListIds === undefined
+      ? {}
+      : { salesforceListIds: criteria.salesforceListIds }),
+    ...(criteria.exclusions === undefined
+      ? {}
+      : { exclusions: criteria.exclusions }),
     ...(criteria.initialFilter === undefined
       ? {}
       : { initialFilter: criteria.initialFilter }),
@@ -1306,6 +1320,34 @@ export async function previewComposedAudience(runId: string): Promise<{
   };
 }
 
+/** Sent volunteer broadcasts available as a previous-run exclusion source. */
+export async function getVolunteerExclusionBroadcastsAction(runId: string): Promise<UiResult<readonly { readonly id: string; readonly name: string }[]>> {
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) return errorResult("campaign_not_found", "Broadcast draft not found.");
+    await requireCampaignWorkspaceAccess(run);
+    if (run.workspace !== "volunteers") return errorResult("campaign_workspace_mismatch", "This broadcast belongs in a different workspace.");
+    const runs = await runtime.campaigns.campaignRuns.listRecent({ limit: 100 });
+    return successResult(runs.filter((candidate) => candidate.id !== run.id && candidate.workspace === "volunteers" && candidate.resendOfRunId === null && (candidate.state === "complete" || candidate.state === "finalized")).map((candidate) => ({ id: candidate.id, name: candidate.name ?? candidate.subjectTemplate ?? "Untitled broadcast" })));
+  } catch (error) {
+    return errorResult("campaign_exclusion_runs_failed", error instanceof Error ? error.message : "Unable to load earlier broadcasts.", true);
+  }
+}
+
+export async function previewVolunteerExclusionsAction(runId: string): Promise<UiResult<{ readonly total: number; readonly excludedByReason: Readonly<Record<string, number>>; readonly consentExcluded: number }>> {
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) return errorResult("campaign_not_found", "Broadcast draft not found.");
+    await requireCampaignWorkspaceAccess(run);
+    if (run.workspace !== "volunteers") return errorResult("campaign_workspace_mismatch", "This broadcast belongs in a different workspace.");
+    return successResult(await previewComposedAudience(runId));
+  } catch (error) {
+    return errorResult("campaign_exclusion_preview_failed", error instanceof Error ? error.message : "Unable to update the recipient count.", true);
+  }
+}
+
 async function resolveWizardAudience(
   input: {
     readonly kind: CampaignKind;
@@ -1352,6 +1394,7 @@ export async function createCampaignWizardDraft(): Promise<CampaignWizardDraftDa
   const runtime = await getStage1WebRuntime();
   const created = await runtime.campaigns.campaignRuns.create({
     id: randomUUID(),
+    workspace: "volunteers",
     kind: "project",
     launchType: "normal_email",
     projectId: null,
@@ -1392,7 +1435,10 @@ export async function getCampaignWizardDraft(
     return null;
   }
 
-  return mapDraftRecord(run, session.email);
+  return {
+    ...mapDraftRecord(run, session.email),
+    resend: await readConfiguredResend(runtime.campaigns.campaignRuns, run.id),
+  };
 }
 
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {

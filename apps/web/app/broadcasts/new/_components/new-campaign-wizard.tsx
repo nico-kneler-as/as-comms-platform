@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import type {
   AudienceCriteria,
   CampaignKind,
@@ -16,11 +18,17 @@ import type {
 import { cn } from "@/lib/utils";
 import {
   confirmCampaignWizardDraftCurrentAction,
+  clearBroadcastExclusionsAction,
+  getVolunteerExclusionBroadcastsAction,
+  previewVolunteerExclusionsAction,
   saveCampaignWizardDraftAction,
+  uploadBroadcastExclusionsCsvAction,
   uploadBroadcastAudienceCsvAction,
 } from "../../_lib/audience-data-source";
 import {
   schedule,
+  cancelResendAction,
+  configureResendAction,
   sendNow,
   sendSmsBroadcastNow,
   sendSmsBroadcastTest,
@@ -36,11 +44,16 @@ import { LaunchTypeStep } from "./launch-type-step";
 import { NameAndSenderStep } from "./name-and-sender-step";
 import { PreviewStep } from "./preview-step";
 import { ReviewStep } from "./review-step";
-import { useNewCampaignWizardState } from "./use-new-campaign-wizard-state";
+import { VolunteerExcludeStep } from "./volunteer-exclude-step";
+import {
+  designJsonFingerprint,
+  normalizeCriteriaForFingerprint,
+  useNewCampaignWizardState,
+} from "./use-new-campaign-wizard-state";
 import { type CampaignWizardStepDefinition, WizardRail } from "./wizard-rail";
 import { WizardFooterLeftSlotProvider } from "./wizard-shell";
 
-const STEPS: readonly CampaignWizardStepDefinition[] = [
+const SMS_STEPS: readonly CampaignWizardStepDefinition[] = [
   {
     id: "launch",
     title: "Launch type",
@@ -72,6 +85,12 @@ const STEPS: readonly CampaignWizardStepDefinition[] = [
     title: "Review + send",
     subtitle: "Confirm the final checks and send timing.",
   },
+];
+
+const EMAIL_STEPS: readonly CampaignWizardStepDefinition[] = [
+  ...SMS_STEPS.slice(0, 3),
+  { id: "exclude", title: "Exclude", subtitle: "Skip selected people before this email is sent." },
+  ...SMS_STEPS.slice(3),
 ];
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
@@ -560,6 +579,36 @@ export function NewCampaignWizard({
     statusLabel,
   } = useNewCampaignWizardState({ bootstrap, draft });
   const singleSelectProjects = projectSelectionMode === "single";
+  const isSmsLaunch = launchType === "sms";
+  const steps = isSmsLaunch ? SMS_STEPS : EMAIL_STEPS;
+  const excludeStepIndex = 3;
+  const composeStepIndex = isSmsLaunch ? 3 : 4;
+  const previewStepIndex = composeStepIndex + 1;
+  const reviewStepIndex = composeStepIndex + 2;
+  const exclusions = criteria.exclusions ?? { salesforceListIds: [], useUploadedExclusions: false, previousRuns: [] };
+  const [earlierBroadcasts, setEarlierBroadcasts] = useState<readonly { readonly id: string; readonly name: string }[]>([]);
+  const [exclusionPreview, setExclusionPreview] = useState<{ readonly total: number; readonly excludedByReason: Readonly<Record<string, number>>; readonly consentExcluded: number } | null>(null);
+  const [exclusionCsvSummary, setExclusionCsvSummary] = useState<{ readonly acceptedCount: number; readonly invalidSkippedCount: number } | null>(null);
+  // Reopening a draft keeps its reminder: starting from "off" would cancel it
+  // when the draft is launched.
+  const [resendEnabled, setResendEnabled] = useState(draft.resend != null);
+  const [resendDays, setResendDays] = useState(draft.resend?.delayDays ?? 3);
+  const [resendSubject, setResendSubject] = useState(draft.resend?.subject ?? "");
+  const [resendPreheader, setResendPreheader] = useState(draft.resend?.preheader ?? "");
+  const exclusionKey = JSON.stringify(criteria.exclusions ?? null);
+  const hasExclusions =
+    exclusions.previousRuns.length > 0 ||
+    exclusions.salesforceListIds.length > 0 ||
+    exclusions.useUploadedExclusions;
+  // With exclusions on, Review shows who actually gets it, not the raw audience.
+  const excludedPreview = hasExclusions ? exclusionPreview : null;
+  const skippedByExclusions =
+    excludedPreview === null
+      ? 0
+      : Object.values(excludedPreview.excludedByReason).reduce(
+          (sum, count) => sum + count,
+          0,
+        );
 
   function showPersistentSaveError(message: string) {
     if (saveTimeoutRef.current !== null) {
@@ -664,12 +713,12 @@ export function NewCampaignWizard({
             result.data.launchType === "sms"
               ? ""
               : (result.data.bodyHtmlTemplate ?? ""),
-          bodyDesignJson: JSON.stringify(
+          bodyDesignJson: designJsonFingerprint(
             result.data.launchType === "sms"
               ? null
-              : (result.data.bodyDesignJson ?? null),
+              : result.data.bodyDesignJson,
           ),
-          criteria: {
+          criteria: normalizeCriteriaForFingerprint({
             ...result.data.audienceCriteria,
             projectId:
               result.data.audienceCriteria.projectId ??
@@ -679,7 +728,7 @@ export function NewCampaignWizard({
             newsletterSubscriberIds:
               result.data.audienceCriteria.newsletterSubscriberIds ?? [],
             initialFilter: criteria.initialFilter,
-          },
+          }),
           audienceSize: result.data.audienceSize,
         });
         setSaveState("saved");
@@ -700,10 +749,40 @@ export function NewCampaignWizard({
 
   autosavePersistDraftRef.current = persistDraft;
 
+  useEffect(() => {
+    if (isSmsLaunch || currentStep !== excludeStepIndex) return;
+    void getVolunteerExclusionBroadcastsAction(draft.runId).then((result) => {
+      if (result.ok) setEarlierBroadcasts(result.data);
+      else setToast({ tone: "error", message: result.message });
+    });
+  }, [currentStep, draft.runId, isSmsLaunch, setToast]);
+
+  useEffect(() => {
+    if (
+      isSmsLaunch ||
+      (currentStep !== excludeStepIndex && currentStep !== reviewStepIndex)
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        if (!(await persistDraft("Saved"))) return;
+        const result = await previewVolunteerExclusionsAction(draft.runId);
+        if (result.ok) setExclusionPreview(result.data);
+        else setToast({ tone: "error", message: result.message });
+      })();
+    }, 300);
+    return () => { window.clearTimeout(timer); };
+  }, [currentStep, draft.runId, exclusionKey, isSmsLaunch, reviewStepIndex]);
+
   function updateCriteria(
     mutator: (current: CampaignAudienceCriteria) => CampaignAudienceCriteria,
   ) {
     setCriteria((current) => mutator(current));
+  }
+
+  function updateExclusions(next: typeof exclusions) {
+    updateCriteria((current) => ({ ...current, exclusions: next }));
   }
 
   function changeInitialFilter(value: AudienceInitialFilter) {
@@ -922,6 +1001,18 @@ export function NewCampaignWizard({
         return;
       }
 
+      if (resendEnabled && (!resendSubject.trim() || resendDays < 1 || resendDays > 14)) {
+        setToast({ tone: "error", message: "Add a new subject and choose 1 to 14 days." });
+        return;
+      }
+      const resendResult = resendEnabled
+        ? await configureResendAction(draft.runId, { delayDays: resendDays, subject: resendSubject, ...(resendPreheader.trim() ? { preheader: resendPreheader } : {}) }, "volunteers")
+        : await cancelResendAction(draft.runId, "volunteers");
+      if (!resendResult.ok && !(resendResult.code === "campaign_resend_cancel_failed" && !resendEnabled)) {
+        setToast({ tone: "error", message: resendResult.message });
+        return;
+      }
+
       const result =
         sendMode === "later"
           ? await (() => {
@@ -951,7 +1042,7 @@ export function NewCampaignWizard({
       setRunState("scheduled");
       setScheduledAt(result.data.scheduledAt ?? null);
       setConfirmOpen(false);
-      setCurrentStep(5);
+      setCurrentStep(reviewStepIndex);
       setToast({
         tone: "success",
         message:
@@ -972,7 +1063,7 @@ export function NewCampaignWizard({
             setCurrentStep(index);
           }
         }}
-        steps={STEPS}
+        steps={steps}
       />
 
       <WizardFooterLeftSlotProvider value={null}>
@@ -998,7 +1089,7 @@ export function NewCampaignWizard({
             <div
               className={cn(
                 "flex min-h-full w-full flex-col",
-                currentStep === 3 && launchType === "html_email"
+                currentStep === composeStepIndex && launchType === "html_email"
                   ? null
                   : "mx-auto max-w-3xl",
               )}
@@ -1073,12 +1164,26 @@ export function NewCampaignWizard({
                     setCurrentStep(1);
                   }}
                   onContinue={() => {
-                    void continueTo(3);
+                    void continueTo(isSmsLaunch ? composeStepIndex : excludeStepIndex);
                   }}
                 />
               ) : null}
 
-              {currentStep === 3 ? (
+              {!isSmsLaunch && currentStep === excludeStepIndex ? (
+                <VolunteerExcludeStep
+                  earlierBroadcasts={earlierBroadcasts}
+                  previousRun={exclusions.previousRuns[0] ?? null}
+                  csvSummary={exclusionCsvSummary}
+                  preview={exclusionPreview}
+                  onPreviousRunChange={(value) => { updateExclusions({ ...exclusions, previousRuns: value ? [value] : [] }); }}
+                  onCsvChange={(file) => { if (!file) return; void (async () => { const result = await uploadBroadcastExclusionsCsvAction({ runId: draft.runId, csvText: await file.text() }); if (!result.ok) { setToast({ tone: "error", message: result.message }); return; } setExclusionCsvSummary(result.data); updateExclusions({ ...exclusions, useUploadedExclusions: true }); })(); }}
+                  onClearCsv={() => { void (async () => { const result = await clearBroadcastExclusionsAction(draft.runId); if (!result.ok) { setToast({ tone: "error", message: result.message }); return; } setExclusionCsvSummary(null); updateExclusions({ ...exclusions, useUploadedExclusions: false }); })(); }}
+                  onBack={() => { setCurrentStep(2); }}
+                  onContinue={() => { void continueTo(composeStepIndex); }}
+                />
+              ) : null}
+
+              {currentStep === composeStepIndex ? (
                 <ComposeStep
                   launchType={launchType}
                   subject={subject}
@@ -1101,15 +1206,15 @@ export function NewCampaignWizard({
                     setBodyHtml(value.bodyHtml);
                   }}
                   onBack={() => {
-                    setCurrentStep(2);
+                    setCurrentStep(isSmsLaunch ? 2 : excludeStepIndex);
                   }}
                   onContinue={() => {
-                    void continueTo(4);
+                    void continueTo(previewStepIndex);
                   }}
                 />
               ) : null}
 
-              {currentStep === 4 ? (
+              {currentStep === previewStepIndex ? (
                 <PreviewStep
                   launchType={launchType}
                   subject={subject}
@@ -1131,10 +1236,10 @@ export function NewCampaignWizard({
                   selectedSenderVerified={selectedSenderVerified}
                   frozen={frozen}
                   onBack={() => {
-                    setCurrentStep(3);
+                    setCurrentStep(composeStepIndex);
                   }}
                   onContinue={() => {
-                    void continueTo(5);
+                    void continueTo(reviewStepIndex);
                   }}
                   onPreviewPrevious={() => {
                     setSampleIndex((current) => current - 1);
@@ -1161,7 +1266,7 @@ export function NewCampaignWizard({
                 />
               ) : null}
 
-              {currentStep === 5 ? (
+              {currentStep === reviewStepIndex ? (
                 <ReviewStep
                   launchType={launchType}
                   projectChipLabel={readProjectChipLabel(
@@ -1173,7 +1278,12 @@ export function NewCampaignWizard({
                   fromEmail={launchType === "sms" ? null : fromEmail}
                   subject={composePreview?.sample?.subject ?? subject}
                   selectedSenderVerified={selectedSenderVerified}
-                  audienceSize={composePreview?.audienceSize ?? countState.count}
+                  audienceSize={
+                    excludedPreview?.total ??
+                    composePreview?.audienceSize ??
+                    countState.count
+                  }
+                  skippedByExclusions={skippedByExclusions}
                   smsPreviewData={smsPreview}
                   sendMode={sendMode}
                   scheduleDate={scheduleDate}
@@ -1185,7 +1295,7 @@ export function NewCampaignWizard({
                   submitPending={submitPending}
                   onBack={() => {
                     if (!frozen) {
-                      setCurrentStep(4);
+                      setCurrentStep(previewStepIndex);
                     }
                   }}
                   onSendModeChange={setSendMode}
@@ -1195,6 +1305,14 @@ export function NewCampaignWizard({
                   onSubmit={() => {
                     void handleSubmit();
                   }}
+                  resendEnabled={resendEnabled}
+                  resendDays={resendDays}
+                  resendSubject={resendSubject}
+                  resendPreheader={resendPreheader}
+                  onResendEnabledChange={setResendEnabled}
+                  onResendDaysChange={setResendDays}
+                  onResendSubjectChange={setResendSubject}
+                  onResendPreheaderChange={setResendPreheader}
                 />
               ) : null}
             </div>

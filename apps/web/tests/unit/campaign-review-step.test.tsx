@@ -66,12 +66,20 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   frozenScheduledAt: null,
   confirmOpen: false,
   submitPending: false,
+  resendEnabled: false,
+  resendDays: 3,
+  resendSubject: "",
+  resendPreheader: "",
   onBack: () => undefined,
   onSendModeChange: () => undefined,
   onScheduleDateChange: () => undefined,
   onScheduleTimeChange: () => undefined,
   onConfirmOpenChange: () => undefined,
   onSubmit: () => undefined,
+  onResendEnabledChange: () => undefined,
+  onResendDaysChange: () => undefined,
+  onResendSubjectChange: () => undefined,
+  onResendPreheaderChange: () => undefined,
 };
 
 describe("ReviewStep sender gating", () => {
@@ -145,5 +153,14 @@ describe("ReviewStep sender gating", () => {
     expect(markup).toContain("Send 9 of 12 selected contacts (~14 segments, ~$0.1106)?");
     expect(markup).not.toContain("Schedule for later");
     expect(markup).not.toContain("Choose a verified sender");
+    expect(markup).not.toContain("Resend to people");
+  });
+
+  it("shows resend validation for email only", () => {
+    const invalid = renderToStaticMarkup(<ReviewStep {...baseProps} resendEnabled resendSubject="" />);
+    const sms = renderToStaticMarkup(<ReviewStep {...baseProps} launchType="sms" resendEnabled resendSubject="" />);
+    expect(invalid).toContain("Resend to people who don&#x27;t open");
+    expect(invalid).toContain('aria-invalid="true"');
+    expect(sms).not.toContain("Resend to people");
   });
 });
