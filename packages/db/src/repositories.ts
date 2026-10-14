@@ -8129,6 +8129,7 @@ export function createStage5RepositoryBundle(
             launchType: parsed.launchType,
             state: "draft",
             projectId: parsed.projectId,
+            name: parsed.name,
             fromEmail: parsed.fromEmail,
             fromName: parsed.fromName,
             replyToEmail: parsed.replyToEmail,
