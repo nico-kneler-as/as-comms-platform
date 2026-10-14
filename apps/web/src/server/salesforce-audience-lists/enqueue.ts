@@ -9,14 +9,24 @@ import {
 } from "@as-comms/contracts";
 
 import { requireAdmin } from "@/src/server/auth/session";
+import { requireWorkspace } from "@/src/server/auth/workspace-access";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
 /**
  * Future admin-only refresh controls call this; it intentionally has no UI in
  * this brick. The stable key coalesces repeated button presses into one sync.
  */
-export async function enqueueSalesforceAudienceListsSync(): Promise<void> {
-  await requireAdmin();
+export async function enqueueSalesforceAudienceListsSync(input?: {
+  readonly workspace?: "donors";
+}): Promise<void> {
+  // The list snapshot is shared infrastructure, but donor operators need to
+  // refresh it from their own workspace.  Keep the old admin entry point for
+  // Settings while making the donor path explicit and narrow.
+  if (input?.workspace === "donors") {
+    await requireWorkspace("donors");
+  } else {
+    await requireAdmin();
+  }
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
     throw new Error("DATABASE_URL must be set before enqueueing Salesforce sync.");

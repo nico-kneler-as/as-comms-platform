@@ -42,7 +42,7 @@ import {
 import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin } from "@/src/server/auth/session";
-import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
+import { requireVolunteerSession, requireWorkspace } from "@/src/server/auth/workspace-access";
 import {
   countBroadcastUploadedRecipients,
   getStage1WebRuntime,
@@ -68,6 +68,16 @@ const campaignWizardDraftBaselineSchema =
     runId: true,
     observedUpdatedAt: true,
   });
+
+async function requireCampaignWorkspaceAccess(run: CampaignRunRecord) {
+  const access = await requireWorkspace(run.workspace);
+  // Existing volunteer broadcast controls remain admin-only. Donor appeals
+  // deliberately use the workspace membership instead.
+  if (run.workspace === "volunteers" && access.user.role !== "admin") {
+    throw new Error("FORBIDDEN");
+  }
+  return access.user;
+}
 
 export interface CampaignProjectOption {
   readonly id: string;
@@ -1261,10 +1271,10 @@ export async function previewComposedAudience(runId: string): Promise<{
   readonly excludedByReason: Readonly<Record<string, number>>;
   readonly consentExcluded: number;
 }> {
-  await requireAdmin();
   const runtime = await getStage1WebRuntime();
   const run = await runtime.campaigns.campaignRuns.findById(runId);
   if (run === null) throw new Error(`Campaign run ${runId} was not found.`);
+  await requireCampaignWorkspaceAccess(run);
   const at = new Date();
   const base = await resolveStoredCampaignAudience({
     kind: run.kind,
@@ -2198,11 +2208,11 @@ export async function uploadBroadcastExclusionsCsvAction(input: {
   readonly runId: string;
   readonly csvText: string;
 }): Promise<UiResult<ExclusionsCsvUploadSummary>> {
-  await requireAdmin();
   try {
     const runtime = await getStage1WebRuntime();
     const run = await runtime.campaigns.campaignRuns.findById(input.runId);
     if (run === null) return errorResult("campaign_not_found", "Broadcast draft not found.");
+    await requireCampaignWorkspaceAccess(run);
     const parsed = parseRecipientCsv(input.csvText);
     const inserted = await upsertBroadcastUploadedExclusions(
       input.runId,
@@ -2219,12 +2229,13 @@ export async function uploadBroadcastExclusionsCsvAction(input: {
 }
 
 export async function clearBroadcastExclusionsAction(runId: string): Promise<UiResult<void>> {
-  await requireAdmin();
   try {
     const runtime = await getStage1WebRuntime();
-    if (await runtime.campaigns.campaignRuns.findById(runId) === null) {
+    const run = await runtime.campaigns.campaignRuns.findById(runId);
+    if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
+    await requireCampaignWorkspaceAccess(run);
     await clearBroadcastUploadedExclusions(runId);
     return successResult(undefined);
   } catch (error) {
@@ -2270,6 +2281,15 @@ export async function saveCampaignWizardDraftAction(
   try {
     const parsed = campaignWizardDraftSaveInputSchema.parse(input);
     const runtime = await getStage1WebRuntime();
+    const current = await runtime.campaigns.campaignRuns.findById(parsed.runId);
+    if (current === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    // Do not let an admin opening a donor draft through the volunteer URL
+    // silently rewrite its Salesforce-list audience as all subscribers.
+    if (current.workspace !== "volunteers") {
+      return errorResult("campaign_workspace_mismatch", "This appeal belongs in the Donors workspace.");
+    }
     const audienceCriteria = parsed.audienceCriteria;
     const updated = await runtime.campaigns.campaignRuns.updateDraft(
       parsed.runId,

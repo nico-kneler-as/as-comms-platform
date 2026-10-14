@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { RunDetailHeaderModel } from "../_lib/run-detail";
+import type { Workspace } from "@as-comms/contracts";
 import { CancelModal } from "./cancel-modal";
 import { RunDetailHeader } from "./run-detail-header";
 
@@ -16,12 +17,14 @@ export function RunDetailShell({
   emailContentSection,
   recipientsSection,
   rightRailSection,
+  workspace = "volunteers",
 }: {
   readonly header: RunDetailHeaderModel;
   readonly metricsSection: ReactNode;
   readonly emailContentSection: ReactNode;
   readonly recipientsSection: ReactNode;
   readonly rightRailSection: ReactNode;
+  readonly workspace?: Workspace;
 }) {
   const router = useRouter();
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -51,6 +54,7 @@ export function RunDetailShell({
       <div className="flex min-h-dvh flex-col bg-slate-50">
         <RunDetailHeader
           header={header}
+          workspace={workspace}
           onStopUnsent={() => {
             setCancelOpen(true);
           }}
@@ -74,6 +78,7 @@ export function RunDetailShell({
         runId={header.runId}
         sentCount={null}
         totalAudience={header.totalAudience}
+        workspace={workspace}
       />
     </>
   );
