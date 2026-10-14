@@ -7,6 +7,7 @@ export * from "./broadcast-email-render.js";
 export * from "./broadcast-web-version-render.js";
 export * from "./canonical-event-audience.js";
 export * from "./campaign-run-projection.js";
+export * from "./campaign-resend.js";
 export * from "./campaign-send-orchestrator.js";
 export * from "./campaign-types.js";
 export * from "./compose-audience.js";

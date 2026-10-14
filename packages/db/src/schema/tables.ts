@@ -30,6 +30,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -1468,6 +1469,8 @@ export const campaignRuns = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     audienceSize: integer("audience_size"),
+    resendOfRunId: text("resend_of_run_id"),
+    resendDelayDays: integer("resend_delay_days"),
     scheduledAt: timestamp("scheduled_at", {
       mode: "date",
       withTimezone: true,
@@ -1526,6 +1529,14 @@ export const campaignRuns = pgTable(
       .on(table.projectId)
       .where(isNotNull(table.projectId)),
     index("campaign_runs_created_at_idx").on(table.createdAt.desc()),
+    uniqueIndex("campaign_runs_resend_of_run_unique")
+      .on(table.resendOfRunId)
+      .where(isNotNull(table.resendOfRunId)),
+    foreignKey({
+      columns: [table.resendOfRunId],
+      foreignColumns: [table.id],
+      name: "campaign_runs_resend_of_run_id_campaign_runs_id_fk",
+    }).onDelete("restrict"),
   ],
 );
 

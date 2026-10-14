@@ -38,6 +38,11 @@ export interface CampaignSendOrchestrator {
     runId: string,
     at: Date,
   ): Promise<{ audienceSize: number; excludedCount: number; excludedByReason: Readonly<Record<string, number>> }>;
+  freezeWithAudience(
+    runId: string,
+    members: readonly AudienceMember[],
+    at: Date,
+  ): Promise<{ audienceSize: number; excludedCount: number; excludedByReason: Readonly<Record<string, number>> }>;
   preview(
     runId: string,
     at: Date,
@@ -55,6 +60,10 @@ export interface CampaignSendPacingConfig {
 interface CampaignSendPacingDependencies {
   readonly config: CampaignSendPacingConfig;
   readonly scheduleContinuation: (runId: string, runAt: Date) => Promise<void>;
+}
+
+interface CampaignResendSchedulingDependencies {
+  readonly scheduleResend: (childRunId: string, runAt: Date) => Promise<void>;
 }
 
 interface PostmarkBatchSendResult {
@@ -89,6 +98,7 @@ interface PostmarkClientLike {
 interface CampaignSendRepositories {
   readonly campaignRuns: {
     findById(id: string): Promise<CampaignRunRecord | null>;
+    findResendByParentRunId?(parentRunId: string): Promise<CampaignRunRecord | null>;
     transitionState(
       id: string,
       from: RunState,
@@ -388,6 +398,14 @@ function readPacingDependencies(input: {
   };
 }
 
+function readResendSchedulingDependencies(input: {
+  readonly scheduleResend?: (childRunId: string, runAt: Date) => Promise<void>;
+}): CampaignResendSchedulingDependencies | undefined {
+  return input.scheduleResend === undefined
+    ? undefined
+    : { scheduleResend: input.scheduleResend };
+}
+
 export function createCampaignSendOrchestrator(deps: {
   repositories: CampaignSendRepositories;
   audienceResolver: AudienceResolver;
@@ -412,6 +430,7 @@ export function createCampaignSendOrchestrator(deps: {
   batchSize?: number;
   pacing?: CampaignSendPacingConfig;
   scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
+  scheduleResend?: (childRunId: string, runAt: Date) => Promise<void>;
   logger?: Pick<Console, "error" | "info" | "warn">;
   now?: () => Date;
 }): CampaignSendOrchestrator {
@@ -437,12 +456,21 @@ export function createCampaignSendOrchestrator(deps: {
     );
   }
   const pacingDependencies = readPacingDependencies(deps);
+  const resendScheduling = readResendSchedulingDependencies(deps);
 
   return {
     async freeze(runId, at) {
       const run = await deps.repositories.campaignRuns.findById(runId);
       if (run === null) {
         throw new Error(`Campaign run ${runId} was not found.`);
+      }
+      // A resend copies the parent's audience criteria; freezing it here would
+      // reach the whole original audience. Only the resend job freezes it,
+      // with the non-openers it selected (freezeWithAudience).
+      if (run.resendOfRunId != null) {
+        throw new Error(
+          `Campaign run ${runId} is an automatic resend and is frozen only by the resend job.`,
+        );
       }
 
       if (run.state === "sending") {
@@ -534,6 +562,47 @@ export function createCampaignSendOrchestrator(deps: {
       };
     },
 
+    async freezeWithAudience(runId, members, at) {
+      const run = await deps.repositories.campaignRuns.findById(runId);
+      if (run === null) {
+        throw new Error(`Campaign run ${runId} was not found.`);
+      }
+      if (run.state !== "draft" && run.state !== "scheduled") {
+        throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
+      }
+
+      const exclusions = await deps.exclusionFilter.applyExclusions(members, runId, at);
+      await deps.repositories.audienceSnapshots.bulkInsert(
+        runId,
+        buildFreezeSnapshots(exclusions.eligible, false),
+      );
+      const senderFields = await resolveSenderFields(deps.repositories, run);
+      if (run.state === "draft") {
+        await deps.repositories.campaignRuns.transitionState(runId, "draft", "scheduled", {
+          audienceSize: exclusions.eligible.length,
+          scheduledAt: run.scheduledAt ?? at.toISOString(),
+          ...senderFields,
+        });
+      } else {
+        await deps.repositories.campaignRuns.update(runId, {
+          audienceSize: exclusions.eligible.length,
+          ...senderFields,
+        });
+      }
+      await appendCampaignAudit(deps.repositories, {
+        runId,
+        action: "campaign_run.audience_frozen",
+        occurredAt: at.toISOString(),
+        detail: "Resend audience checked against current consent.",
+        metadataJson: { consentExcluded: exclusions.excluded.length },
+      });
+      return {
+        audienceSize: exclusions.eligible.length,
+        excludedCount: exclusions.excluded.length,
+        excludedByReason: {},
+      };
+    },
+
     async preview(runId, at) {
       const run = await deps.repositories.campaignRuns.findById(runId);
       if (run === null) throw new Error(`Campaign run ${runId} was not found.`);
@@ -568,7 +637,8 @@ export function createCampaignSendOrchestrator(deps: {
       const existingSnapshots = await deps.repositories.audienceSnapshots.listForRun(runId);
       if (
         existingSnapshots.length === 0 &&
-        (run.state === "draft" || run.state === "scheduled")
+        (run.state === "draft" ||
+          (run.state === "scheduled" && run.audienceSize === null))
       ) {
         await this.freeze(runId, startedAt);
         run = await deps.repositories.campaignRuns.findById(runId);
@@ -868,7 +938,7 @@ export function createCampaignSendOrchestrator(deps: {
         return;
       }
 
-      await deps.repositories.campaignRuns.transitionState(
+      const completedRun = await deps.repositories.campaignRuns.transitionState(
         runId,
         "sending",
         "complete",
@@ -882,6 +952,25 @@ export function createCampaignSendOrchestrator(deps: {
         occurredAt: now().toISOString(),
         detail: "All queued recipients reached a terminal state.",
       });
+      const child = await deps.repositories.campaignRuns.findResendByParentRunId?.(runId);
+      if (
+        resendScheduling !== undefined &&
+        child?.state === "draft" &&
+        child.resendDelayDays != null &&
+        completedRun.completedAt !== null
+      ) {
+        const runAt = new Date(
+          new Date(completedRun.completedAt).getTime() + child.resendDelayDays * 86_400_000,
+        );
+        await resendScheduling.scheduleResend(child.id, runAt);
+        await appendCampaignAudit(deps.repositories, {
+          runId: child.id,
+          action: "campaign_run.resend_scheduled",
+          occurredAt: now().toISOString(),
+          detail: "Resend to non-openers scheduled after parent completion.",
+          metadataJson: { parentRunId: runId, scheduledFor: runAt.toISOString() },
+        });
+      }
     },
 
     async cancel(runId, reason) {
@@ -905,6 +994,19 @@ export function createCampaignSendOrchestrator(deps: {
           cancelledReason: normalizeReason(reason),
         },
       );
+
+      const child = await deps.repositories.campaignRuns.findResendByParentRunId?.(runId);
+      if (child?.state === "draft") {
+        await deps.repositories.campaignRuns.transitionState(
+          child.id,
+          "draft",
+          "cancelled",
+          {
+            cancelledAt: now().toISOString(),
+            cancelledReason: "Parent broadcast was cancelled.",
+          },
+        );
+      }
     },
   };
 }

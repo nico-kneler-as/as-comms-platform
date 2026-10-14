@@ -162,6 +162,8 @@ import {
 import type { DatabaseSchema } from "./schema/index.js";
 import {
   audienceSnapshots,
+  broadcastLinkClicks,
+  broadcastOpens,
   aiKnowledgeEntries,
   auditPolicyEvidence,
   canonicalEventAudience,
@@ -360,11 +362,14 @@ export interface Stage5RepositoryBundle {
       runId: string,
       audience: "recipients" | "openers" | "clickers",
     ): Promise<readonly string[]>;
+    openedSnapshotIdsForRun(runId: string): Promise<readonly string[]>;
+    clickedSnapshotIdsForRun(runId: string): Promise<readonly string[]>;
     loadSets(run: CampaignRunRecord): ReturnType<typeof loadAudienceSetsForRun>;
   };
   readonly campaignRuns: {
     create(input: CreateDraftInput): Promise<CampaignRunRecord>;
     findById(id: string): Promise<CampaignRunRecord | null>;
+    findResendByParentRunId(parentRunId: string): Promise<CampaignRunRecord | null>;
     listByIds(ids: readonly string[]): Promise<readonly CampaignRunRecord[]>;
     listRecent(opts?: {
       readonly limit?: number;
@@ -7479,6 +7484,8 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     preheader: row.preheader,
     audienceCriteria: audienceCriteriaSchema.parse(row.audienceCriteria),
     audienceSize: row.audienceSize,
+    resendOfRunId: row.resendOfRunId,
+    resendDelayDays: row.resendDelayDays,
     scheduledAt: toNullableIsoDate(row.scheduledAt),
     startedAt: toNullableIsoDate(row.startedAt),
     completedAt: toNullableIsoDate(row.completedAt),
@@ -7692,6 +7699,12 @@ function mapCampaignRunMutationFields(
   }
   if ("audienceSize" in input && input.audienceSize !== undefined) {
     values.audienceSize = input.audienceSize;
+  }
+  if ("resendOfRunId" in input && input.resendOfRunId !== undefined) {
+    values.resendOfRunId = input.resendOfRunId;
+  }
+  if ("resendDelayDays" in input && input.resendDelayDays !== undefined) {
+    values.resendDelayDays = input.resendDelayDays;
   }
   if ("scheduledAt" in input && input.scheduledAt !== undefined) {
     values.scheduledAt = toNullableDate(input.scheduledAt);
@@ -8077,6 +8090,30 @@ export function createStage5RepositoryBundle(
         clearBroadcastUploadedExclusionsForRun(db, runId),
       emailsForPreviousRun: (runId, audience) =>
         emailsForPreviousRunAudience(db, runId, audience),
+      async openedSnapshotIdsForRun(runId) {
+        const rows = await db
+          .select({ snapshotId: broadcastOpens.audienceSnapshotId })
+          .from(broadcastOpens)
+          .where(
+            and(
+              eq(broadcastOpens.campaignRunId, runId),
+              isNotNull(broadcastOpens.audienceSnapshotId),
+            ),
+          );
+        return [...new Set(rows.flatMap((row) => row.snapshotId === null ? [] : [row.snapshotId]))];
+      },
+      async clickedSnapshotIdsForRun(runId) {
+        const rows = await db
+          .select({ snapshotId: broadcastLinkClicks.audienceSnapshotId })
+          .from(broadcastLinkClicks)
+          .where(
+            and(
+              eq(broadcastLinkClicks.campaignRunId, runId),
+              isNotNull(broadcastLinkClicks.audienceSnapshotId),
+            ),
+          );
+        return [...new Set(rows.flatMap((row) => row.snapshotId === null ? [] : [row.snapshotId]))];
+      },
       loadSets: (run) => loadAudienceSetsForRun(db, run),
     },
     campaignRuns: {
@@ -8092,6 +8129,7 @@ export function createStage5RepositoryBundle(
             launchType: parsed.launchType,
             state: "draft",
             projectId: parsed.projectId,
+            name: parsed.name,
             fromEmail: parsed.fromEmail,
             fromName: parsed.fromName,
             replyToEmail: parsed.replyToEmail,
@@ -8106,6 +8144,8 @@ export function createStage5RepositoryBundle(
               parsed.audienceCriteria,
             ),
             audienceSize: parsed.audienceSize,
+            resendOfRunId: parsed.resendOfRunId,
+            resendDelayDays: parsed.resendDelayDays,
             createdByUserId: parsed.createdByUserId,
             lastEditedByUserId: parsed.lastEditedByUserId,
             createdAt: now,
@@ -8123,6 +8163,16 @@ export function createStage5RepositoryBundle(
 
       async findById(id) {
         return loadCampaignRunById(id);
+      },
+
+      async findResendByParentRunId(parentRunId) {
+        const [row] = await db
+          .select()
+          .from(campaignRuns)
+          .where(eq(campaignRuns.resendOfRunId, parentRunId))
+          .limit(1);
+
+        return row === undefined ? null : mapCampaignRunRow(row);
       },
 
       async listByIds(ids) {

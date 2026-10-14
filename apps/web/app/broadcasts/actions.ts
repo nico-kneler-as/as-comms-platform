@@ -7,9 +7,11 @@ import { sql } from "drizzle-orm";
 
 import {
   cancelRunInputSchema,
+  cancelResendInputSchema,
   campaignSendJobName,
   campaignSendJobMaxAttempts,
   campaignSendPayloadSchema,
+  configureResendInputSchema,
   smsBroadcastSendJobMaxAttempts,
   smsBroadcastSendJobName,
   smsBroadcastSendPayloadSchema,
@@ -79,6 +81,12 @@ interface CampaignActionData {
 interface CampaignTestSendData {
   readonly runId: string;
   readonly recipientEmail: string;
+}
+
+interface CampaignResendActionData {
+  readonly parentRunId: string;
+  readonly childRunId: string;
+  readonly state: "draft" | "cancelled";
 }
 
 interface BroadcastWebVersionActionData {
@@ -598,6 +606,11 @@ async function freezeNewsletterAudienceForSend(input: {
   if (run.state !== "draft" && run.state !== "scheduled") {
     throw new Error(
       `Campaign run ${input.runId} cannot be frozen from ${run.state}.`,
+    );
+  }
+  if (run.resendOfRunId != null) {
+    throw new Error(
+      `Campaign run ${input.runId} is an automatic resend and is frozen only by the resend job.`,
     );
   }
 
@@ -1842,6 +1855,116 @@ export async function cancel(
         : "Unable to cancel the broadcast.",
       true,
     );
+  }
+}
+
+export async function configureResendAction(
+  parentRunId: string,
+  input: { readonly delayDays: number; readonly subject: string; readonly preheader?: string },
+): Promise<UiSuccess<CampaignResendActionData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) return admin.error;
+
+  try {
+    const parsed = configureResendInputSchema.parse({ parentRunId, ...input });
+    const result = await withStage1WebTransaction(async (transaction) => {
+      const parent = await transaction.campaigns.campaignRuns.findById(parsed.parentRunId);
+      if (parent === null) throw new Error("Broadcast draft not found.");
+      if (parent.launchType === "sms") throw new Error("SMS broadcasts cannot have an automatic resend.");
+      if (parent.state !== "draft" && parent.state !== "scheduled") {
+        throw new Error("A resend can only be configured before the broadcast launches.");
+      }
+
+      const existing = await transaction.campaigns.campaignRuns.findResendByParentRunId(parent.id);
+      const preheader = parsed.preheader ?? parent.preheader;
+      if (existing !== null) {
+        if (existing.state !== "draft") {
+          throw new Error("This resend can no longer be changed.");
+        }
+        const child = await transaction.campaigns.campaignRuns.update(existing.id, {
+          subjectTemplate: parsed.subject,
+          preheader,
+          resendDelayDays: parsed.delayDays,
+          lastEditedByUserId: admin.userId,
+        });
+        await appendCampaignAudit({
+          actorType: "user", actorId: admin.userId, action: "campaign_run.resend_configured",
+          runId: child.id, detail: "Automatic resend to non-openers configured.",
+          metadataJson: { parentRunId: parent.id, delayDays: parsed.delayDays },
+          auditEvidence: transaction.repositories.auditEvidence,
+        });
+        return child;
+      }
+
+      const child = await transaction.campaigns.campaignRuns.create({
+        id: randomUUID(),
+        workspace: parent.workspace,
+        kind: parent.kind,
+        launchType: parent.launchType,
+        projectId: parent.projectId,
+        name: `Resend: ${parent.name ?? parent.subjectTemplate ?? "broadcast"}`,
+        fromEmail: parent.fromEmail,
+        fromName: parent.fromName,
+        replyToEmail: parent.replyToEmail,
+        subjectTemplate: parsed.subject,
+        subjectTemplateB: null,
+        abTestEnabled: false,
+        bodyHtmlTemplate: parent.bodyHtmlTemplate,
+        bodyDesignJson: parent.bodyDesignJson,
+        bodyTextTemplate: parent.bodyTextTemplate,
+        preheader,
+        audienceCriteria: parent.audienceCriteria,
+        audienceSize: null,
+        resendOfRunId: parent.id,
+        resendDelayDays: parsed.delayDays,
+        createdByUserId: admin.userId,
+        lastEditedByUserId: admin.userId,
+      });
+      await appendCampaignAudit({
+        actorType: "user", actorId: admin.userId, action: "campaign_run.resend_configured",
+        runId: child.id, detail: "Automatic resend to non-openers configured.",
+        metadataJson: { parentRunId: parent.id, delayDays: parsed.delayDays },
+        auditEvidence: transaction.repositories.auditEvidence,
+      });
+      return child;
+    });
+    return { ok: true, data: { parentRunId, childRunId: result.id, state: "draft" }, requestId: newRequestId() };
+  } catch (error) {
+    return errorResult("campaign_resend_configure_failed", error instanceof Error ? error.message : "Unable to configure the resend.", true);
+  }
+}
+
+export async function cancelResendAction(
+  parentRunId: string,
+): Promise<UiSuccess<CampaignResendActionData> | UiError> {
+  const admin = await assertCampaignAdmin();
+  if (!admin.ok) return admin.error;
+
+  try {
+    const parsed = cancelResendInputSchema.parse({ parentRunId });
+    const result = await withStage1WebTransaction(async (transaction) => {
+      const parent = await transaction.campaigns.campaignRuns.findById(parsed.parentRunId);
+      if (parent === null) throw new Error("Broadcast not found.");
+      const child = await transaction.campaigns.campaignRuns.findResendByParentRunId(parent.id);
+      if (child === null) throw new Error("No automatic resend is configured for this broadcast.");
+      if (child.state !== "draft") throw new Error("The resend has already fired and cannot be cancelled.");
+      await transaction.campaigns.campaignRuns.transitionState(child.id, "draft", "cancelled", {
+        cancelledAt: new Date().toISOString(),
+        cancelledReason: "Automatic resend cancelled before firing.",
+      });
+      await transaction.db.execute(sql`
+        select graphile_worker.remove_job(${`campaign-resend:${child.id}`})
+      `);
+      await appendCampaignAudit({
+        actorType: "user", actorId: admin.userId, action: "campaign_run.resend_cancelled",
+        runId: child.id, detail: "Automatic resend cancelled before firing.",
+        metadataJson: { parentRunId: parent.id }, auditEvidence: transaction.repositories.auditEvidence,
+      });
+      return child;
+    });
+    return { ok: true, data: { parentRunId, childRunId: result.id, state: "cancelled" }, requestId: newRequestId() };
+  } catch (error) {
+    return errorResult("campaign_resend_cancel_failed", error instanceof Error ? error.message : "Unable to cancel the resend.", true);
   }
 }
 

@@ -287,6 +287,22 @@ describe("Stage 5 campaigns repositories", () => {
     expect(row?.count).toBe(3_500);
   });
 
+  it("keeps the name given when a campaign run is created", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+
+    await seedProject(context);
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-named", name: "Resend: Year-end ask" }),
+    );
+    const fetched = await campaigns.campaignRuns.findById(created.id);
+
+    expect(created.name).toBe("Resend: Year-end ask");
+    expect(fetched?.name).toBe("Resend: Year-end ask");
+  });
+
   it("round-trips bodyDesignJson for html_email campaign runs", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
