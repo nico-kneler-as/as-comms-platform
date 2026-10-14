@@ -157,6 +157,41 @@ function flattenProjectGroups(
   return groups.flatMap((group) => [group.host, ...group.connectedSubs]);
 }
 
+/**
+ * The server fills empty exclusion defaults and returns keys in schema order,
+ * so the saved criteria never matched the on-screen copy byte for byte and the
+ * wizard stayed on "Unsaved changes". Both sides go through this before
+ * comparing.
+ */
+export function normalizeCriteriaForFingerprint(
+  criteria: CampaignAudienceCriteria,
+): unknown {
+  return sortKeysDeep({
+    ...criteria,
+    salesforceListIds: criteria.salesforceListIds ?? [],
+    exclusions: {
+      salesforceListIds: criteria.exclusions?.salesforceListIds ?? [],
+      useUploadedExclusions: criteria.exclusions?.useUploadedExclusions ?? false,
+      previousRuns: criteria.exclusions?.previousRuns ?? [],
+    },
+  });
+}
+
+/** Postgres jsonb reorders the editor's keys, so compare designs key-sorted. */
+export function designJsonFingerprint(value: unknown): string {
+  return JSON.stringify(sortKeysDeep(value ?? null));
+}
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortKeysDeep(entry)]),
+  );
+}
+
 function buildDraftFingerprint(input: {
   readonly launchType: LaunchType;
   readonly kind: CampaignKind;
@@ -190,7 +225,7 @@ function buildDraftFingerprint(input: {
     bodyDesignJson: isSmsLaunch
       ? JSON.stringify(null)
       : input.bodyDesignJsonFingerprint,
-    criteria: input.criteria,
+    criteria: normalizeCriteriaForFingerprint(input.criteria),
     audienceSize: input.audienceSize,
   });
 }
@@ -224,7 +259,7 @@ function buildSavedDraftFingerprint(input: {
     preheader: input.draft.preheader ?? "",
     bodyPlaintext: input.draft.bodyTextTemplate ?? "",
     bodyHtml: input.draft.bodyHtmlTemplate ?? "",
-    bodyDesignJsonFingerprint: JSON.stringify(input.draft.bodyDesignJson ?? null),
+    bodyDesignJsonFingerprint: designJsonFingerprint(input.draft.bodyDesignJson),
     criteria: initialCriteriaForDraft,
     audienceSize: input.draft.audienceSize,
   });
@@ -596,11 +631,14 @@ export function useNewCampaignWizardState({
     initialAudienceMode,
   });
   const [currentStep, setCurrentStep] = useState(
-    deriveInitialCurrentStep({
+    (() => {
+      const step = deriveInitialCurrentStep({
       bootstrap,
       draft,
       criteria: initialCriteria,
-    }),
+      });
+      return draft.launchType === "sms" || step < 3 ? step : step + 1;
+    })(),
   );
   const [launchType, setLaunchType] = useState<LaunchType>(draft.launchType);
   const [name, setName] = useState(draft.name ?? "");
@@ -727,7 +765,7 @@ export function useNewCampaignWizardState({
     [abTestEnabled, bodyHtml, bodyPlaintext, subject, subjectB],
   );
   const bodyDesignJsonFingerprint = useMemo(
-    () => JSON.stringify(bodyDesignJson),
+    () => designJsonFingerprint(bodyDesignJson),
     [bodyDesignJson],
   );
   const selectedSenderOption = useMemo<CampaignSenderOption | null>(() => {

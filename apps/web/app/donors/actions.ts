@@ -24,6 +24,10 @@ import {
   previewComposedAudience,
   uploadBroadcastExclusionsCsvAction,
 } from "../broadcasts/_lib/audience-data-source";
+import {
+  readConfiguredResend,
+  type ConfiguredResend,
+} from "@/src/server/campaigns/configured-resend";
 
 export interface DonorAppealDraft {
   readonly runId: string;
@@ -40,6 +44,8 @@ export interface DonorAppealDraft {
   readonly audienceSize: number | null;
   readonly updatedAt: string;
   readonly operatorEmail: string;
+  /** The reminder already configured on this appeal, so reopening keeps it. */
+  readonly resend: ConfiguredResend | null;
 }
 
 export interface DonorAppealBootstrap {
@@ -71,7 +77,7 @@ const saveSchema = z.object({
   audienceSize: z.number().int().nonnegative().nullable(),
 });
 
-function mapDraft(run: CampaignRunRecord, operatorEmail: string): DonorAppealDraft {
+function mapDraft(run: CampaignRunRecord, operatorEmail: string, resend: ConfiguredResend | null = null): DonorAppealDraft {
   return {
     runId: run.id,
     name: run.name,
@@ -87,6 +93,7 @@ function mapDraft(run: CampaignRunRecord, operatorEmail: string): DonorAppealDra
     audienceSize: run.audienceSize,
     updatedAt: run.updatedAt,
     operatorEmail,
+    resend,
   };
 }
 
@@ -139,8 +146,10 @@ export async function createDonorAppealDraft(): Promise<DonorAppealDraft> {
 
 export async function getDonorAppealDraft(runId: string): Promise<DonorAppealDraft | null> {
   try {
-    const { access, run } = await donorRun(runId);
-    return run.state === "draft" ? mapDraft(run, access.user.email) : null;
+    const { access, runtime, run } = await donorRun(runId);
+    return run.state === "draft"
+      ? mapDraft(run, access.user.email, await readConfiguredResend(runtime.campaigns.campaignRuns, run.id))
+      : null;
   } catch (error) {
     if (error instanceof Error && error.message === "NOT_FOUND") return null;
     throw error;

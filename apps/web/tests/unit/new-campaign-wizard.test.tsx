@@ -14,6 +14,8 @@ const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
 const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
 const loadSmsCsvAudienceSummaryActionMock = vi.hoisted(() => vi.fn());
+const getVolunteerExclusionBroadcastsActionMock = vi.hoisted(() => vi.fn());
+const previewVolunteerExclusionsActionMock = vi.hoisted(() => vi.fn());
 const searchNewsletterSubscribersActionMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
 const previewSmsBroadcastMock = vi.hoisted(() => vi.fn());
@@ -30,6 +32,8 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadMemberStatusCountsForProjects: loadMemberStatusCountsForProjectsMock,
   loadSelectedAliasSignatureAction: loadSelectedAliasSignatureActionMock,
   loadSmsCsvAudienceSummaryAction: loadSmsCsvAudienceSummaryActionMock,
+  getVolunteerExclusionBroadcastsAction: getVolunteerExclusionBroadcastsActionMock,
+  previewVolunteerExclusionsAction: previewVolunteerExclusionsActionMock,
   previewAudienceAction: previewAudienceActionMock,
   resolveAudienceCountAction: resolveAudienceCountActionMock,
   saveCampaignWizardDraftAction: saveCampaignWizardDraftActionMock,
@@ -440,6 +444,12 @@ vi.mock("../../app/broadcasts/new/_components/review-step", () => ({
   ),
 }));
 
+vi.mock("../../app/broadcasts/new/_components/volunteer-exclude-step", () => ({
+  VolunteerExcludeStep: ({ onBack, onContinue }: { readonly onBack: () => void; readonly onContinue: () => void }) => (
+    <section data-testid="exclude-step"><div>VolunteerExcludeStep</div><button type="button" aria-label="exclude-back" onClick={onBack}>Back</button><button type="button" aria-label="exclude-continue" onClick={onContinue}>Continue</button></section>
+  ),
+}));
+
 vi.mock("../../app/broadcasts/new/_components/wizard-rail", () => ({
   WizardRail: ({
     currentStep,
@@ -804,13 +814,12 @@ async function click(label: string) {
 }
 
 async function goToStep(target: number) {
-  const continueLabels = [
-    "launch-continue",
-    "name-continue",
-    "audience-continue",
-    "compose-continue",
-    "preview-continue",
-  ] as const;
+  const isSmsWizard = !Array.from(
+    document.querySelectorAll('[data-testid="wizard-rail"] button'),
+  ).some((button) => button.textContent === "Exclude");
+  const continueLabels = isSmsWizard
+    ? (["launch-continue", "name-continue", "audience-continue", "compose-continue", "preview-continue"] as const)
+    : (["launch-continue", "name-continue", "audience-continue", "exclude-continue", "compose-continue", "preview-continue"] as const);
 
   let currentStep = readCurrentStep();
   if (currentStep > target) {
@@ -848,7 +857,7 @@ async function advanceTimersBy(ms: number) {
 }
 
 async function goToComposeStep() {
-  await goToStep(3);
+  await goToStep(4);
 }
 
 beforeEach(() => {
@@ -970,6 +979,8 @@ beforeEach(() => {
     ok: true,
     data: buildSmsPreviewData(),
   });
+  getVolunteerExclusionBroadcastsActionMock.mockResolvedValue({ ok: true, data: [] });
+  previewVolunteerExclusionsActionMock.mockResolvedValue({ ok: true, data: { total: 2, excludedByReason: {}, consentExcluded: 0 } });
 });
 
 afterEach(() => {
@@ -990,7 +1001,7 @@ describe("NewCampaignWizard", () => {
       draft: buildDraft({ state: "draft" }),
     });
 
-    expect(getByTestId("current-step").textContent).toBe("4");
+    expect(getByTestId("current-step").textContent).toBe("5");
     expect(getByTestId("preview-step").textContent).toContain("PreviewStep");
   });
 
@@ -1024,6 +1035,39 @@ describe("NewCampaignWizard", () => {
     expect(getByTestId("launch-step").textContent).toContain("LaunchTypeStep");
   });
 
+  it("shows Exclude for email runs", async () => {
+    await renderWizard({
+      draft: buildDraft({ state: "draft" }),
+    });
+
+    await goToStep(3);
+
+    expect(getByTestId("exclude-step").textContent).toContain(
+      "VolunteerExcludeStep",
+    );
+
+  });
+
+  it("skips Exclude for SMS", async () => {
+    await renderWizard({
+      draft: buildDraft({
+        launchType: "sms",
+        kind: "project",
+        fromEmail: null,
+        replyToEmail: null,
+        subjectTemplate: null,
+        bodyHtmlTemplate: null,
+        bodyTextTemplate: "Hello {{firstName}}",
+        preheader: null,
+      }),
+    });
+
+    await goToStep(3);
+
+    expect(document.querySelector('[data-testid="exclude-step"]')).toBeNull();
+    expect(getByTestId("compose-step").textContent).toContain("ComposeStep");
+  });
+
   it("opens partial drafts on the furthest satisfied step", async () => {
     await renderWizard({
       draft: buildDraft({
@@ -1046,7 +1090,7 @@ describe("NewCampaignWizard", () => {
       }),
     });
 
-    expect(getByTestId("current-step").textContent).toBe("3");
+    expect(getByTestId("current-step").textContent).toBe("4");
     expect(getByTestId("compose-step").textContent).toContain("ComposeStep");
   });
 
@@ -1055,7 +1099,7 @@ describe("NewCampaignWizard", () => {
       draft: buildDraft({ state: "scheduled" }),
     });
 
-    expect(getByTestId("current-step").textContent).toBe("5");
+    expect(getByTestId("current-step").textContent).toBe("6");
     expect(getByTestId("review-step").textContent).toContain("ReviewStep");
   });
 
@@ -1088,7 +1132,7 @@ describe("NewCampaignWizard", () => {
 
     await click("go-step-0");
 
-    expect(getByTestId("current-step").textContent).toBe("5");
+    expect(getByTestId("current-step").textContent).toBe("6");
     expect(getByTestId("review-state").textContent).toBe("scheduled");
   });
 
@@ -1239,7 +1283,7 @@ describe("NewCampaignWizard", () => {
     await click("set-subject-updated");
     await click("compose-continue");
 
-    expect(getByTestId("current-step").textContent).toBe("3");
+    expect(getByTestId("current-step").textContent).toBe("4");
     expect(getByTestId("status-label").textContent).toBe(
       "This broadcast draft was changed in another tab. Reload to continue.",
     );

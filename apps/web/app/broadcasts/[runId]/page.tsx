@@ -15,5 +15,6 @@ export default async function BroadcastRunDetailPage({
     provider: query?.provider === "mailchimp" ? "mailchimp" : "postmark",
     workspace: "volunteers",
     adminOnly: false,
+    showResendPanel: true,
   });
 }

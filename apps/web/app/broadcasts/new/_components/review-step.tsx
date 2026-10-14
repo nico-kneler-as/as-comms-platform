@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { ORG_TIMEZONE } from "@/app/_lib/org-timezone";
 import { formatSmsEstimatedCostUsd } from "@/src/lib/sms-pricing";
 import { cn } from "@/lib/utils";
+import { ResendToNonOpeners } from "@/app/_components/audience-exclusions/resend-to-non-openers";
 
 import type { CampaignRunRecord, LaunchType } from "@as-comms/contracts";
 
@@ -30,6 +31,8 @@ interface ReviewStepProps {
   readonly subject: string;
   readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
+  /** People the Exclude step removed; already subtracted from audienceSize. */
+  readonly skippedByExclusions?: number;
   readonly smsPreviewData: {
     readonly selected: number;
     readonly reachable: number;
@@ -48,12 +51,20 @@ interface ReviewStepProps {
   readonly frozenScheduledAt: string | null;
   readonly confirmOpen: boolean;
   readonly submitPending: boolean;
+  readonly resendEnabled: boolean;
+  readonly resendDays: number;
+  readonly resendSubject: string;
+  readonly resendPreheader: string;
   readonly onBack: () => void;
   readonly onSendModeChange: (value: "now" | "later") => void;
   readonly onScheduleDateChange: (value: string) => void;
   readonly onScheduleTimeChange: (value: string) => void;
   readonly onConfirmOpenChange: (open: boolean) => void;
   readonly onSubmit: () => void;
+  readonly onResendEnabledChange: (value: boolean) => void;
+  readonly onResendDaysChange: (value: number) => void;
+  readonly onResendSubjectChange: (value: string) => void;
+  readonly onResendPreheaderChange: (value: string) => void;
 }
 
 function formatDenverTimestamp(value: string | null): string {
@@ -93,6 +104,7 @@ export function ReviewStep({
   subject,
   selectedSenderVerified,
   audienceSize,
+  skippedByExclusions = 0,
   smsPreviewData,
   sendMode,
   scheduleDate,
@@ -102,12 +114,20 @@ export function ReviewStep({
   frozenScheduledAt,
   confirmOpen,
   submitPending,
+  resendEnabled,
+  resendDays,
+  resendSubject,
+  resendPreheader,
   onBack,
   onSendModeChange,
   onScheduleDateChange,
   onScheduleTimeChange,
   onConfirmOpenChange,
   onSubmit,
+  onResendEnabledChange,
+  onResendDaysChange,
+  onResendSubjectChange,
+  onResendPreheaderChange,
 }: ReviewStepProps) {
   const isSmsLaunch = launchType === "sms";
   const submitLabel =
@@ -177,6 +197,9 @@ export function ReviewStep({
                     </span>{" "}
                     recipients in{" "}
                     <span className="text-slate-900">{projectChipLabel}</span>
+                    {skippedByExclusions > 0
+                      ? ` · ${skippedByExclusions.toLocaleString()} skipped by your exclusions`
+                      : null}
                   </span>
                 )
               }
@@ -223,6 +246,19 @@ export function ReviewStep({
             />
           </SectionPanel>
         ) : null}
+
+        {isSmsLaunch || frozen ? null : (
+          <ResendToNonOpeners
+            enabled={resendEnabled}
+            days={resendDays}
+            subject={resendSubject}
+            preheader={resendPreheader}
+            onEnabledChange={onResendEnabledChange}
+            onDaysChange={onResendDaysChange}
+            onSubjectChange={onResendSubjectChange}
+            onPreheaderChange={onResendPreheaderChange}
+          />
+        )}
 
         {frozen ? (
           <section
@@ -318,7 +354,7 @@ export function ReviewStep({
           onConfirmOpenChange(true);
         }}
         primaryDisabled={
-          (!isSmsLaunch && !fromEmail) || !selectedSenderVerified
+          (!isSmsLaunch && !fromEmail) || !selectedSenderVerified || (resendEnabled && (resendSubject.trim().length === 0 || resendDays < 1 || resendDays > 14))
         }
         primaryIcon={
           !isSmsLaunch && sendMode === "later" ? (
@@ -353,7 +389,7 @@ export function ReviewStep({
               onClick={onSubmit}
               disabled={
                 submitPending ||
-                ((!isSmsLaunch && !fromEmail) || !selectedSenderVerified)
+                ((!isSmsLaunch && !fromEmail) || !selectedSenderVerified || (resendEnabled && (resendSubject.trim().length === 0 || resendDays < 1 || resendDays > 14)))
               }
             >
               {submitPending ? "Working..." : submitLabel}
