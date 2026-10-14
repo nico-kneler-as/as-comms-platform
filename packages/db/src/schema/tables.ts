@@ -22,6 +22,7 @@ import type {
   PostmarkSenderStatus,
   RunState,
   SuppressionReason,
+  Workspace,
   WebhookDeadLetterFailureKind,
   WebhookDeadLetterStatus,
 } from "@as-comms/contracts";
@@ -1196,6 +1197,27 @@ export const users = pgTable("users", {
   updatedAt: updatedAtColumn,
 });
 
+export const userWorkspaces = pgTable(
+  "user_workspaces",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspace: text("workspace").$type<Workspace>().notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.userId, table.workspace],
+      name: "user_workspaces_pkey",
+    }),
+    check(
+      "user_workspaces_workspace_check",
+      sql`${table.workspace} IN ('volunteers', 'donors')`,
+    ),
+  ],
+);
+
 export const composerDrafts = pgTable(
   "composer_drafts",
   {
@@ -1420,6 +1442,10 @@ export const campaignRuns = pgTable(
   "campaign_runs",
   {
     id: text("id").primaryKey(),
+    workspace: text("workspace")
+      .$type<Workspace>()
+      .notNull()
+      .default("volunteers"),
     kind: text("kind").$type<CampaignKind>().notNull(),
     launchType: text("launch_type").$type<LaunchType>().notNull(),
     state: text("state").$type<RunState>().notNull(),
@@ -1476,6 +1502,10 @@ export const campaignRuns = pgTable(
     updatedAt: updatedAtColumn,
   },
   (table) => [
+    check(
+      "campaign_runs_workspace_check",
+      sql`${table.workspace} IN ('volunteers', 'donors')`,
+    ),
     check(
       "campaign_runs_kind_check",
       sql`${table.kind} IN ('newsletter', 'project')`,

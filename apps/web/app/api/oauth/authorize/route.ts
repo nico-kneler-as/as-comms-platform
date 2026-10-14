@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "../../../../src/server/auth/session";
+import {
+  canAccessWorkspace,
+  loadWorkspaceAccess,
+} from "../../../../src/server/auth/workspace-rules";
 import { hasAuthorizedGoogleWorkspaceEmail } from "../../../../src/server/auth/google-sign-in-policy";
 import { authorizeMcpClient } from "../../../../src/server/mcp/oauth/core";
 import {
@@ -41,7 +45,8 @@ export async function GET(request: Request) {
   // "deactivated" together, and narrows `currentUser` for the email check.
   const isActiveOperator =
     currentUser?.deactivatedAt === null &&
-    hasAuthorizedGoogleWorkspaceEmail(currentUser.email);
+    hasAuthorizedGoogleWorkspaceEmail(currentUser.email) &&
+    canAccessWorkspace(await loadWorkspaceAccess(currentUser), "volunteers");
 
   if (!isActiveOperator) {
     const signInUrl = new URL("/auth/sign-in", requestUrl.origin);

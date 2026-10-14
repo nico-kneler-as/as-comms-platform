@@ -25,6 +25,7 @@ function buildRun(
 
   return {
     id: `run-${kind}`,
+    workspace: "volunteers",
     kind,
     launchType: input.launchType ?? "normal_email",
     state: "scheduled",

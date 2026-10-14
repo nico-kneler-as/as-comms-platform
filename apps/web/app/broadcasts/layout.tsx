@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { PrimaryIconRail } from "@/app/_components/primary-icon-rail";
-import { requireSession } from "@/src/server/auth/session";
+import {
+  railAccessFor,
+  requireWorkspace,
+} from "@/src/server/auth/workspace-access";
 
 export const metadata = {
   title: "Broadcasts",
@@ -15,16 +18,21 @@ export default async function CampaignsLayout({
 }: {
   readonly children: ReactNode;
 }) {
-  const currentUser = await requireSession().catch((error: unknown) => {
+  const access = await requireWorkspace("volunteers").catch((error: unknown) => {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       redirect("/auth/sign-in");
     }
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect("/");
+    }
     throw error;
   });
+  const currentUser = access.user;
 
   return (
     <div className="flex min-h-dvh w-full bg-slate-100 text-slate-900 antialiased">
       <PrimaryIconRail
+        access={railAccessFor(access)}
         operator={{
           initials: getInitials(currentUser.name ?? currentUser.email),
           displayName: currentUser.name ?? currentUser.email,

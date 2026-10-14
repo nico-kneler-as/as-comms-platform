@@ -133,6 +133,7 @@ function buildPostmarkModel(
 ): RunDetailModel {
   const run: RunDetailModel["run"] = {
     id: `run-${state}`,
+    workspace: "volunteers",
     kind: "project",
     launchType: "normal_email",
     state,
@@ -335,6 +336,7 @@ function buildMailchimpModel(): RunDetailModel {
     channel: "email",
     run: {
       id: "mailchimp-run-1",
+      workspace: "volunteers",
       kind: "newsletter",
       launchType: "normal_email",
       state: "complete",
@@ -451,6 +453,7 @@ function buildSmsModel(
     channel: "sms",
     run: {
       id: "sms-run-1",
+      workspace: "volunteers",
       kind: "project",
       launchType: "sms",
       state,

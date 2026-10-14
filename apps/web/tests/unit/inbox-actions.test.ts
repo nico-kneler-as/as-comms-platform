@@ -12,6 +12,9 @@ vi.mock("@/src/server/auth/session", () => ({
   requireSession,
   getCurrentUser,
 }));
+vi.mock("@/src/server/auth/workspace-access", () => ({
+  requireVolunteerSession: requireSession,
+}));
 
 vi.mock("@/src/server/ai", async (importOriginal) => {
   const actual = await importOriginal();

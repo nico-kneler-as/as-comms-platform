@@ -9,6 +9,9 @@ const loadGeneralVoiceEntry = vi.hoisted(() => vi.fn());
 vi.mock("@/src/server/auth/session", () => ({
   requireSession,
 }));
+vi.mock("@/src/server/auth/workspace-access", () => ({
+  requireVolunteerSession: requireSession,
+}));
 
 vi.mock("@/src/server/ai/provider", () => ({
   getAiProviderConfig,

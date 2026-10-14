@@ -18,7 +18,9 @@ import {
   type PostmarkSenderStatus,
   promoteUserSchema,
   reactivateUserSchema,
-  type IntegrationHealthRecord
+  type IntegrationHealthRecord,
+  type Workspace,
+  workspaceSchema
 } from "@as-comms/contracts";
 import {
   addSource,
@@ -2813,6 +2815,14 @@ export async function inviteUserAction(
   const rawRole = readOptionalString(formData, "role") ?? "internal_user";
   const role: "admin" | "internal_user" =
     rawRole === "admin" ? "admin" : "internal_user";
+  const workspaces = readWorkspaces(formData) ?? ["volunteers"];
+  if (workspaces.length === 0) {
+    return errorResult("validation_error", "Choose at least one space.", {
+      fieldErrors: {
+        workspaces: "Choose at least one space."
+      }
+    });
+  }
   const repositories = await getSettingsRepositories();
   const existingUser = await repositories.users.findByEmail(normalizedEmail);
 
@@ -2847,6 +2857,11 @@ export async function inviteUserAction(
       updatedAt: now
     });
 
+    const savedWorkspaces = await repositories.users.setWorkspaces(
+      user.id,
+      workspaces
+    );
+
     await appendSettingsAudit({
       actorId: admin.userId,
       action: "settings.user.invited",
@@ -2855,7 +2870,8 @@ export async function inviteUserAction(
       metadataJson: {
         email: user.email,
         role: user.role,
-        status: "pending"
+        status: "pending",
+        workspaces: savedWorkspaces
       }
     });
 
@@ -2884,6 +2900,93 @@ export interface UserIdResult {
 export interface OrgSenderEnabledMutationData {
   readonly id: string;
   readonly enabled: boolean;
+}
+
+/**
+ * Reads the `workspaces` form entries. Returns null when the form carries no
+ * `workspaces` key at all, and only valid, de-duplicated spaces otherwise.
+ */
+function readWorkspaces(formData: FormData): Workspace[] | null {
+  if (!formData.has("workspaces")) {
+    return null;
+  }
+
+  const values = formData
+    .getAll("workspaces")
+    .flatMap((value) => {
+      const parsed = workspaceSchema.safeParse(value);
+      return parsed.success ? [parsed.data] : [];
+    });
+  return [...new Set(values)];
+}
+
+export interface UserWorkspacesResult {
+  readonly userId: string;
+  readonly workspaces: readonly Workspace[];
+}
+
+export async function setUserWorkspacesAction(
+  formData: FormData
+): Promise<UiResult<UserWorkspacesResult>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update user access.",
+    forbiddenMessage: "Only admins can update user access."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const idValue = readRequiredString(formData, "id");
+  if (!idValue.ok) {
+    return idValue.error;
+  }
+
+  const workspaces = readWorkspaces(formData) ?? [];
+  if (workspaces.length === 0) {
+    return errorResult("validation_error", "Choose at least one space.", {
+      fieldErrors: {
+        workspaces: "Choose at least one space."
+      }
+    });
+  }
+
+  const repositories = await getSettingsRepositories();
+  const manageable = await ensureManageableUser({
+    repositories,
+    targetUserId: idValue.value,
+    actingUserId: admin.userId
+  });
+  if (!manageable.ok) {
+    return manageable.error;
+  }
+
+  const before = await repositories.users.listWorkspaces(manageable.user.id);
+  const after = await repositories.users.setWorkspaces(
+    manageable.user.id,
+    workspaces
+  );
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.user.workspaces_updated",
+    entityType: "user",
+    entityId: manageable.user.id,
+    metadataJson: {
+      before: { workspaces: before },
+      after: { workspaces: after }
+    }
+  });
+
+  revalidateAccessSettings();
+
+  return {
+    ok: true,
+    data: {
+      userId: manageable.user.id,
+      workspaces: after
+    },
+    requestId: newRequestId()
+  };
 }
 
 export async function promoteUserAction(

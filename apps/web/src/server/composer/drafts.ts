@@ -20,7 +20,7 @@ import {
   upsertComposerDraft,
   type ComposerDraftRecord,
 } from "@as-comms/db";
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 import type { UiResult } from "@/src/server/ui-result";
 import { z } from "zod";
@@ -217,7 +217,7 @@ export async function upsertComposerDraftAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -292,7 +292,7 @@ export async function listComposerDraftsAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);
@@ -337,7 +337,7 @@ export async function deleteComposerDraftAction(
 
   let currentUser;
   try {
-    currentUser = await requireSession();
+    currentUser = await requireVolunteerSession();
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {
       return unauthorizedError(requestId);

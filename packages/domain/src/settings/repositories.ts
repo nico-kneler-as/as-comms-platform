@@ -14,13 +14,19 @@ import type {
   ProjectAliasRecord,
   SettingsProjectRecord,
   UserRecord,
-  UserRole
+  UserRole,
+  UserWorkspace
 } from "./records.js";
 
 export interface UsersRepository {
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
   listAll(): Promise<readonly UserRecord[]>;
+  listWorkspaces(userId: string): Promise<readonly UserWorkspace[]>;
+  setWorkspaces(
+    userId: string,
+    workspaces: readonly UserWorkspace[]
+  ): Promise<readonly UserWorkspace[]>;
   updateRole(id: string, role: UserRole): Promise<UserRecord>;
   updateName(id: string, name: string): Promise<UserRecord>;
   setDeactivated(id: string, deactivatedAt: Date | null): Promise<UserRecord>;

@@ -18,6 +18,10 @@ export const campaignKindValues = ["newsletter", "project"] as const;
 export const campaignKindSchema = z.enum(campaignKindValues);
 export type CampaignKind = z.infer<typeof campaignKindSchema>;
 
+export const workspaceValues = ["volunteers", "donors"] as const;
+export const workspaceSchema = z.enum(workspaceValues);
+export type Workspace = z.infer<typeof workspaceSchema>;
+
 export const launchTypeValues = ["normal_email", "html_email", "sms"] as const;
 export const launchTypeSchema = z.enum(launchTypeValues);
 export type LaunchType = z.infer<typeof launchTypeSchema>;
@@ -299,6 +303,7 @@ const campaignRunProjectScopeSchema = z
   });
 
 const campaignRunEditableFieldsSchema = z.object({
+  workspace: workspaceSchema.default("volunteers"),
   kind: campaignKindSchema,
   launchType: launchTypeSchema,
   projectId: nullableStringSchema.default(null),
@@ -527,6 +532,7 @@ export type PostmarkWebhookDeadLetterRecord = z.infer<
 export const campaignRunProjectionRowSchema = z.object({
   runId: idSchema,
   provider: campaignRunProjectionProviderSchema,
+  workspace: workspaceSchema.default("volunteers"),
   kind: campaignKindSchema,
   launchType: launchTypeSchema,
   state: runStateSchema,
@@ -547,6 +553,7 @@ export type CampaignRunProjectionRow = z.infer<
 
 export const createDraftInputSchema = campaignRunEditableFieldsSchema
   .pick({
+    workspace: true,
     kind: true,
     launchType: true,
     projectId: true,
@@ -574,6 +581,7 @@ export type CreateDraftInput = z.input<typeof createDraftInputSchema>;
 export const campaignWizardDraftSaveInputSchema =
   campaignRunEditableFieldsSchema
     .pick({
+      workspace: true,
       kind: true,
       launchType: true,
       name: true,
@@ -599,6 +607,7 @@ export type CampaignWizardDraftSaveInput = z.input<
 
 export const updateDraftInputSchema = z.object({
   observedUpdatedAt: timestampSchema,
+  workspace: workspaceSchema.optional(),
   kind: campaignKindSchema.optional(),
   launchType: launchTypeSchema.optional(),
   projectId: nullableStringSchema.optional(),

@@ -443,6 +443,7 @@ describe("public unsubscribe page", () => {
     webRuntime.campaigns.campaignRuns.findById = () =>
       Promise.resolve({
         id: "run-project-null-contact",
+        workspace: "volunteers",
         kind: "project",
         launchType: "normal_email",
         state: "scheduled",

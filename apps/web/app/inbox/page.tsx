@@ -1,4 +1,4 @@
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 
 import { InboxWelcomeWorkload } from "./_components/inbox-welcome-workload";
 import { getInboxWelcomeSalesforceLifecycle } from "./_lib/home-dashboard";
@@ -35,7 +35,7 @@ export default async function InboxListPage() {
   const [workload, salesforceLifecycle, currentUser] = await Promise.all([
     getInboxWelcomeWorkload(),
     getInboxWelcomeSalesforceLifecycle(),
-    requireSession(),
+    requireVolunteerSession(),
   ]);
   const dashboardData = {
     workload,

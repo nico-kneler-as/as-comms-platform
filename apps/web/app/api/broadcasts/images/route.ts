@@ -53,7 +53,7 @@ function parseLimit(raw: string | null): number {
 }
 
 export async function GET(request: Request) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers", "donors"]);
   if (!session.ok) {
     return session.response;
   }
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers", "donors"]);
   if (!session.ok) {
     return session.response;
   }

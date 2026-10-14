@@ -8,6 +8,7 @@ import type {
   OrgSenderRecord,
   PostmarkSenderStatus,
   Provider,
+  Workspace,
 } from "@as-comms/contracts";
 import { inputHashFromSources } from "@as-comms/db";
 
@@ -123,6 +124,7 @@ export interface UserRowViewModel {
   readonly role: "admin" | "internal_user";
   readonly lastActiveAt: string | null;
   readonly status: "active" | "pending" | "deactivated";
+  readonly workspaces: readonly Workspace[];
 }
 
 export interface AccessSettingsViewModel {
@@ -817,15 +819,18 @@ async function readProjectSettingsDetail(projectId: string) {
   };
 }
 
-function toUserViewModel(user: {
-  readonly id: string;
-  readonly name: string | null;
-  readonly email: string;
-  readonly role: "admin" | "operator";
-  readonly emailVerified: Date | null;
-  readonly deactivatedAt: Date | null;
-  readonly updatedAt: Date;
-}): UserRowViewModel {
+function toUserViewModel(
+  user: {
+    readonly id: string;
+    readonly name: string | null;
+    readonly email: string;
+    readonly role: "admin" | "operator";
+    readonly emailVerified: Date | null;
+    readonly deactivatedAt: Date | null;
+    readonly updatedAt: Date;
+  },
+  workspaces: readonly Workspace[],
+): UserRowViewModel {
   const status =
     user.deactivatedAt !== null
       ? "deactivated"
@@ -843,6 +848,7 @@ function toUserViewModel(user: {
         ? null
         : (user.deactivatedAt ?? user.updatedAt).toISOString(),
     status,
+    workspaces,
   };
 }
 
@@ -876,7 +882,11 @@ function sortUsers(
 async function readAccessSettings() {
   const runtime = await getStage1WebRuntime();
   const users = await runtime.settings.users.listAll();
-  const rows = users.map(toUserViewModel);
+  const rows = await Promise.all(
+    users.map(async (user) =>
+      toUserViewModel(user, await runtime.settings.users.listWorkspaces(user.id)),
+    ),
+  );
   return {
     rows,
   };

@@ -30,7 +30,7 @@ function parseLimit(raw: string | null): number | undefined {
 }
 
 export async function GET(request: Request) {
-  const session = await requireApiSession();
+  const session = await requireApiSession(["volunteers"]);
   if (!session.ok) {
     return session.response;
   }

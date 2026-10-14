@@ -15,7 +15,7 @@ import {
 import { z } from "zod";
 
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
-import { requireSession } from "@/src/server/auth/session";
+import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
 import { getAutomatedEmailTestSendRuntime } from "@/src/server/automated-email/postmark-test-send";
 import { revalidateAutomatedEmailViews } from "@/src/server/settings/revalidate";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
@@ -439,7 +439,7 @@ export async function createFromKindsAction(input: {
   readonly kinds: readonly AutomatedEmailKind[];
   readonly includeCustom: boolean;
 }): Promise<UiSuccess<readonly TemplateMutationData[]> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
   const parsed = createFromKindsSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -515,7 +515,7 @@ export async function createFromKindsAction(input: {
 }
 
 export async function getAutomatedEmailKindSourcesAction(projectId: string) {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = projectTargetSchema.safeParse({ projectId });
   if (!parsed.success) {
     return errorResult(
@@ -540,7 +540,7 @@ export async function loadSendLogPageAction(input: {
   readonly templateId: string;
   readonly cursor?: string | null;
 }) {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = sendLogPageSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult("validation_error", "The send log could not be loaded.");
@@ -575,7 +575,7 @@ export async function sendAutomatedEmailNowAction(input: {
   readonly templateId: string;
   readonly sendId: string;
 }) {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = sendNowSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult("validation_error", "That send could not be released.");
@@ -632,7 +632,7 @@ export async function renameTemplateAction(input: {
   readonly templateId: string;
   readonly name: string;
 }): Promise<UiSuccess<TemplateMutationData> | UiError> {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = renameSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult("validation_error", "Enter a template name.");
@@ -679,7 +679,7 @@ export async function saveDraftAction(input: {
   | UiSuccess<{ readonly outcome: "conflict" }>
   | UiError
 > {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = saveDraftSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -726,7 +726,7 @@ export async function publishTemplateAction(input: {
   readonly projectId: string;
   readonly templateId: string;
 }): Promise<UiSuccess<TemplateMutationData> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
   const parsed = templateTargetSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -778,7 +778,7 @@ export async function setTemplateActiveAction(input: {
   readonly templateId: string;
   readonly isActive: boolean;
 }): Promise<UiSuccess<TemplateMutationData> | UiError> {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = setActiveSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -817,7 +817,7 @@ export async function deleteTemplateAction(input: {
   readonly projectId: string;
   readonly templateId: string;
 }): Promise<UiSuccess<{ readonly deletedId: string }> | UiError> {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = templateTargetSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -884,7 +884,7 @@ export async function renderPreviewAction(input: {
   readonly draftDoc: unknown;
   readonly samplePerson: "nico" | "selah";
 }): Promise<UiSuccess<PreviewData> | UiError> {
-  await requireSession();
+  await requireVolunteerSession();
   const parsed = previewSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult(
@@ -904,7 +904,7 @@ export async function sendTestAction(input: {
   readonly samplePerson: "nico" | "selah";
   readonly recipientEmail: string;
 }): Promise<UiSuccess<{ readonly recipientEmail: string }> | UiError> {
-  const session = await requireSession();
+  const session = await requireVolunteerSession();
   const parsed = sendTestSchema.safeParse(input);
   if (!parsed.success) {
     return errorResult("validation_error", "Enter a valid test email address.");

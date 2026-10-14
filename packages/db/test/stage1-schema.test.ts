@@ -111,6 +111,7 @@ describe("Stage 1 DB schema", () => {
       "sourceEvidenceQuarantine",
       "suppressionList",
       "syncState",
+      "userWorkspaces",
       "users",
       "verificationTokens"
     ]);

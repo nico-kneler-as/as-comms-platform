@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+  HandHeart as HandHeartIcon,
   Inbox as InboxIcon,
   LogOut as LogOutIcon,
   Megaphone as MegaphoneIcon,
@@ -42,6 +43,7 @@ interface RailItem {
   readonly Icon: LucideIcon;
   readonly href: string | null;
   readonly activePrefixes: readonly string[];
+  readonly visibility: "volunteers" | "donors" | "admin";
 }
 
 export interface PrimaryRailOperator {
@@ -50,27 +52,44 @@ export interface PrimaryRailOperator {
   readonly email: string;
 }
 
+export interface PrimaryRailAccess {
+  readonly volunteers: boolean;
+  readonly donors: boolean;
+  readonly admin: boolean;
+}
+
 const ITEMS: readonly RailItem[] = [
   {
     id: "inbox",
     label: "Inbox",
     Icon: InboxIcon,
     href: "/inbox",
-    activePrefixes: ["/inbox"]
+    activePrefixes: ["/inbox"],
+    visibility: "volunteers"
   },
   {
     id: "campaigns",
     label: "Broadcasts",
     Icon: MegaphoneIcon,
     href: "/broadcasts",
-    activePrefixes: ["/broadcasts"]
+    activePrefixes: ["/broadcasts"],
+    visibility: "volunteers"
+  },
+  {
+    id: "donors",
+    label: "Donors",
+    Icon: HandHeartIcon,
+    href: "/donors",
+    activePrefixes: ["/donors"],
+    visibility: "donors"
   },
   {
     id: "settings",
     label: "Settings",
     Icon: SettingsIcon,
     href: "/settings",
-    activePrefixes: ["/settings"]
+    activePrefixes: ["/settings"],
+    visibility: "volunteers"
   }
 ];
 
@@ -81,11 +100,14 @@ function isActive(pathname: string, prefixes: readonly string[]): boolean {
 }
 
 export function PrimaryIconRail({
-  operator
+  operator,
+  access,
 }: {
   readonly operator: PrimaryRailOperator;
+  readonly access: PrimaryRailAccess;
 }) {
   const pathname = usePathname();
+  const visibleItems = ITEMS.filter((item) => access[item.visibility]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -101,7 +123,7 @@ export function PrimaryIconRail({
         </div>
 
         <div className="flex flex-1 flex-col items-center gap-1">
-          {ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.Icon;
             const active = isActive(pathname, item.activePrefixes);
             const baseClass = `flex size-10 items-center justify-center ${RADIUS.lg} ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion} ${
