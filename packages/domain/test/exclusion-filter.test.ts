@@ -8,13 +8,27 @@ import {
 } from "../src/exclusion-filter.js";
 import type { AudienceMember } from "../src/campaign-types.js";
 
-function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
+function buildRun(
+  kind: "project" | "newsletter",
+  input: {
+    readonly launchType?: CampaignRunRecord["launchType"];
+    readonly projectId?: string | null;
+    readonly initialFilter?: "csv_upload";
+  } = {},
+): CampaignRunRecord {
+  const projectId =
+    input.projectId === undefined
+      ? kind === "project"
+        ? "project-a"
+        : null
+      : input.projectId;
+
   return {
     id: `run-${kind}`,
     kind,
-    launchType: "normal_email",
+    launchType: input.launchType ?? "normal_email",
     state: "scheduled",
-    projectId: kind === "project" ? "project-a" : null,
+    projectId,
     name: null,
     fromEmail: null,
     fromName: null,
@@ -27,8 +41,8 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
     bodyTextTemplate: null,
     preheader: null,
     audienceCriteria: {
-      projectId: kind === "project" ? "project-a" : null,
-      projectIds: kind === "project" ? ["project-a"] : [],
+      projectId,
+      projectIds: projectId === null ? [] : [projectId],
       statuses: [],
       contactIds: [],
       newsletterSubscriberIds: [],
@@ -36,6 +50,9 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
       lastActivityWindow: "all_time",
       hasReplied: "either",
       hasClicked: "either",
+      ...(input.initialFilter === undefined
+        ? {}
+        : { initialFilter: input.initialFilter }),
     },
     audienceSize: null,
     scheduledAt: null,
@@ -52,13 +69,13 @@ function buildRun(kind: "project" | "newsletter"): CampaignRunRecord {
 }
 
 function buildMember(
-  contactId: string,
+  contactId: string | null,
   projectId = "project-a",
 ): AudienceMember {
   return {
     contactId,
     newsletterSubscriberId: null,
-    frozenEmail: `${contactId}@example.org`,
+    frozenEmail: `${contactId ?? "subscriber"}@example.org`,
     frozenFirstName: "Test",
     frozenProjectName: "Project A",
     frozenProjectId: projectId,
@@ -69,9 +86,11 @@ function buildMember(
 function createFilter(input: {
   run: CampaignRunRecord;
   suppressedEmails?: readonly string[];
+  newsletterSuppressedEmails?: readonly string[];
   optedOutScopes?: ReadonlySet<string>;
 }): ExclusionFilter {
   const suppressed = new Set(input.suppressedEmails ?? []);
+  const newsletterSuppressed = new Set(input.newsletterSuppressedEmails ?? []);
   const optedOutScopes = input.optedOutScopes ?? new Set<string>();
 
   return createExclusionFilter({
@@ -87,6 +106,9 @@ function createFilter(input: {
       },
       suppressionList: {
         isSuppressed: (email) => Promise.resolve(suppressed.has(email)),
+      },
+      newsletterSuppressions: {
+        isSuppressed: (email) => Promise.resolve(newsletterSuppressed.has(email)),
       },
     },
   });
@@ -109,6 +131,109 @@ describe("createExclusionFilter", () => {
     expect(result.excluded).toMatchObject([
       { contactId: "contact-1", reason: "suppressed" },
     ]);
+  });
+
+  it.each(["unsubscribed", "cleaned", "platform_optout"])(
+    "excludes newsletter-suppressed newsletter recipients (%s)",
+    async () => {
+      const filter = createFilter({
+        run: buildRun("newsletter"),
+        newsletterSuppressedEmails: ["subscriber@example.org"],
+      });
+
+      await expect(
+        filter.applyExclusions(
+          [
+            {
+              ...buildMember(null),
+              newsletterSubscriberId: "subscriber-1",
+              frozenEmail: "  SUBSCRIBER@EXAMPLE.ORG  ",
+            },
+          ],
+          "run-newsletter",
+          new Date("2026-05-15T12:00:00.000Z"),
+        ),
+      ).resolves.toMatchObject({
+        excluded: [
+          {
+            newsletterSubscriberId: "subscriber-1",
+            reason: "opted_out_newsletter",
+          },
+        ],
+      });
+    },
+  );
+
+  it("excludes newsletter-suppressed project-less CSV email recipients", async () => {
+    const filter = createFilter({
+      run: buildRun("project", {
+        projectId: null,
+        initialFilter: "csv_upload",
+      }),
+      newsletterSuppressedEmails: ["uploaded@example.org"],
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "uploaded@example.org" }],
+        "run-project",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      excluded: [{ reason: "opted_out_newsletter" }],
+    });
+  });
+
+  it("keeps newsletter-suppressed project members eligible", async () => {
+    const filter = createFilter({
+      run: buildRun("project"),
+      newsletterSuppressedEmails: ["contact-1@example.org"],
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [buildMember("contact-1")],
+        "run-project",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      eligible: [{ contactId: "contact-1" }],
+    });
+  });
+
+  it("does not apply newsletter suppression to SMS runs", async () => {
+    const filter = createFilter({
+      run: buildRun("newsletter", { launchType: "sms" }),
+      newsletterSuppressedEmails: ["contact-1@example.org"],
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [buildMember("contact-1")],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      eligible: [{ contactId: "contact-1" }],
+    });
+  });
+
+  it("keeps suppression-list exclusions ahead of newsletter suppression", async () => {
+    const filter = createFilter({
+      run: buildRun("newsletter"),
+      suppressedEmails: ["subscriber@example.org"],
+      newsletterSuppressedEmails: ["subscriber@example.org"],
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "subscriber@example.org" }],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      excluded: [{ reason: "suppressed" }],
+    });
   });
 
   it("applies project-scoped opt outs only to the matching project", async () => {

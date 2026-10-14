@@ -340,6 +340,11 @@ function buildCampaignSendDependencies(input: {
       campaignRuns: input.campaigns.campaignRuns,
       contactConsent: input.campaigns.contactConsent,
       suppressionList: input.campaigns.suppressionList,
+      newsletterSuppressions: {
+        isSuppressed: async (email) =>
+          (await input.campaigns.newsletterSuppressions.findByEmail(email)) !==
+          null,
+      },
     },
   });
   const mergeRenderer = createMergeRenderer();
