@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { cancel } from "../../actions";
+import type { Workspace } from "@as-comms/contracts";
 
 export function CancelModal({
   open,
@@ -21,12 +22,14 @@ export function CancelModal({
   runId,
   sentCount,
   totalAudience,
+  workspace = "volunteers",
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly runId: string;
   readonly sentCount: number | null;
   readonly totalAudience: number | null;
+  readonly workspace?: Workspace;
 }) {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export function CancelModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Cancel this broadcast?</DialogTitle>
+          <DialogTitle>Cancel this {workspace === "donors" ? "appeal" : "broadcast"}?</DialogTitle>
           <DialogDescription className="space-y-3 pt-2 text-sm leading-6 text-slate-600">
             <span className="block">
               We&apos;ll stop sending to remaining recipients.{" "}
@@ -69,6 +72,7 @@ export function CancelModal({
                 const result = await cancel(
                   runId,
                   "operator_cancelled_from_run_detail",
+                  workspace,
                 );
                 if (!result.ok) {
                   setErrorMessage(result.message);
@@ -81,7 +85,7 @@ export function CancelModal({
               });
             }}
           >
-            {pending ? "Cancelling…" : "Cancel broadcast"}
+            {pending ? "Cancelling…" : `Cancel ${workspace === "donors" ? "appeal" : "broadcast"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

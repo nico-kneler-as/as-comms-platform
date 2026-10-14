@@ -67,6 +67,9 @@ interface ComposeStepProps {
    * operator has visible feedback during the save → step-transition gap.
    */
   readonly continuePending?: boolean;
+  /** Donor appeals have no volunteer project context, so project merge tags
+   * would promise values that do not exist. */
+  readonly showMergeTags?: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onSubjectBChange?: (value: string) => void;
   readonly onAbTestEnabledChange?: (value: boolean) => void;
@@ -160,6 +163,7 @@ export function ComposeStep({
   selectedAliasSignature,
   frozen,
   continuePending = false,
+  showMergeTags = true,
   onSubjectChange,
   onSubjectBChange = () => undefined,
   onAbTestEnabledChange = () => undefined,
@@ -406,7 +410,7 @@ export function ComposeStep({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
+        {showMergeTags ? <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
           <span className="font-medium text-slate-600">Merge tags:</span>
           {MERGE_TOKENS.map((token) => (
             <button
@@ -424,7 +428,7 @@ export function ComposeStep({
           <span className="ml-auto text-[10.5px] text-slate-500">
             Inserts into the active subject field.
           </span>
-        </div>
+        </div> : null}
       </>
     );
   }
@@ -687,7 +691,7 @@ export function ComposeStep({
                         activeCommands={activeCommands}
                         onCommand={onCommand}
                       />
-                      <DropdownMenu>
+                      {showMergeTags ? <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
@@ -711,7 +715,7 @@ export function ComposeStep({
                             </DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
-                      </DropdownMenu>
+                      </DropdownMenu> : null}
                     </div>
                     <span className="font-mono text-[10.5px] tabular-nums text-slate-500">
                       {wordCount.toLocaleString()}{" "}

@@ -30,6 +30,7 @@ import {
 } from "@/app/broadcasts/[runId]/_lib/run-detail";
 import { requireWorkspace } from "@/src/server/auth/workspace-access";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
+import { DonorResendPanel } from "@/app/donors/_components/donor-resend-panel";
 
 type DetailPromise = Promise<RunDetailModel | null>;
 
@@ -67,8 +68,10 @@ async function RecipientsSection({ modelPromise }: { readonly modelPromise: Deta
   );
 }
 
-async function RightRailSection({ modelPromise }: { readonly modelPromise: DetailPromise }) {
+async function RightRailSection({ modelPromise, showResendPanel }: { readonly modelPromise: DetailPromise; readonly showResendPanel: boolean }) {
   const model = await readModel(modelPromise);
+  const runtime = showResendPanel ? await getStage1WebRuntime() : null;
+  const resend = runtime === null ? null : await runtime.campaigns.campaignRuns.findResendByParentRunId(model.run.id);
   return (
     <>
       <RepliesInInboxPanel
@@ -87,6 +90,7 @@ async function RightRailSection({ modelPromise }: { readonly modelPromise: Detai
       <SendDetailsPanel model={model} />
       <WebVersionPanel runId={model.run.id} webVersion={model.webVersion} />
       <AudienceCriteriaPanel model={model} />
+      {showResendPanel ? <DonorResendPanel parentRunId={model.run.id} child={resend === null ? null : { id: resend.id, state: resend.state, scheduledAt: resend.scheduledAt, audienceSize: resend.audienceSize }} /> : null}
       {model.provider === "mailchimp" ? null : (
         <RunAuditLog entries={model.auditEntries} />
       )}
@@ -99,6 +103,7 @@ export async function CampaignRunDetailPage(input: {
   readonly provider: "postmark" | "mailchimp";
   readonly workspace: Workspace;
   readonly adminOnly: boolean;
+  readonly showResendPanel?: boolean;
 }) {
   const access = await requireWorkspace(input.workspace);
   if (input.adminOnly && access.user.role !== "admin") {
@@ -142,6 +147,7 @@ export async function CampaignRunDetailPage(input: {
   return (
     <RunDetailShell
       header={header}
+      workspace={input.workspace}
       metricsSection={
         <Suspense fallback={<MetricTilesSkeleton />}>
           <MetricTilesSection modelPromise={modelPromise} />
@@ -159,7 +165,7 @@ export async function CampaignRunDetailPage(input: {
       }
       rightRailSection={
         <Suspense fallback={<RightRailSkeleton />}>
-          <RightRailSection modelPromise={modelPromise} />
+          <RightRailSection modelPromise={modelPromise} showResendPanel={input.showResendPanel ?? false} />
         </Suspense>
       }
     />

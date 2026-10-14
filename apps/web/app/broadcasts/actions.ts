@@ -16,6 +16,7 @@ import {
   smsBroadcastSendJobName,
   smsBroadcastSendPayloadSchema,
   type CampaignRunRecord,
+  type Workspace,
   scheduleSendInputSchema,
   sendNowInputSchema,
 } from "@as-comms/contracts";
@@ -45,7 +46,7 @@ import { z } from "zod";
 import type { UiError, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin } from "@/src/server/auth/session";
-import { requireVolunteerSession } from "@/src/server/auth/workspace-access";
+import { requireVolunteerSession, requireWorkspace } from "@/src/server/auth/workspace-access";
 import { sendSmsViaTwilio } from "@/src/server/composer/twilio-send";
 import { readWebEnv } from "@/src/server/env";
 import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
@@ -392,11 +393,28 @@ async function enqueueSmsBroadcastSendJob(input: {
   `);
 }
 
-async function assertCampaignAdmin(): Promise<
+async function assertCampaignAdmin(runId?: string, expectedWorkspace?: Workspace): Promise<
   | { readonly ok: true; readonly userId: string }
   | { readonly ok: false; readonly error: UiError }
 > {
   try {
+    if (runId !== undefined) {
+      const runtime = await getStage1WebRuntime();
+      const run = await runtime.campaigns.campaignRuns.findById(runId);
+      if (run === null) {
+        return {
+          ok: false,
+          error: errorResult("campaign_not_found", "Broadcast draft not found."),
+        };
+      }
+      if (expectedWorkspace !== undefined && run.workspace !== expectedWorkspace) {
+        return { ok: false, error: errorResult("campaign_workspace_mismatch", "This broadcast belongs in a different workspace.") };
+      }
+      if (run.workspace === "donors") {
+        const access = await requireWorkspace("donors");
+        return { ok: true, userId: access.user.id };
+      }
+    }
     const user = await requireAdmin();
     return {
       ok: true,
@@ -1059,8 +1077,9 @@ function filterAudienceMembersBySelectedContacts<
 
 export async function sendNow(
   runId: string,
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  const admin = await assertCampaignAdmin(runId, workspace);
   if (!admin.ok) {
     return admin.error;
   }
@@ -1144,8 +1163,9 @@ export async function sendNow(
 export async function schedule(
   runId: string,
   sendAt: Date,
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  const admin = await assertCampaignAdmin(runId, workspace);
   if (!admin.ok) {
     return admin.error;
   }
@@ -1508,8 +1528,10 @@ export async function sendSmsBroadcastTest(rawInput: {
 export async function testSend(
   runId: string,
   recipientEmail: string,
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignTestSendData> | UiError> {
-  const session = await requireVolunteerSession();
+  const admin = await assertCampaignAdmin(runId, workspace);
+  if (!admin.ok) return admin.error;
 
   try {
     const parsed = z
@@ -1533,6 +1555,12 @@ export async function testSend(
     const run = await runtime.campaigns.campaignRuns.findById(parsed.runId);
     if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    if (run.workspace === "donors") {
+      const access = await requireWorkspace("donors");
+      if (parsed.recipientEmail.toLowerCase() !== access.user.email.toLowerCase()) {
+        return errorResult("campaign_test_send_recipient_forbidden", "Send a test only to your own email address.");
+      }
     }
 
     const audience = filterAudienceMembersBySelectedContacts(
@@ -1645,7 +1673,7 @@ export async function testSend(
           Metadata: {
             campaignRunId: run.id,
             campaignType: "test",
-            operatorUserId: session.id,
+            operatorUserId: admin.userId,
           },
           Headers: [
             {
@@ -1812,8 +1840,9 @@ export async function deleteDraft(
 export async function cancel(
   runId: string,
   reason: string,
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  const admin = await assertCampaignAdmin(runId, workspace);
   if (!admin.ok) {
     return admin.error;
   }
@@ -1861,8 +1890,9 @@ export async function cancel(
 export async function configureResendAction(
   parentRunId: string,
   input: { readonly delayDays: number; readonly subject: string; readonly preheader?: string },
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignResendActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  const admin = await assertCampaignAdmin(parentRunId, workspace);
   if (!admin.ok) return admin.error;
 
   try {
@@ -1936,8 +1966,9 @@ export async function configureResendAction(
 
 export async function cancelResendAction(
   parentRunId: string,
+  workspace: Workspace = "volunteers",
 ): Promise<UiSuccess<CampaignResendActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  const admin = await assertCampaignAdmin(parentRunId, workspace);
   if (!admin.ok) return admin.error;
 
   try {

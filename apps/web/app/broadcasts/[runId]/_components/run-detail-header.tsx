@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { duplicateCampaignRun } from "../../actions";
 import type { RunDetailHeaderModel } from "../_lib/run-detail";
 import { LocalDateTime } from "./local-date-time";
+import type { Workspace } from "@as-comms/contracts";
 
 const STATE_CHIP_CLASS: Record<RunDetailHeaderModel["state"], string> = {
   draft: "bg-slate-100 text-slate-700 ring-slate-200",
@@ -42,9 +43,11 @@ const STATE_LABEL: Record<RunDetailHeaderModel["state"], string> = {
 export function RunDetailHeader({
   header,
   onStopUnsent,
+  workspace = "volunteers",
 }: {
   readonly header: RunDetailHeaderModel;
   readonly onStopUnsent: () => void;
+  readonly workspace?: Workspace;
 }) {
   const router = useRouter();
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
@@ -58,10 +61,10 @@ export function RunDetailHeader({
       <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-8 py-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
           <Link
-            href="/broadcasts"
+            href={workspace === "donors" ? "/donors" : "/broadcasts"}
             className="mb-2 inline-flex text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-900"
           >
-            ‹ Broadcasts
+            ‹ {workspace === "donors" ? "Appeals" : "Broadcasts"}
           </Link>
           <h1 className="text-balance text-[20px] font-semibold tracking-tight text-slate-950">
             {header.subject}

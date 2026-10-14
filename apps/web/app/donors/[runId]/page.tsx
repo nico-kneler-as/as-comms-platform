@@ -13,5 +13,6 @@ export default async function DonorRunDetailPage({
     provider: "postmark",
     workspace: "donors",
     adminOnly: false,
+    showResendPanel: true,
   });
 }
