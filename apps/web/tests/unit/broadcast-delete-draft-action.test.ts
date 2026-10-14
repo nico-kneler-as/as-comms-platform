@@ -62,9 +62,17 @@ async function seedProject(runtime: Stage1WebTestRuntime): Promise<void> {
 async function seedDraftRun(
   runtime: Stage1WebTestRuntime,
   runId: string,
+  extra: {
+    readonly workspace?: "volunteers" | "donors";
+    readonly resendOfRunId?: string;
+  } = {},
 ): Promise<void> {
   await runtime.runtime.campaigns.campaignRuns.create({
     id: runId,
+    ...(extra.workspace === undefined ? {} : { workspace: extra.workspace }),
+    ...(extra.resendOfRunId === undefined
+      ? {}
+      : { resendOfRunId: extra.resendOfRunId, resendDelayDays: 3 }),
     kind: "project",
     launchType: "normal_email",
     projectId: "project-1",
@@ -215,5 +223,81 @@ describe("broadcast delete draft action", () => {
       message: "Only admins can manage broadcasts.",
     });
     expect(deleteDraftSpy).not.toHaveBeenCalled();
+  });
+
+  it("lets a donors-only teammate delete a donor draft without the admin role", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    const now = new Date("2026-10-14T12:00:00.000Z");
+    await runtime.context.settings.users.upsert({
+      id: "user:devynn",
+      name: "Devynn",
+      email: "devynn@example.org",
+      emailVerified: now,
+      image: null,
+      role: "operator",
+      deactivatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await runtime.context.settings.users.setWorkspaces("user:devynn", ["donors"]);
+    requireSessionMock.mockResolvedValue({
+      id: "user:devynn",
+      email: "devynn@example.org",
+      role: "operator",
+    });
+    await seedDraftRun(runtime, "run-donor-draft", { workspace: "donors" });
+
+    const result = await deleteDraftAction("run-donor-draft");
+
+    expect(result).toMatchObject({ ok: true });
+    expect(requireAdminMock).not.toHaveBeenCalled();
+    await expect(
+      runtime.runtime.campaigns.campaignRuns.findById("run-donor-draft"),
+    ).resolves.toBeNull();
+  });
+
+  it("refuses a donor draft to a volunteers-only operator", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    requireSessionMock.mockResolvedValue({
+      id: "user:admin",
+      email: "admin@example.org",
+      role: "operator",
+    });
+    await runtime.context.settings.users.setWorkspaces("user:admin", ["volunteers"]);
+    await seedDraftRun(runtime, "run-donor-guarded", { workspace: "donors" });
+
+    const result = await deleteDraftAction("run-donor-guarded");
+
+    expect(result).toMatchObject({ ok: false, code: "forbidden" });
+    await expect(
+      runtime.runtime.campaigns.campaignRuns.findById("run-donor-guarded"),
+    ).resolves.not.toBeNull();
+  });
+
+  it("removes a configured reminder together with its draft", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedDraftRun(runtime, "run-parent-with-reminder");
+    await seedDraftRun(runtime, "run-reminder-child", {
+      resendOfRunId: "run-parent-with-reminder",
+    });
+
+    const result = await deleteDraftAction("run-parent-with-reminder");
+
+    expect(result).toMatchObject({ ok: true });
+    await expect(
+      runtime.runtime.campaigns.campaignRuns.findById("run-parent-with-reminder"),
+    ).resolves.toBeNull();
+    await expect(
+      runtime.runtime.campaigns.campaignRuns.findById("run-reminder-child"),
+    ).resolves.toBeNull();
   });
 });
