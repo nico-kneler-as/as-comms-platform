@@ -23,6 +23,11 @@ import {
   type SmsBroadcastSendTaskDependencies,
 } from "./jobs/sms-broadcast-send/index.js";
 import {
+  createSalesforceAudienceListsSyncTask,
+  salesforceAudienceListsSyncJobName,
+  type SalesforceAudienceListsSyncTaskDependencies,
+} from "./jobs/salesforce-audience-lists-sync.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -107,6 +112,7 @@ export function createTaskList(
     readonly campaignSend?: CampaignSendTaskDependencies;
     readonly automatedEmailSend?: AutomatedEmailSendTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
+    readonly salesforceAudienceListsSync?: SalesforceAudienceListsSyncTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
@@ -146,6 +152,13 @@ export function createTaskList(
       : {
           [smsBroadcastSendJobName]: createSmsBroadcastSendTask(
             input.smsBroadcastSend,
+          ),
+        }),
+    ...(input?.salesforceAudienceListsSync === undefined
+      ? {}
+      : {
+          [salesforceAudienceListsSyncJobName]: createSalesforceAudienceListsSyncTask(
+            input.salesforceAudienceListsSync,
           ),
         }),
     ...(input?.campaignEventsTailFinalize === undefined

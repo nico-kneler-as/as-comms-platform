@@ -2265,3 +2265,59 @@ export const salesforceReconciliationRuns = pgTable(
     ),
   ],
 );
+
+export const salesforceAudienceLists = pgTable(
+  "salesforce_audience_lists",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").$type<"campaign" | "insiders">().notNull(),
+    salesforceId: text("salesforce_id"),
+    name: text("name").notNull(),
+    campaignType: text("campaign_type"),
+    campaignStatus: text("campaign_status"),
+    isActive: boolean("is_active").notNull(),
+    ownerName: text("owner_name"),
+    memberCount: integer("member_count").notNull().default(0),
+    salesforceLastModifiedAt: timestamp("salesforce_last_modified_at", {
+      mode: "date",
+      withTimezone: true,
+    }),
+    syncedAt: timestamp("synced_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    check(
+      "salesforce_audience_lists_kind_check",
+      sql`${table.kind} IN ('campaign', 'insiders')`,
+    ),
+    uniqueIndex("salesforce_audience_lists_salesforce_id_unique")
+      .on(table.salesforceId)
+      .where(isNotNull(table.salesforceId)),
+  ],
+);
+
+export const salesforceAudienceListMembers = pgTable(
+  "salesforce_audience_list_members",
+  {
+    listId: text("list_id")
+      .notNull()
+      .references(() => salesforceAudienceLists.id, { onDelete: "cascade" }),
+    normalizedEmail: text("normalized_email").notNull(),
+    salesforceContactId: text("salesforce_contact_id"),
+    salesforceLeadId: text("salesforce_lead_id"),
+    memberStatus: text("member_status"),
+  },
+  (table) => [
+    uniqueIndex("salesforce_audience_list_members_list_email_unique").on(
+      table.listId,
+      table.normalizedEmail,
+    ),
+    index("salesforce_audience_list_members_normalized_email_idx").on(
+      table.normalizedEmail,
+    ),
+  ],
+);

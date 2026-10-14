@@ -1,8 +1,12 @@
 import {
   salesforceHistoricalCaptureBatchPayloadSchema,
   salesforceLiveCaptureBatchPayloadSchema,
+  salesforceAudienceListsCaptureRequestSchema,
+  salesforceAudienceListsCaptureResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
-  type SalesforceLiveCaptureBatchPayload
+  type SalesforceLiveCaptureBatchPayload,
+  type SalesforceAudienceListsCaptureRequest,
+  type SalesforceAudienceListsSnapshot
 } from "@as-comms/contracts";
 
 import {
@@ -33,6 +37,9 @@ export function createSalesforceCapturePort(
   captureLiveBatch(
     payload: SalesforceLiveCaptureBatchPayload
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
+  captureAudienceLists(
+    payload: SalesforceAudienceListsCaptureRequest
+  ): Promise<SalesforceAudienceListsSnapshot>;
 } {
   return {
     captureHistoricalBatch(payload) {
@@ -52,6 +59,16 @@ export function createSalesforceCapturePort(
         payload,
         payloadSchema: salesforceLiveCaptureBatchPayloadSchema,
         responseSchema: salesforceCapturedBatchSchema,
+        fetchImplementation: input?.fetchImplementation
+      });
+    },
+    captureAudienceLists(payload) {
+      return requestCaptureBatch({
+        config,
+        path: "/audience-lists",
+        payload,
+        payloadSchema: salesforceAudienceListsCaptureRequestSchema,
+        responseSchema: salesforceAudienceListsCaptureResponseSchema,
         fetchImplementation: input?.fetchImplementation
       });
     }

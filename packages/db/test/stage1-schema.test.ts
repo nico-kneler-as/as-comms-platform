@@ -36,6 +36,8 @@ import {
   orgSenders,
   orgSettings,
   projectKnowledgeEntries,
+  salesforceAudienceListMembers,
+  salesforceAudienceLists,
   suppressionList,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
@@ -97,6 +99,8 @@ describe("Stage 1 DB schema", () => {
       "projectDimensions",
       "projectKnowledgeEntries",
       "routingReviewQueue",
+      "salesforceAudienceListMembers",
+      "salesforceAudienceLists",
       "salesforceCommunicationDetails",
       "salesforceEventContext",
       "sessions",
@@ -158,6 +162,12 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(contactTimelineProjection)).toBe(
       "contact_timeline_projection"
+    );
+    expect(getTableName(salesforceAudienceLists)).toBe(
+      "salesforce_audience_lists"
+    );
+    expect(getTableName(salesforceAudienceListMembers)).toBe(
+      "salesforce_audience_list_members"
     );
   });
 

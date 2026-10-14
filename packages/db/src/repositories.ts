@@ -72,6 +72,7 @@ import {
   type RunState,
   type SuppressionListRecord,
   type SuppressionReason,
+  type SalesforceAudienceListsSnapshot,
   type UpsertNewsletterSuppressionInput,
   type UpdateDraftInput,
   type WebhookDeadLetterFailureKind,
@@ -184,6 +185,8 @@ import {
   projectDimensions,
   routingReviewQueue,
   salesforceCommunicationDetails,
+  salesforceAudienceListMembers,
+  salesforceAudienceLists,
   salesforceReconciliationRuns,
   salesforceEventContext,
   simpleTextingMessageDetails,
@@ -337,6 +340,7 @@ export class StaleCampaignRunDraftError extends Error {
 }
 
 export interface Stage5RepositoryBundle {
+  readonly salesforceAudienceLists: SalesforceAudienceListsRepository;
   readonly campaignRuns: {
     create(input: CreateDraftInput): Promise<CampaignRunRecord>;
     findById(id: string): Promise<CampaignRunRecord | null>;
@@ -495,6 +499,27 @@ export interface Stage5RepositoryBundle {
       readonly filterByProjectIds?: readonly string[];
     }): Promise<Partial<Record<RunState, number>>>;
   };
+}
+
+export interface SalesforceAudienceListRecord {
+  readonly id: string;
+  readonly kind: "campaign" | "insiders";
+  readonly salesforceId: string | null;
+  readonly name: string;
+  readonly campaignType: string | null;
+  readonly campaignStatus: string | null;
+  readonly isActive: boolean;
+  readonly ownerName: string | null;
+  readonly memberCount: number;
+  readonly salesforceLastModifiedAt: string | null;
+  readonly syncedAt: string;
+}
+
+export interface SalesforceAudienceListsRepository {
+  replaceSnapshot(snapshot: SalesforceAudienceListsSnapshot): Promise<void>;
+  listAll(): Promise<readonly SalesforceAudienceListRecord[]>;
+  emailsForLists(listIds: readonly string[]): Promise<readonly string[]>;
+  lastSyncedAt(): Promise<string | null>;
 }
 
 export function defineStage5RepositoryBundle<T extends Stage5RepositoryBundle>(
@@ -7607,6 +7632,207 @@ function mapCampaignRunMutationFields(
 // Postgres caps one statement at 65,534 bind parameters and each snapshot row
 // binds 22, so a single INSERT fails for any audience above ~2,978 recipients.
 const AUDIENCE_SNAPSHOT_BULK_INSERT_CHUNK_SIZE = 1_000;
+const SALESFORCE_AUDIENCE_LIST_MEMBER_INSERT_CHUNK_SIZE = 1_000;
+
+function createSalesforceAudienceListsRepository(
+  db: Stage1Database,
+): SalesforceAudienceListsRepository {
+  return {
+    async replaceSnapshot(snapshot) {
+      const capturedAt = new Date(snapshot.capturedAt);
+      const campaignIds = new Set(snapshot.campaigns.map((campaign) => campaign.id));
+      const membersByCampaignId = new Map<
+        string,
+        Map<
+          string,
+          {
+            readonly salesforceContactId: string | null;
+            readonly salesforceLeadId: string | null;
+            readonly memberStatus: string | null;
+          }
+        >
+      >();
+
+      for (const member of snapshot.members) {
+        if (!campaignIds.has(member.campaignId)) {
+          continue;
+        }
+        const email = member.email.trim().toLowerCase();
+        if (email.length === 0) {
+          continue;
+        }
+        const campaignMembers =
+          membersByCampaignId.get(member.campaignId) ??
+          new Map<
+            string,
+            {
+              readonly salesforceContactId: string | null;
+              readonly salesforceLeadId: string | null;
+              readonly memberStatus: string | null;
+            }
+          >();
+        campaignMembers.set(email, {
+          salesforceContactId: member.contactId,
+          salesforceLeadId: member.leadId,
+          memberStatus: member.status,
+        });
+        membersByCampaignId.set(member.campaignId, campaignMembers);
+      }
+
+      const insiderMembers = new Map<
+        string,
+        { readonly salesforceContactId: string; readonly salesforceLeadId: null; readonly memberStatus: null }
+      >();
+      for (const insider of snapshot.insiders) {
+        const email = insider.email.trim().toLowerCase();
+        if (email.length > 0) {
+          insiderMembers.set(email, {
+            salesforceContactId: insider.id,
+            salesforceLeadId: null,
+            memberStatus: null,
+          });
+        }
+      }
+
+      const lists = [
+        ...snapshot.campaigns.map((campaign) => ({
+          id: `campaign:${campaign.id}`,
+          kind: "campaign" as const,
+          salesforceId: campaign.id,
+          name: campaign.name,
+          campaignType: campaign.campaignType,
+          campaignStatus: campaign.campaignStatus,
+          isActive: campaign.isActive,
+          ownerName: campaign.ownerName,
+          memberCount: membersByCampaignId.get(campaign.id)?.size ?? 0,
+          salesforceLastModifiedAt: new Date(campaign.lastModifiedDate),
+          syncedAt: capturedAt,
+        })),
+        {
+          id: "insiders",
+          kind: "insiders" as const,
+          salesforceId: null,
+          name: "Insiders",
+          campaignType: null,
+          campaignStatus: null,
+          isActive: true,
+          ownerName: null,
+          memberCount: insiderMembers.size,
+          salesforceLastModifiedAt: null,
+          syncedAt: capturedAt,
+        },
+      ];
+
+      const members = [
+        ...snapshot.campaigns.flatMap((campaign) =>
+          Array.from(membersByCampaignId.get(campaign.id) ?? []).map(
+            ([normalizedEmail, member]) => ({
+              listId: `campaign:${campaign.id}`,
+              normalizedEmail,
+              ...member,
+            }),
+          ),
+        ),
+        ...Array.from(insiderMembers).map(([normalizedEmail, member]) => ({
+          listId: "insiders",
+          normalizedEmail,
+          ...member,
+        })),
+      ];
+
+      await db.transaction(async (tx) => {
+        for (const list of lists) {
+          await tx
+            .insert(salesforceAudienceLists)
+            .values(list)
+            .onConflictDoUpdate({
+              target: salesforceAudienceLists.id,
+              set: {
+                kind: list.kind,
+                salesforceId: list.salesforceId,
+                name: list.name,
+                campaignType: list.campaignType,
+                campaignStatus: list.campaignStatus,
+                isActive: list.isActive,
+                ownerName: list.ownerName,
+                memberCount: list.memberCount,
+                salesforceLastModifiedAt: list.salesforceLastModifiedAt,
+                syncedAt: list.syncedAt,
+                updatedAt: new Date(),
+              },
+            });
+        }
+
+        const existingCampaigns = await tx
+          .select({
+            id: salesforceAudienceLists.id,
+            salesforceId: salesforceAudienceLists.salesforceId,
+          })
+          .from(salesforceAudienceLists)
+          .where(eq(salesforceAudienceLists.kind, "campaign"));
+        const vanishedListIds = existingCampaigns
+          .filter((list) => list.salesforceId === null || !campaignIds.has(list.salesforceId))
+          .map((list) => list.id);
+        if (vanishedListIds.length > 0) {
+          await tx
+            .delete(salesforceAudienceLists)
+            .where(inArray(salesforceAudienceLists.id, vanishedListIds));
+        }
+
+        await tx
+          .delete(salesforceAudienceListMembers)
+          .where(inArray(salesforceAudienceListMembers.listId, lists.map((list) => list.id)));
+
+        for (let index = 0; index < members.length; index += SALESFORCE_AUDIENCE_LIST_MEMBER_INSERT_CHUNK_SIZE) {
+          await tx
+            .insert(salesforceAudienceListMembers)
+            .values(members.slice(index, index + SALESFORCE_AUDIENCE_LIST_MEMBER_INSERT_CHUNK_SIZE));
+        }
+      });
+    },
+
+    async listAll() {
+      const rows = await db
+        .select()
+        .from(salesforceAudienceLists)
+        .orderBy(asc(salesforceAudienceLists.name), asc(salesforceAudienceLists.id));
+      return rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        salesforceId: row.salesforceId,
+        name: row.name,
+        campaignType: row.campaignType,
+        campaignStatus: row.campaignStatus,
+        isActive: row.isActive,
+        ownerName: row.ownerName,
+        memberCount: row.memberCount,
+        salesforceLastModifiedAt: row.salesforceLastModifiedAt?.toISOString() ?? null,
+        syncedAt: row.syncedAt.toISOString(),
+      }));
+    },
+
+    async emailsForLists(listIds) {
+      const ids = [...new Set(listIds.map((id) => id.trim()).filter((id) => id.length > 0))];
+      if (ids.length === 0) {
+        return [];
+      }
+      const rows = await db
+        .select({ normalizedEmail: salesforceAudienceListMembers.normalizedEmail })
+        .from(salesforceAudienceListMembers)
+        .where(inArray(salesforceAudienceListMembers.listId, ids));
+      return [...new Set(rows.map((row) => row.normalizedEmail.trim().toLowerCase()))].sort();
+    },
+
+    async lastSyncedAt() {
+      const [row] = await db
+        .select({ syncedAt: salesforceAudienceLists.syncedAt })
+        .from(salesforceAudienceLists)
+        .orderBy(desc(salesforceAudienceLists.syncedAt))
+        .limit(1);
+      return row?.syncedAt.toISOString() ?? null;
+    },
+  };
+}
 
 function mapAudienceSnapshotInsert(
   runId: string,
@@ -7750,6 +7976,7 @@ export function createStage5RepositoryBundle(
   };
 
   return defineStage5RepositoryBundle({
+    salesforceAudienceLists: createSalesforceAudienceListsRepository(db),
     campaignRuns: {
       async create(input) {
         const parsed = createDraftInputSchema.parse(input);
