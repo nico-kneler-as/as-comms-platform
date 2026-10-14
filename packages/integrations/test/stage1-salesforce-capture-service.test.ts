@@ -5,6 +5,7 @@ import {
   createSalesforceCapturePort,
   createSalesforceCaptureService,
   SalesforcePaginationOriginError,
+  SalesforceQueryError,
   type CaptureServiceHttpRequest,
   type SalesforceApiClient,
   type SalesforceCaptureService,
@@ -53,6 +54,27 @@ function createSalesforceServiceConfig() {
 
 function getRequestBodyAsString(body: unknown): string {
   return typeof body === "string" ? body : "";
+}
+
+function resolveFetchUrl(input: unknown): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  if (input instanceof Request) {
+    return input.url;
+  }
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "url" in input &&
+    typeof input.url === "string"
+  ) {
+    return input.url;
+  }
+  throw new Error("Unsupported fetch input.");
 }
 
 function toResponse(input: {
@@ -1814,5 +1836,153 @@ describe("Salesforce capture service", () => {
     await expect(client.queryAll("SELECT Id FROM Contact")).rejects.toThrow(
       "invalid_grant",
     );
+  });
+
+  it("captures audience lists with normalized campaign and lead member emails", async () => {
+    const service = createSalesforceCaptureService(
+      createSalesforceServiceConfig(),
+      {
+        apiClient: createStubSalesforceApiClient((soql) => {
+          if (soql.includes(" FROM CampaignMember ")) {
+            return Promise.resolve([
+              {
+                CampaignId: "701-campaign",
+                ContactId: null,
+                LeadId: "00Q-lead",
+                Email: " LEAD@Example.org ",
+                Status: "Sent",
+              },
+              {
+                CampaignId: "701-campaign",
+                ContactId: "003-blank",
+                LeadId: null,
+                Email: "   ",
+                Status: "Sent",
+              },
+            ]);
+          }
+          if (soql.includes("VIP_general__c")) {
+            return Promise.resolve([{ Id: "003-insider", Email: " VIP@Example.org " }]);
+          }
+          if (soql.includes(" FROM Campaign")) {
+            return Promise.resolve([
+              {
+                Id: "701-campaign",
+                Name: "Giving Tuesday",
+                Type: "Email",
+                Status: "In Progress",
+                IsActive: true,
+                StartDate: "2026-11-01",
+                EndDate: null,
+                CreatedDate: "2026-01-01T00:00:00.000Z",
+                LastModifiedDate: "2026-10-01T00:00:00.000Z",
+                Owner: { Name: "Devynn" },
+                NumberOfContacts: 99,
+                NumberOfLeads: 1,
+              },
+            ]);
+          }
+          return Promise.resolve([]);
+        }),
+        now: () => new Date("2026-10-14T12:00:00.000Z"),
+      },
+    );
+
+    const response = await service.handleHttpRequest({
+      method: "POST",
+      path: "/audience-lists",
+      headers: { authorization: "Bearer salesforce-token" },
+      bodyText: JSON.stringify({ version: 1 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      campaigns: [{ id: "701-campaign", ownerName: "Devynn" }],
+      members: [
+        {
+          campaignId: "701-campaign",
+          leadId: "00Q-lead",
+          email: "lead@example.org",
+        },
+      ],
+      insiders: [{ id: "003-insider", email: "vip@example.org" }],
+      capturedAt: "2026-10-14T12:00:00.000Z",
+    });
+  });
+
+  it("uses paginated /query results for the audience-lists route", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>((input) => {
+      const url = resolveFetchUrl(input);
+      if (url === "https://test.salesforce.com/services/oauth2/token") {
+        return Promise.resolve(new Response(JSON.stringify({
+          access_token: "token-123",
+          instance_url: "https://instance.example.test",
+        }), { status: 200 }));
+      }
+      if (url.includes("/query/01g-campaign-next")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          records: [{
+            Id: "701-second", Name: "Second", IsActive: true,
+            CreatedDate: "2026-01-01T00:00:00.000Z",
+            LastModifiedDate: "2026-01-02T00:00:00.000Z",
+            NumberOfContacts: 0, NumberOfLeads: 0,
+          }], done: true,
+        }), { status: 200 }));
+      }
+      const decoded = decodeURIComponent(new URL(url).searchParams.get("q") ?? "");
+      if (decoded.includes(" FROM Campaign")) {
+        return Promise.resolve(new Response(JSON.stringify({
+          records: [{
+            Id: "701-first", Name: "First", IsActive: true,
+            CreatedDate: "2026-01-01T00:00:00.000Z",
+            LastModifiedDate: "2026-01-02T00:00:00.000Z",
+            NumberOfContacts: 0, NumberOfLeads: 0,
+          }],
+          done: false,
+          nextRecordsUrl: "/services/data/v61.0/query/01g-campaign-next",
+        }), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ records: [], done: true }), { status: 200 }));
+    });
+    const service = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createSalesforceApiClient(createSalesforceServiceConfig(), { fetchImplementation }),
+    });
+
+    const response = await service.handleHttpRequest({
+      method: "POST", path: "/audience-lists",
+      headers: { authorization: "Bearer salesforce-token" },
+      bodyText: JSON.stringify({ version: 1 }),
+    });
+
+    expect(response.status).toBe(200);
+    const responseBody = JSON.parse(response.body) as {
+      readonly campaigns: readonly unknown[];
+    };
+    expect(responseBody.campaigns).toHaveLength(2);
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "https://instance.example.test/services/data/v61.0/query/01g-campaign-next",
+      expect.anything(),
+    );
+  });
+
+  it("returns a structured Salesforce access error for audience-list capture", async () => {
+    const service = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createStubSalesforceApiClient(() =>
+        Promise.reject(new SalesforceQueryError(403, "INSUFFICIENT_ACCESS", "Campaign is not accessible.")),
+      ),
+    });
+
+    const response = await service.handleHttpRequest({
+      method: "POST", path: "/audience-lists",
+      headers: { authorization: "Bearer salesforce-token" },
+      bodyText: JSON.stringify({ version: 1 }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(JSON.parse(response.body)).toEqual({
+      error: "salesforce_access_error",
+      code: "INSUFFICIENT_ACCESS",
+      message: "Campaign is not accessible.",
+    });
   });
 });

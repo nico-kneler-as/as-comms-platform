@@ -7,9 +7,12 @@ import {
 import {
   salesforceHistoricalCaptureBatchPayloadSchema,
   salesforceLiveCaptureBatchPayloadSchema,
+  salesforceAudienceListsCaptureRequestSchema,
+  salesforceAudienceListsCaptureResponseSchema,
   integrationHealthCheckResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
+  type SalesforceAudienceListsSnapshot,
   type IntegrationHealthCheckResponse,
   type IntegrationHealthStatus,
 } from "@as-comms/contracts";
@@ -119,6 +122,17 @@ interface SalesforceTokenExchangeConfig {
   readonly jwtExpirationSeconds: number;
 }
 
+export class SalesforceQueryError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SalesforceQueryError";
+  }
+}
+
 export interface SalesforceTaskFieldConfig {
   readonly taskContactField: string;
   readonly taskChannelField: string;
@@ -191,6 +205,36 @@ const salesforceQueryResponseSchema = z.object({
   nextRecordsUrl: z.string().min(1).optional(),
   done: z.boolean(),
 });
+
+function parseSalesforceQueryError(input: {
+  readonly status: number;
+  readonly bodyText: string;
+}): SalesforceQueryError {
+  let code = "salesforce_query_failed";
+  let message = `Salesforce query failed with status ${String(input.status)}.`;
+
+  try {
+    const parsed = z
+      .union([
+        z.array(z.object({ errorCode: z.string().optional(), message: z.string().optional() })),
+        z.object({ errorCode: z.string().optional(), message: z.string().optional() }),
+      ])
+      .safeParse(JSON.parse(input.bodyText) as unknown);
+    if (parsed.success) {
+      const first = Array.isArray(parsed.data) ? parsed.data[0] : parsed.data;
+      if (first?.errorCode !== undefined) {
+        code = first.errorCode;
+      }
+      if (first?.message !== undefined) {
+        message = first.message;
+      }
+    }
+  } catch {
+    // Keep the safe status message when Salesforce sends a non-JSON body.
+  }
+
+  return new SalesforceQueryError(input.status, code, message);
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "TimeoutError";
@@ -694,6 +738,13 @@ function getBooleanField(
   return typeof value === "boolean" ? value : null;
 }
 
+function getNumberField(row: SalesforceRow, fieldName: string): number {
+  const value = getPathValue(row, fieldName);
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : 0;
+}
+
 function buildSalesforceCursorMarker(record: SalesforceRecord): CursorMarker {
   if (isContactSnapshotRecord(record)) {
     return {
@@ -787,10 +838,10 @@ export function createSalesforceApiClient(
 
         if (!response.ok) {
           const errorBodyText = await response.text();
-          const errorBodyPreview = errorBodyText.slice(0, 1000);
-          throw new Error(
-            `Salesforce query failed with status ${String(response.status)}. Body: ${errorBodyPreview}. SOQL: ${soql.slice(0, 500)}`,
-          );
+          throw parseSalesforceQueryError({
+            status: response.status,
+            bodyText: errorBodyText,
+          });
         }
 
         const queryPayload: unknown = JSON.parse(await response.text());
@@ -847,10 +898,10 @@ export function createSalesforceApiClient(
 
         if (!response.ok) {
           const errorBodyText = await response.text();
-          const errorBodyPreview = errorBodyText.slice(0, 1000);
-          throw new Error(
-            `Salesforce query failed with status ${String(response.status)}. Body: ${errorBodyPreview}. SOQL: ${soql.slice(0, 500)}`,
-          );
+          throw parseSalesforceQueryError({
+            status: response.status,
+            bodyText: errorBodyText,
+          });
         }
 
         const queryPayload: unknown = JSON.parse(await response.text());
@@ -1486,6 +1537,7 @@ export interface SalesforceCaptureService {
   captureLiveBatch(
     payload: SalesforceLiveCaptureBatchPayload,
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
+  captureAudienceLists(): Promise<SalesforceAudienceListsSnapshot>;
   handleHttpRequest(
     request: CaptureServiceHttpRequest,
   ): Promise<CaptureServiceHttpResponse>;
@@ -1853,6 +1905,77 @@ export function createSalesforceCaptureService(
     });
   }
 
+  async function captureAudienceLists(): Promise<SalesforceAudienceListsSnapshot> {
+    // queryAll is the historical method name. It calls Salesforce's /query
+    // endpoint, not /queryAll, so soft-deleted rows stay excluded.
+    const [campaignRows, memberRows, insiderRows] = await Promise.all([
+      apiClient.queryAll(
+        "SELECT Id, Name, Type, Status, IsActive, StartDate, EndDate, CreatedDate, LastModifiedDate, Owner.Name, NumberOfContacts, NumberOfLeads FROM Campaign",
+      ),
+      apiClient.queryAll(
+        "SELECT CampaignId, ContactId, LeadId, Email, Status FROM CampaignMember WHERE Email != null",
+      ),
+      apiClient.queryAll(
+        "SELECT Id, Email FROM Contact WHERE VIP_general__c = true AND Email != null",
+      ),
+    ]);
+
+    return salesforceAudienceListsCaptureResponseSchema.parse({
+      campaigns: campaignRows.flatMap((row) => {
+        const id = getStringField(row, "Id");
+        const name = getStringField(row, "Name");
+        const createdDate = toIsoTimestamp(getStringField(row, "CreatedDate"));
+        const lastModifiedDate = toIsoTimestamp(
+          getStringField(row, "LastModifiedDate"),
+        );
+        const isActive = getBooleanField(row, "IsActive");
+        if (
+          id === null ||
+          name === null ||
+          createdDate === null ||
+          lastModifiedDate === null ||
+          isActive === null
+        ) {
+          return [];
+        }
+
+        return [{
+          id,
+          name,
+          campaignType: getStringField(row, "Type"),
+          campaignStatus: getStringField(row, "Status"),
+          isActive,
+          startDate: getStringField(row, "StartDate"),
+          endDate: getStringField(row, "EndDate"),
+          createdDate,
+          lastModifiedDate,
+          ownerName: getStringField(row, "Owner.Name"),
+          numberOfContacts: getNumberField(row, "NumberOfContacts"),
+          numberOfLeads: getNumberField(row, "NumberOfLeads"),
+        }];
+      }),
+      members: memberRows.flatMap((row) => {
+        const campaignId = getStringField(row, "CampaignId");
+        const email = getEmailField(row, "Email");
+        return campaignId === null || email === null
+          ? []
+          : [{
+              campaignId,
+              contactId: getStringField(row, "ContactId"),
+              leadId: getStringField(row, "LeadId"),
+              email,
+              status: getStringField(row, "Status"),
+            }];
+      }),
+      insiders: insiderRows.flatMap((row) => {
+        const id = getStringField(row, "Id");
+        const email = getEmailField(row, "Email");
+        return id === null || email === null ? [] : [{ id, email }];
+      }),
+      capturedAt: now().toISOString(),
+    });
+  }
+
   return {
     captureHistoricalBatch(payload) {
       const parsedPayload =
@@ -1883,6 +2006,8 @@ export function createSalesforceCaptureService(
         windowEnd: parsedPayload.windowEnd,
       });
     },
+
+    captureAudienceLists,
 
     async handleHttpRequest(request) {
       if (!hasBearerToken(request, parsedConfig.bearerToken)) {
@@ -1916,6 +2041,14 @@ export function createSalesforceCaptureService(
           return jsonResponse(200, await this.captureLiveBatch(payload));
         }
 
+        if (request.path === "/audience-lists") {
+          parseJsonRequestBody(
+            request,
+            salesforceAudienceListsCaptureRequestSchema,
+          );
+          return jsonResponse(200, await this.captureAudienceLists());
+        }
+
         return jsonResponse(404, {
           error: "not_found",
         });
@@ -1927,6 +2060,25 @@ export function createSalesforceCaptureService(
           return jsonResponse(400, {
             error: "invalid_request",
             message: error.message,
+          });
+        }
+
+        if (
+          request.path === "/audience-lists" &&
+          error instanceof SalesforceQueryError
+        ) {
+          return jsonResponse(error.status, {
+            error: "salesforce_access_error",
+            code: error.code,
+            message: error.message,
+          });
+        }
+
+        if (request.path === "/audience-lists" && error instanceof Error) {
+          return jsonResponse(502, {
+            error: "salesforce_capture_failed",
+            code: "salesforce_capture_failed",
+            message: "Salesforce audience-list capture failed.",
           });
         }
 
