@@ -13,6 +13,11 @@ import {
   type CampaignSendTaskDependencies,
 } from "./jobs/campaign-send/index.js";
 import {
+  createCampaignResendTask,
+  campaignResendJobName,
+  type CampaignResendTaskDependencies,
+} from "./jobs/campaign-resend/index.js";
+import {
   createAutomatedEmailSendTask,
   automatedEmailSendJobName,
   type AutomatedEmailSendTaskDependencies,
@@ -110,6 +115,7 @@ export function createTaskList(
   orchestration?: Stage1WorkerOrchestrationService,
   input?: {
     readonly campaignSend?: CampaignSendTaskDependencies;
+    readonly campaignResend?: CampaignResendTaskDependencies;
     readonly automatedEmailSend?: AutomatedEmailSendTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly salesforceAudienceListsSync?: SalesforceAudienceListsSyncTaskDependencies;
@@ -139,6 +145,11 @@ export function createTaskList(
       ? {}
       : {
           [campaignSendJobName]: createCampaignSendTask(input.campaignSend),
+        }),
+    ...(input?.campaignResend === undefined
+      ? {}
+      : {
+          [campaignResendJobName]: createCampaignResendTask(input.campaignResend),
         }),
     ...(input?.automatedEmailSend === undefined
       ? {}

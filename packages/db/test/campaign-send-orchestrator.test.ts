@@ -238,6 +238,7 @@ function createOrchestrator(
       readonly intervalMs: number;
     };
     readonly scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
+    readonly scheduleResend?: (childRunId: string, runAt: Date) => Promise<void>;
     readonly now?: () => Date;
     readonly withComposition?: boolean;
   } = {},
@@ -724,6 +725,108 @@ describe("Campaign send orchestrator", () => {
 
     expect(trackOpens).toEqual([true]);
     expect(trackLinks).toEqual(["HtmlAndText"]);
+  });
+
+  it("schedules a configured non-cancelled resend when the parent completes", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 1);
+    const scheduled: { childRunId: string; runAt: Date }[] = [];
+    const now = new Date("2026-10-14T12:00:00.000Z");
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}), 500, undefined, {
+      now: () => now,
+      scheduleResend: (childRunId, runAt) => {
+        scheduled.push({ childRunId, runAt });
+        return Promise.resolve();
+      },
+    });
+    const parent = await runtime.campaigns.campaignRuns.create(buildDraftInput({ id: "run-parent-resend" }));
+    const child = await runtime.campaigns.campaignRuns.create(buildDraftInput({
+      id: "run-child-resend", resendOfRunId: parent.id, resendDelayDays: 3,
+      subjectTemplate: "A reminder", subjectTemplateB: null, abTestEnabled: false,
+    }));
+
+    await runtime.orchestrator.freeze(parent.id, now);
+    await runtime.orchestrator.processSendRequest(parent.id);
+
+    expect(scheduled).toEqual([{ childRunId: child.id, runAt: new Date("2026-10-17T12:00:00.000Z") }]);
+    await expect(context.repositories.auditEvidence.listByEntity({ entityType: "campaign_run", entityId: child.id })).resolves.toContainEqual(
+      expect.objectContaining({ action: "campaign_run.resend_scheduled" }),
+    );
+  });
+
+  it("does not schedule a cancelled resend when the parent completes", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 1);
+    const scheduled: string[] = [];
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}), 500, undefined, {
+      scheduleResend: (childRunId) => {
+        scheduled.push(childRunId);
+        return Promise.resolve();
+      },
+    });
+    const parent = await runtime.campaigns.campaignRuns.create(buildDraftInput({ id: "run-parent-cancelled-resend" }));
+    const child = await runtime.campaigns.campaignRuns.create(buildDraftInput({
+      id: "run-child-cancelled-resend", resendOfRunId: parent.id, resendDelayDays: 3,
+    }));
+    await runtime.campaigns.campaignRuns.transitionState(child.id, "draft", "cancelled", {
+      cancelledAt: "2026-10-14T12:00:00.000Z", cancelledReason: "Cancelled",
+    });
+
+    await runtime.orchestrator.freeze(parent.id, new Date("2026-10-14T12:00:00.000Z"));
+    await runtime.orchestrator.processSendRequest(parent.id);
+    expect(scheduled).toEqual([]);
+  });
+
+  it("refuses to freeze an automatic resend outside the resend job", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    await seedAudience(context, 3);
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+    const parent = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-parent-guard" }),
+    );
+    const child = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-child-guard",
+        resendOfRunId: parent.id,
+        resendDelayDays: 3,
+      }),
+    );
+
+    await expect(
+      runtime.orchestrator.freeze(child.id, new Date("2026-10-14T12:00:00.000Z")),
+    ).rejects.toThrow("frozen only by the resend job");
+    await expect(
+      runtime.campaigns.audienceSnapshots.listForRun(child.id),
+    ).resolves.toEqual([]);
+  });
+
+  it("cancels a pending resend when its parent is cancelled", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await seedProject(context);
+    const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+    const parent = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({ id: "run-parent-cancel" }),
+    );
+    const child = await runtime.campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-child-cancel",
+        resendOfRunId: parent.id,
+        resendDelayDays: 2,
+      }),
+    );
+
+    await runtime.orchestrator.cancel(parent.id, "operator_cancelled");
+
+    await expect(
+      runtime.campaigns.campaignRuns.findById(child.id),
+    ).resolves.toMatchObject({ state: "cancelled" });
   });
 
   it("stops between batches when the run is cancelled mid-send", async () => {

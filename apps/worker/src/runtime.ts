@@ -3,6 +3,9 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+  campaignResendJobMaxAttempts,
+  campaignResendJobName,
+  campaignResendPayloadSchema,
   campaignSendJobMaxAttempts,
   campaignSendJobName,
   campaignSendPayloadSchema,
@@ -58,6 +61,7 @@ import {
 } from "./ops/config.js";
 import { readNotionKnowledgeSyncConfig } from "./jobs/notion-knowledge-sync/index.js";
 import { type CampaignSendTaskDependencies } from "./jobs/campaign-send/index.js";
+import { type CampaignResendTaskDependencies } from "./jobs/campaign-resend/index.js";
 import {
   createAutomatedEmailSendTaskDependencies,
   type AutomatedEmailSendTaskDependencies,
@@ -500,6 +504,19 @@ function buildCampaignSendDependencies(input: {
             job_key => ${`campaign-send:${runId}`},
             job_key_mode => 'replace',
             max_attempts => ${campaignSendJobMaxAttempts}
+          )
+        `);
+      },
+      async scheduleResend(childRunId, runAt) {
+        const payload = campaignResendPayloadSchema.parse({ childRunId });
+        await input.connection.db.execute(sql`
+          select graphile_worker.add_job(
+            identifier => ${campaignResendJobName},
+            payload => ${JSON.stringify(payload)}::json,
+            run_at => ${runAt.toISOString()}::timestamptz,
+            job_key => ${`campaign-resend:${childRunId}`},
+            job_key_mode => 'replace',
+            max_attempts => ${campaignResendJobMaxAttempts}
           )
         `);
       },
@@ -1080,6 +1097,16 @@ export async function createStage1WorkerRuntimeServices(
     repositories,
     settings,
   });
+  const campaignResend: CampaignResendTaskDependencies | undefined =
+    campaignSend === undefined
+      ? undefined
+      : {
+          campaignRuns: campaigns.campaignRuns,
+          audienceSnapshots: campaigns.audienceSnapshots,
+          audienceComposition: campaigns.audienceComposition,
+          orchestrator: campaignSend.orchestrator,
+          auditEvidence: repositories.auditEvidence,
+        };
   const automatedEmailSend = buildAutomatedEmailSendDependencies({
     connection,
     env: input?.env ?? process.env,
@@ -1190,6 +1217,11 @@ export async function createStage1WorkerRuntimeServices(
         ? {}
         : {
             campaignSend,
+          }),
+      ...(campaignResend === undefined
+        ? {}
+        : {
+            campaignResend,
           }),
       automatedEmailSend,
       smsBroadcastSend,

@@ -372,6 +372,10 @@ const campaignRunEditableFieldsSchema = z.object({
   preheader: nullableStringSchema.default(null),
   audienceCriteria: audienceCriteriaSchema.default(audienceCriteriaDefaults),
   audienceSize: z.number().int().nonnegative().nullable().default(null),
+  // A resend is represented by a normal child run. These fields remain nullable
+  // so historic run rows and ordinary parent runs keep their wire shape.
+  resendOfRunId: nullableStringSchema.default(null),
+  resendDelayDays: z.number().int().min(1).max(14).nullable().default(null),
 });
 
 export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
@@ -431,9 +435,13 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
 type ParsedCampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
 export type CampaignRunRecord = Omit<
   ParsedCampaignRunRecord,
-  "audienceCriteria"
+  "audienceCriteria" | "resendOfRunId" | "resendDelayDays"
 > & {
   readonly audienceCriteria: AudienceCriteria;
+  // Optional at the TS boundary for legacy callers; Zod normalizes omitted
+  // wire fields to null on parsing.
+  readonly resendOfRunId?: string | null;
+  readonly resendDelayDays?: number | null;
 };
 
 function validateAudienceSnapshotRecipient(
@@ -638,6 +646,8 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     preheader: true,
     audienceCriteria: true,
     audienceSize: true,
+    resendOfRunId: true,
+    resendDelayDays: true,
   })
   .extend({
     id: idSchema,
@@ -765,6 +775,26 @@ export const campaignSendPayloadSchema = z.object({
   runId: idSchema,
 });
 export type CampaignSendPayload = z.infer<typeof campaignSendPayloadSchema>;
+
+export const campaignResendJobName = "campaign-resend" as const;
+export const campaignResendJobMaxAttempts = campaignSendJobMaxAttempts;
+export const campaignResendPayloadSchema = z.object({
+  childRunId: idSchema,
+});
+export type CampaignResendPayload = z.infer<typeof campaignResendPayloadSchema>;
+
+export const configureResendInputSchema = z.object({
+  parentRunId: idSchema,
+  delayDays: z.number().int().min(1).max(14),
+  subject: z.string().trim().min(1),
+  preheader: z.string().trim().min(1).optional(),
+});
+export type ConfigureResendInput = z.infer<typeof configureResendInputSchema>;
+
+export const cancelResendInputSchema = z.object({
+  parentRunId: idSchema,
+});
+export type CancelResendInput = z.infer<typeof cancelResendInputSchema>;
 
 export const smsBroadcastSendJobName = "sms-broadcast-send" as const;
 export const smsBroadcastSendJobMaxAttempts = campaignSendJobMaxAttempts;

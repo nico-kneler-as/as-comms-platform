@@ -314,4 +314,14 @@ describe("Stage 1 contracts", () => {
     expect(completeCsvRun.success).toBe(true);
     expect(scheduledProjectRun.success).toBe(false);
   });
+
+  it("parses legacy campaign payloads without resend fields as null", () => {
+    const parsed = campaignRunRecordSchema.parse({
+      id: "legacy-run", kind: "newsletter", launchType: "normal_email", state: "draft",
+      projectId: null, audienceCriteria: {},
+      createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
+    });
+    expect(parsed.resendOfRunId).toBeNull();
+    expect(parsed.resendDelayDays).toBeNull();
+  });
 });
