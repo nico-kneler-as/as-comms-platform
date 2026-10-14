@@ -520,7 +520,7 @@ async function CampaignRowsSection(input: {
     audienceType:
       row.kind === "newsletter"
         ? "newsletter"
-        : (postmarkRunById.get(row.runId)?.audienceCriteria.contactIds.length ??
+        : (postmarkRunById.get(row.runId)?.audienceCriteria.contactIds?.length ??
               0) > 0
           ? "specific"
           : "project",
@@ -541,7 +541,7 @@ async function CampaignRowsSection(input: {
           })(),
     previewText: postmarkPreheaders.get(row.runId) ?? null,
     selectedContactCount:
-      postmarkRunById.get(row.runId)?.audienceCriteria.contactIds.length ?? 0,
+      postmarkRunById.get(row.runId)?.audienceCriteria.contactIds?.length ?? 0,
     sentCount: metricByRunId.get(row.runId)?.sent ?? null,
     openedCount:
       row.launchType === "sms"

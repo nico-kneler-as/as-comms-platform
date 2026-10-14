@@ -23,6 +23,8 @@ import {
   buildBroadcastUnsubscribeUrls,
   isBroadcastWebVersionEligible,
   createAudienceResolver,
+  composeAudience,
+  createExclusionFilter,
   createMergeRenderer,
   formatOrgAddress,
   intersectSmsAudience,
@@ -48,6 +50,8 @@ import {
   listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
   replaceBroadcastUploadedRecipients,
+  clearBroadcastUploadedExclusions,
+  upsertBroadcastUploadedExclusions,
   searchNewsletterSubscribers,
 } from "@/src/server/stage1-runtime";
 import { parseRecipientCsv } from "@/src/lib/parse-recipient-csv";
@@ -112,6 +116,12 @@ export interface CsvUploadSummary {
   readonly invalidSkippedCount: number;
   readonly duplicatesRemovedCount: number;
   readonly sample: readonly AudiencePreviewRow[];
+}
+
+export interface ExclusionsCsvUploadSummary {
+  readonly acceptedCount: number;
+  readonly invalidSkippedCount: number;
+  readonly duplicatesRemovedCount: number;
 }
 
 type SmsCsvPreFreezeDropReason = "no_contact_match" | "ambiguous_match";
@@ -459,6 +469,7 @@ function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "salesforce_lists":
     case "project_status":
     case "specific":
       return true;
@@ -472,7 +483,8 @@ function readAudienceMode(
   | "specific"
   | "all_approved"
   | "all_available"
-  | "csv_upload" {
+  | "csv_upload"
+  | "salesforce_lists" {
   return criteria.initialFilter ?? "project_status";
 }
 
@@ -1241,6 +1253,47 @@ export async function resolveStoredCampaignAudience(input: {
     await resolver.resolveAudience(input.criteria, input.at),
     input.criteria,
   );
+}
+
+/** Read-only audience composition preview used by the broadcast wizard. */
+export async function previewComposedAudience(runId: string): Promise<{
+  readonly total: number;
+  readonly excludedByReason: Readonly<Record<string, number>>;
+  readonly consentExcluded: number;
+}> {
+  await requireAdmin();
+  const runtime = await getStage1WebRuntime();
+  const run = await runtime.campaigns.campaignRuns.findById(runId);
+  if (run === null) throw new Error(`Campaign run ${runId} was not found.`);
+  const at = new Date();
+  const base = await resolveStoredCampaignAudience({
+    kind: run.kind,
+    criteria: run.audienceCriteria,
+    at,
+    runId: run.id,
+    fromEmail: run.fromEmail,
+    projectId: run.projectId,
+  });
+  const composed = composeAudience({
+    base,
+    ...(await runtime.campaigns.audienceComposition.loadSets(run)),
+  });
+  const consent = await createExclusionFilter({
+    repositories: {
+      campaignRuns: runtime.campaigns.campaignRuns,
+      contactConsent: runtime.campaigns.contactConsent,
+      suppressionList: runtime.campaigns.suppressionList,
+      newsletterSuppressions: {
+        isSuppressed: async (email) =>
+          (await runtime.campaigns.newsletterSuppressions.findByEmail(email)) !== null,
+      },
+    },
+  }).applyExclusions(composed.members, runId, at);
+  return {
+    total: consent.eligible.length,
+    excludedByReason: composed.excludedByReason,
+    consentExcluded: consent.excluded.length,
+  };
 }
 
 async function resolveWizardAudience(
@@ -2138,6 +2191,44 @@ export async function uploadBroadcastAudienceCsvAction(input: {
         : "Unable to import the CSV audience.",
       true,
     );
+  }
+}
+
+export async function uploadBroadcastExclusionsCsvAction(input: {
+  readonly runId: string;
+  readonly csvText: string;
+}): Promise<UiResult<ExclusionsCsvUploadSummary>> {
+  await requireAdmin();
+  try {
+    const runtime = await getStage1WebRuntime();
+    const run = await runtime.campaigns.campaignRuns.findById(input.runId);
+    if (run === null) return errorResult("campaign_not_found", "Broadcast draft not found.");
+    const parsed = parseRecipientCsv(input.csvText);
+    const inserted = await upsertBroadcastUploadedExclusions(
+      input.runId,
+      parsed.recipients.map((recipient) => recipient.email),
+    );
+    return successResult({
+      acceptedCount: inserted,
+      invalidSkippedCount: parsed.invalidSkippedCount,
+      duplicatesRemovedCount: parsed.duplicatesRemovedCount + parsed.importedCount - inserted,
+    });
+  } catch (error) {
+    return errorResult("campaign_exclusions_upload_failed", error instanceof Error ? error.message : "Unable to import exclusion CSV.", true);
+  }
+}
+
+export async function clearBroadcastExclusionsAction(runId: string): Promise<UiResult<void>> {
+  await requireAdmin();
+  try {
+    const runtime = await getStage1WebRuntime();
+    if (await runtime.campaigns.campaignRuns.findById(runId) === null) {
+      return errorResult("campaign_not_found", "Broadcast draft not found.");
+    }
+    await clearBroadcastUploadedExclusions(runId);
+    return successResult(undefined);
+  } catch (error) {
+    return errorResult("campaign_exclusions_clear_failed", error instanceof Error ? error.message : "Unable to clear uploaded exclusions.", true);
   }
 }
 

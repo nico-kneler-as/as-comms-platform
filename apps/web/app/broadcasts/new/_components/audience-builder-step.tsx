@@ -203,7 +203,7 @@ export function AudienceBuilderStep({
           <>
             <ModeSegmentedControl
               modes={availableModes}
-              value={initialFilter}
+              value={initialFilter === "salesforce_lists" ? "all_available" : initialFilter}
               onChange={onInitialFilterChange}
             />
 

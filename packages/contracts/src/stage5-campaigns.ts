@@ -191,7 +191,22 @@ const audienceCriteriaDefaults = {
   lastActivityWindow: "all_time" as const,
   hasReplied: "either" as const,
   hasClicked: "either" as const,
+  salesforceListIds: [] as string[],
+  exclusions: {
+    salesforceListIds: [] as string[],
+    useUploadedExclusions: false,
+    previousRuns: [] as { runId: string; audience: "recipients" | "openers" | "clickers" }[],
+  },
 };
+
+const audienceExclusionsSchema = z.object({
+  salesforceListIds: z.array(z.string().min(1)).default([]),
+  useUploadedExclusions: z.boolean().default(false),
+  previousRuns: z.array(z.object({
+    runId: z.string().min(1),
+    audience: z.enum(["recipients", "openers", "clickers"]),
+  })).default([]),
+});
 
 export const audienceCriteriaSchema = z
   .preprocess((value) => {
@@ -219,12 +234,38 @@ export const audienceCriteriaSchema = z
           (entry) => expeditionMemberStatusSchema.safeParse(entry).success,
         )
       : input.statuses;
+    const normalizeStringList = (entries: unknown): string[] =>
+      Array.isArray(entries)
+        ? [...new Set(entries.filter((entry): entry is string =>
+            typeof entry === "string" && entry.trim().length > 0,
+          ).map((entry) => entry.trim()))]
+        : [];
+    const rawExclusions =
+      input.exclusions !== null && typeof input.exclusions === "object" && !Array.isArray(input.exclusions)
+        ? input.exclusions as Record<string, unknown>
+        : {};
 
     return {
       ...input,
       projectId: normalizedProjectIds[0] ?? null,
       projectIds: normalizedProjectIds,
       statuses: filteredStatuses,
+      salesforceListIds: normalizeStringList(input.salesforceListIds),
+      exclusions: {
+        salesforceListIds: normalizeStringList(rawExclusions.salesforceListIds),
+        useUploadedExclusions: rawExclusions.useUploadedExclusions === true,
+        previousRuns: Array.isArray(rawExclusions.previousRuns)
+          ? rawExclusions.previousRuns.flatMap((entry) => {
+              if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+              const previous = entry as Record<string, unknown>;
+              const runId = typeof previous.runId === "string" ? previous.runId.trim() : "";
+              const audience = previous.audience;
+              return runId.length > 0 && (audience === "recipients" || audience === "openers" || audience === "clickers")
+                ? [{ runId, audience }]
+                : [];
+            })
+          : [],
+      },
     };
   }, z.object({
     projectId: coercingNullableString.default(audienceCriteriaDefaults.projectId),
@@ -252,6 +293,10 @@ export const audienceCriteriaSchema = z
     hasClicked: audienceTriStateSchema.default(
       audienceCriteriaDefaults.hasClicked,
     ),
+    salesforceListIds: z.array(z.string().min(1)).default(
+      audienceCriteriaDefaults.salesforceListIds,
+    ),
+    exclusions: audienceExclusionsSchema.default(audienceCriteriaDefaults.exclusions),
     initialFilter: z
       .enum([
         "project_status",
@@ -259,6 +304,7 @@ export const audienceCriteriaSchema = z
         "all_approved",
         "all_available",
         "csv_upload",
+        "salesforce_lists",
       ])
       .optional(),
   }))
@@ -272,11 +318,17 @@ export const audienceCriteriaSchema = z
 type ParsedAudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
 export type AudienceCriteria = Omit<
   ParsedAudienceCriteria,
-  "projectId" | "contactIds" | "newsletterSubscriberIds"
+  "projectId" | "contactIds" | "newsletterSubscriberIds" | "salesforceListIds" | "exclusions"
 > & {
   readonly projectId?: string | null;
   readonly contactIds?: string[];
   readonly newsletterSubscriberIds?: string[];
+  readonly salesforceListIds?: string[];
+  readonly exclusions?: {
+    readonly salesforceListIds: string[];
+    readonly useUploadedExclusions: boolean;
+    readonly previousRuns: { readonly runId: string; readonly audience: "recipients" | "openers" | "clickers" }[];
+  };
 };
 
 const campaignRunProjectScopeSchema = z
@@ -339,6 +391,16 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
   })
   .superRefine((value, context) => {
     if (
+      value.audienceCriteria.initialFilter === "salesforce_lists" &&
+      value.kind !== "newsletter"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["audienceCriteria", "initialFilter"],
+        message: "salesforce_lists is only valid when kind='newsletter'.",
+      });
+    }
+    if (
       value.state === "draft" &&
       value.kind === "project" &&
       value.projectId === null
@@ -366,7 +428,13 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
       }
     }
   });
-export type CampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
+type ParsedCampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
+export type CampaignRunRecord = Omit<
+  ParsedCampaignRunRecord,
+  "audienceCriteria"
+> & {
+  readonly audienceCriteria: AudienceCriteria;
+};
 
 function validateAudienceSnapshotRecipient(
   value: {
@@ -575,6 +643,11 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     id: idSchema,
     createdByUserId: nullableStringSchema.default(null),
     lastEditedByUserId: nullableStringSchema.default(null),
+  })
+  .superRefine((value, context) => {
+    if (value.audienceCriteria.initialFilter === "salesforce_lists" && value.kind !== "newsletter") {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["audienceCriteria", "initialFilter"], message: "salesforce_lists is only valid when kind='newsletter'." });
+    }
   });
 export type CreateDraftInput = z.input<typeof createDraftInputSchema>;
 

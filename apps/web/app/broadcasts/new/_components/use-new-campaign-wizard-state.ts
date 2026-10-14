@@ -95,6 +95,7 @@ function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "salesforce_lists":
     case "project_status":
     case "specific":
       return true;
@@ -105,7 +106,9 @@ function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
   if (draft.audienceCriteria.initialFilter !== undefined) {
-    return draft.audienceCriteria.initialFilter;
+    return draft.audienceCriteria.initialFilter === "salesforce_lists"
+      ? "all_available"
+      : draft.audienceCriteria.initialFilter;
   }
 
   if (
@@ -523,6 +526,7 @@ function hasCompletedAudienceStep(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "salesforce_lists":
       return true;
   }
 }
@@ -832,7 +836,10 @@ export function useNewCampaignWizardState({
   }, [fromEmail, launchType, suggestedSenderEmail]);
 
   useEffect(() => {
-    const currentMode = criteria.initialFilter;
+    const currentMode =
+      criteria.initialFilter === "salesforce_lists"
+        ? "all_available"
+        : criteria.initialFilter;
     if (
       !hasPickedAudienceMode ||
       currentMode === undefined ||
@@ -930,7 +937,9 @@ export function useNewCampaignWizardState({
         return clearAudienceCriteria(current);
       }
 
-      const nextMode = availableAudienceModes.includes(current.initialFilter)
+      const nextMode: AudienceInitialFilter =
+        current.initialFilter !== "salesforce_lists" &&
+        availableAudienceModes.includes(current.initialFilter)
         ? current.initialFilter
         : defaultAudienceModeForSenderType(selectedSenderType);
 

@@ -15,6 +15,7 @@ import {
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   listBroadcastUploadedRecipientsForRun,
+  listSendableNewsletterSubscribers,
   type DatabaseConnection,
   type Stage1Database,
 } from "@as-comms/db";
@@ -472,6 +473,17 @@ function buildCampaignSendDependencies(input: {
           },
         );
       },
+      resolveNewsletterAudience: async () =>
+        (await listSendableNewsletterSubscribers(input.connection.db)).map((subscriber) => ({
+          contactId: null,
+          newsletterSubscriberId: subscriber.id,
+          frozenEmail: subscriber.email,
+          frozenFirstName: subscriber.firstName ?? null,
+          frozenProjectName: null,
+          frozenProjectId: null,
+          frozenAliasEmail: null,
+        })),
+      loadAudienceSets: (run) => input.campaigns.audienceComposition.loadSets(run),
       exclusionFilter,
       mergeRenderer,
       postmarkClient,

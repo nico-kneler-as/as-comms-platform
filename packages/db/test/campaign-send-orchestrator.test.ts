@@ -12,8 +12,11 @@ import {
 import {
   createStage5RepositoryBundle,
   listBroadcastUploadedRecipientsForRun,
+  listSendableNewsletterSubscribers,
   newsletterSubscribers,
   replaceBroadcastUploadedRecipientsForRun,
+  salesforceAudienceListMembers,
+  salesforceAudienceLists,
 } from "../src/index.js";
 import { createTestStage1Context } from "./helpers.js";
 
@@ -236,6 +239,7 @@ function createOrchestrator(
     };
     readonly scheduleContinuation?: (runId: string, runAt: Date) => Promise<void>;
     readonly now?: () => Date;
+    readonly withComposition?: boolean;
   } = {},
 ) {
   const campaigns = createStage5RepositoryBundle(context.db);
@@ -305,7 +309,88 @@ function createOrchestrator(
       ...(broadcastMessageStream === undefined
         ? {}
         : { broadcastMessageStream }),
+      ...(options.withComposition === true
+        ? {
+            resolveNewsletterAudience: async () =>
+              (await listSendableNewsletterSubscribers(context.db)).map(
+                (subscriber) => ({
+                  contactId: null,
+                  newsletterSubscriberId: subscriber.id,
+                  frozenEmail: subscriber.email,
+                  frozenFirstName: subscriber.firstName,
+                  frozenProjectName: null,
+                  frozenProjectId: null,
+                  frozenAliasEmail: null,
+                }),
+              ),
+            loadAudienceSets: (run: Parameters<typeof campaigns.audienceComposition.loadSets>[0]) =>
+              campaigns.audienceComposition.loadSets(run),
+          }
+        : {}),
     }),
+  };
+}
+
+async function seedNewsletterSubscriber(
+  context: Stage1Context,
+  id: string,
+  email: string,
+): Promise<void> {
+  await context.db.insert(newsletterSubscribers).values({
+    id,
+    email,
+    firstName: null,
+    status: "subscribed",
+    source: "mailchimp_import",
+  });
+}
+
+async function seedSalesforceList(
+  context: Stage1Context,
+  listId: string,
+  kind: "campaign" | "insiders",
+  emails: readonly string[],
+): Promise<void> {
+  await context.db.insert(salesforceAudienceLists).values({
+    id: listId,
+    kind,
+    salesforceId: kind === "campaign" ? listId.replace("campaign:", "") : null,
+    name: listId,
+    campaignType: null,
+    campaignStatus: null,
+    isActive: true,
+    ownerName: null,
+    memberCount: emails.length,
+    salesforceLastModifiedAt: null,
+    syncedAt: new Date("2026-10-14T12:00:00.000Z"),
+  });
+  if (emails.length > 0) {
+    await context.db.insert(salesforceAudienceListMembers).values(
+      emails.map((normalizedEmail) => ({
+        listId,
+        normalizedEmail,
+        salesforceContactId: null,
+        salesforceLeadId: null,
+        memberStatus: null,
+      })),
+    );
+  }
+}
+
+function buildNewsletterCriteria(
+  overrides: Partial<CreateDraftInput["audienceCriteria"]> = {},
+): CreateDraftInput["audienceCriteria"] {
+  return {
+    projectId: null,
+    projectIds: [],
+    statuses: [],
+    contactIds: [],
+    newsletterSubscriberIds: [],
+    expeditionIds: [],
+    lastActivityWindow: "all_time",
+    hasReplied: "either",
+    hasClicked: "either",
+    ...overrides,
   };
 }
 
@@ -339,6 +424,7 @@ describe("Campaign send orchestrator", () => {
     ).resolves.toEqual({
       audienceSize: 50,
       excludedCount: 0,
+      excludedByReason: {},
     });
     await orchestrator.processSendRequest(run.id);
 
@@ -1211,6 +1297,7 @@ describe("Campaign send orchestrator", () => {
     ).resolves.toEqual({
       audienceSize: 2,
       excludedCount: 2,
+      excludedByReason: {},
     });
 
     const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
@@ -1325,5 +1412,158 @@ describe("Campaign send orchestrator", () => {
       "project-one@example.org\n\nThanks,\nVolunteer Team\n\nUnsubscribe from project-one emails · Unsubscribe from all Adventure Scientists emails",
     );
     expect(htmlBody.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
+  });
+
+  describe("audience composition", () => {
+    const subscriberIds = {
+      ana: "33333333-3333-3333-3333-333333333331",
+      bo: "33333333-3333-3333-3333-333333333332",
+      cy: "33333333-3333-3333-3333-333333333333",
+    };
+
+    async function seedThreeSubscribers(context: Stage1Context) {
+      await seedNewsletterSubscriber(context, subscriberIds.ana, "ana@example.org");
+      await seedNewsletterSubscriber(context, subscriberIds.bo, "bo@example.org");
+      await seedNewsletterSubscriber(context, subscriberIds.cy, "cy@example.org");
+    }
+
+    function newsletterDraft(
+      id: string,
+      audienceCriteria: CreateDraftInput["audienceCriteria"],
+    ): CreateDraftInput {
+      return buildDraftInput({
+        id,
+        kind: "newsletter",
+        launchType: "html_email",
+        projectId: null,
+        fromEmail: "donate@adventurescientists.org",
+        audienceCriteria,
+      });
+    }
+
+    it("narrows a newsletter run to the chosen Salesforce campaigns, never reaching non-subscribers", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedThreeSubscribers(context);
+      await seedSalesforceList(context, "campaign:701A", "campaign", [
+        "ana@example.org",
+        "cy@example.org",
+        "not-a-subscriber@example.org",
+      ]);
+      const runtime = createOrchestrator(
+        context,
+        createMockPostmarkClient({}),
+        500,
+        undefined,
+        { withComposition: true },
+      );
+      const run = await runtime.campaigns.campaignRuns.create(
+        newsletterDraft(
+          "run-salesforce-lists",
+          buildNewsletterCriteria({
+            initialFilter: "salesforce_lists",
+            salesforceListIds: ["campaign:701A"],
+          }),
+        ),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-10-14T13:00:00.000Z")),
+      ).resolves.toMatchObject({ audienceSize: 2 });
+      const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+      expect(snapshots.map((snapshot) => snapshot.frozenEmail).sort()).toEqual([
+        "ana@example.org",
+        "cy@example.org",
+      ]);
+    });
+
+    it("removes excluded lists before the consent check and counts each reason", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedThreeSubscribers(context);
+      await seedSalesforceList(context, "insiders", "insiders", ["bo@example.org"]);
+      const runtime = createOrchestrator(
+        context,
+        createMockPostmarkClient({}),
+        500,
+        undefined,
+        { withComposition: true },
+      );
+      await runtime.campaigns.newsletterSuppressions.upsert({
+        email: "cy@example.org",
+        reason: "unsubscribed",
+        source: "recipient_click",
+      });
+      const run = await runtime.campaigns.campaignRuns.create(
+        newsletterDraft(
+          "run-exclude-insiders",
+          buildNewsletterCriteria({
+            initialFilter: "all_available",
+            exclusions: {
+              salesforceListIds: ["insiders"],
+              useUploadedExclusions: false,
+              previousRuns: [],
+            },
+          }),
+        ),
+      );
+
+      const frozen = await runtime.orchestrator.freeze(
+        run.id,
+        new Date("2026-10-14T13:00:00.000Z"),
+      );
+
+      expect(frozen.excludedByReason).toEqual({ "salesforce_list:insiders": 1 });
+      const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+      expect(snapshots.map((snapshot) => snapshot.frozenEmail)).toEqual([
+        "ana@example.org",
+      ]);
+    });
+
+    it("refuses to freeze a Salesforce-list run without the audience-set loader", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedThreeSubscribers(context);
+      const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+      const run = await runtime.campaigns.campaignRuns.create(
+        newsletterDraft(
+          "run-no-loader",
+          buildNewsletterCriteria({
+            initialFilter: "salesforce_lists",
+            salesforceListIds: ["campaign:701A"],
+          }),
+        ),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-10-14T13:00:00.000Z")),
+      ).rejects.toThrow("needs audience sets");
+      await expect(
+        runtime.campaigns.audienceSnapshots.listForRun(run.id),
+      ).resolves.toEqual([]);
+    });
+
+    it("refuses to freeze a Salesforce-list run with no campaign selected", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedThreeSubscribers(context);
+      const runtime = createOrchestrator(
+        context,
+        createMockPostmarkClient({}),
+        500,
+        undefined,
+        { withComposition: true },
+      );
+      const run = await runtime.campaigns.campaignRuns.create(
+        newsletterDraft(
+          "run-empty-selection",
+          buildNewsletterCriteria({ initialFilter: "salesforce_lists" }),
+        ),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-10-14T13:00:00.000Z")),
+      ).rejects.toThrow("none are selected");
+    });
   });
 });

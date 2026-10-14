@@ -12,6 +12,8 @@ import {
   insertBroadcastLinkClick,
   insertBroadcastOpen,
   listBroadcastUploadedRecipientsForRun,
+  clearBroadcastUploadedExclusionsForRun,
+  upsertBroadcastUploadedExclusionsForRun,
   listSendableNewsletterSubscribers as listSendableNewsletterSubscribersFromDb,
   replaceBroadcastUploadedRecipientsForRun,
   searchNewsletterSubscribers as searchNewsletterSubscribersFromDb,
@@ -347,6 +349,21 @@ export async function countBroadcastUploadedRecipients(runId: string) {
   }
 
   return countBroadcastUploadedRecipientsForRun(runtime.connection.db, runId);
+}
+
+export async function upsertBroadcastUploadedExclusions(
+  runId: string,
+  normalizedEmails: readonly string[],
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  return upsertBroadcastUploadedExclusionsForRun(runtime.connection.db, runId, normalizedEmails);
+}
+
+export async function clearBroadcastUploadedExclusions(runId: string) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) throw new Error("DATABASE_URL must be set before using the Stage 1 web runtime.");
+  return clearBroadcastUploadedExclusionsForRun(runtime.connection.db, runId);
 }
 
 export async function listEnabledOrgSenders() {
