@@ -1778,7 +1778,9 @@ export async function cancelDraft(
 export async function deleteDraft(
   runId: string,
 ): Promise<UiSuccess<CampaignActionData> | UiError> {
-  const admin = await assertCampaignAdmin();
+  // Authorized by the draft's own workspace: donor drafts by donors members,
+  // volunteer drafts by admins.
+  const admin = await assertCampaignAdmin(runId);
   if (!admin.ok) {
     return admin.error;
   }
@@ -1809,6 +1811,20 @@ export async function deleteDraft(
       detail: "Draft deleted before launch.",
       auditEvidence: runtime.repositories.auditEvidence,
     });
+
+    // A configured resend points at this draft (resend_of_run_id is
+    // ON DELETE RESTRICT); it can't outlive its parent, so remove it first.
+    const resend = await runtime.campaigns.campaignRuns.findResendByParentRunId(runId);
+    if (resend !== null) {
+      if (resend.state !== "draft" && resend.state !== "cancelled") {
+        return errorResult(
+          "campaign_delete_draft_failed",
+          "This draft has a reminder that is already sending.",
+          false,
+        );
+      }
+      await runtime.campaigns.campaignRuns.deleteUnsentResend(resend.id);
+    }
 
     const deleted = await runtime.campaigns.campaignRuns.deleteDraft(runId);
     if (!deleted) {

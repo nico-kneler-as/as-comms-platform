@@ -382,6 +382,8 @@ export interface Stage5RepositoryBundle {
       input: UpdateDraftInput,
     ): Promise<CampaignRunRecord>;
     deleteDraft(id: string): Promise<boolean>;
+    /** Deletes an automatic resend that never went out (draft or cancelled). */
+    deleteUnsentResend(id: string): Promise<boolean>;
     transitionState(
       id: string,
       from: RunState,
@@ -8331,6 +8333,21 @@ export function createStage5RepositoryBundle(
         const rows = await db
           .delete(campaignRuns)
           .where(and(eq(campaignRuns.id, id), eq(campaignRuns.state, "draft")))
+          .returning({ id: campaignRuns.id });
+
+        return rows.length > 0;
+      },
+
+      async deleteUnsentResend(id) {
+        const rows = await db
+          .delete(campaignRuns)
+          .where(
+            and(
+              eq(campaignRuns.id, id),
+              isNotNull(campaignRuns.resendOfRunId),
+              inArray(campaignRuns.state, ["draft", "cancelled"]),
+            ),
+          )
           .returning({ id: campaignRuns.id });
 
         return rows.length > 0;

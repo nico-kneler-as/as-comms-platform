@@ -140,7 +140,7 @@ export async function CampaignRunDetailPage(input: {
     redirect(
       input.workspace === "volunteers"
         ? `/broadcasts/new?runId=${encodeURIComponent(input.runId)}`
-        : "/donors",
+        : `/donors/new?runId=${encodeURIComponent(input.runId)}`,
     );
   }
 
