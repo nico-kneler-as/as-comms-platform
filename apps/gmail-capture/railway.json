@@ -5,6 +5,6 @@
     "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @as-comms/gmail-capture... build"
   },
   "deploy": {
-    "startCommand": "pnpm --filter @as-comms/gmail-capture start"
+    "startCommand": "node apps/gmail-capture/dist/index.js"
   }
 }
