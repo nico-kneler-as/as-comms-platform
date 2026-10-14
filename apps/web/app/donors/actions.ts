@@ -123,12 +123,17 @@ export async function createDonorAppealDraft(): Promise<DonorAppealDraft> {
     bodyDesignJson: null,
     bodyTextTemplate: null,
     preheader: null,
-    audienceCriteria: audienceCriteriaSchema.parse({ initialFilter: "all_available" }),
+    // Whole-list appeals leave Insiders out unless Devynn unticks it.
+    audienceCriteria: audienceCriteriaSchema.parse({
+      initialFilter: "all_available",
+      exclusions: { salesforceListIds: ["insiders"] },
+    }),
     audienceSize: null,
     createdByUserId: access.user.id,
     lastEditedByUserId: access.user.id,
   });
-  revalidatePath("/donors");
+  // Called while /donors/new renders, where revalidatePath is not allowed;
+  // /donors is force-dynamic, so the new draft shows up without it.
   return mapDraft(created, access.user.email);
 }
 

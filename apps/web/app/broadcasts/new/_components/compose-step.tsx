@@ -70,6 +70,8 @@ interface ComposeStepProps {
   /** Donor appeals have no volunteer project context, so project merge tags
    * would promise values that do not exist. */
   readonly showMergeTags?: boolean;
+  /** Donor appeals send one subject; the A/B toggle is volunteer-only. */
+  readonly showAbTest?: boolean;
   readonly onSubjectChange: (value: string) => void;
   readonly onSubjectBChange?: (value: string) => void;
   readonly onAbTestEnabledChange?: (value: boolean) => void;
@@ -164,6 +166,7 @@ export function ComposeStep({
   frozen,
   continuePending = false,
   showMergeTags = true,
+  showAbTest = true,
   onSubjectChange,
   onSubjectBChange = () => undefined,
   onAbTestEnabledChange = () => undefined,
@@ -302,7 +305,7 @@ export function ComposeStep({
   function renderEmailSubjectFields() {
     return (
       <>
-        <div className="border-b border-slate-200 bg-slate-50/40 px-4 py-3">
+        {showAbTest ? <div className="border-b border-slate-200 bg-slate-50/40 px-4 py-3">
           <label className="inline-flex items-center gap-2 text-[12px] font-medium text-slate-700">
             <input
               id="campaign-ab-subject-test"
@@ -320,7 +323,7 @@ export function ComposeStep({
           <p className="mt-1 text-[11px] text-slate-500">
             Split the frozen audience 50/50 between subject A and subject B.
           </p>
-        </div>
+        </div> : null}
 
         <div className="flex items-baseline gap-3 border-b border-slate-200 px-4 py-2.5">
           <label
