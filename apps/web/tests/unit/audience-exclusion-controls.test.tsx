@@ -18,7 +18,10 @@ import {
   ExclusionCsvUpload,
   PreviousBroadcastExclusion,
 } from "../../app/_components/audience-exclusions/audience-exclusion-controls";
-import { ResendPanel } from "../../app/_components/audience-exclusions/resend-panel";
+import {
+  ResendPanel,
+  reminderDetailHref,
+} from "../../app/_components/audience-exclusions/resend-panel";
 
 const workerRequire = createRequire(import.meta.url);
 const { JSDOM } = workerRequire("jsdom") as { readonly JSDOM: new (html?: string, options?: { readonly url?: string }) => { readonly window: Window & typeof globalThis } };
@@ -82,6 +85,13 @@ describe("volunteer broadcast exclusions", () => {
 });
 
 describe("volunteer broadcast resend panel", () => {
+  it("links the reminder to its own workspace without a function prop", () => {
+    // The run detail page is a server component: a function prop here crashed
+    // every sent broadcast's page (digest 4005909367, 2026-10-15).
+    expect(reminderDetailHref("volunteers", "run 1")).toBe("/broadcasts/run%201");
+    expect(reminderDetailHref("donors", "run-2")).toBe("/donors/run-2");
+  });
+
   it("renders configured, cancelled, and sent states with volunteer detail links", () => {
     const panel = (child: React.ComponentProps<typeof ResendPanel>["child"]) =>
       renderToStaticMarkup(
@@ -89,7 +99,6 @@ describe("volunteer broadcast resend panel", () => {
           parentRunId="parent"
           child={child}
           workspace="volunteers"
-          detailHref={(runId) => `/broadcasts/${runId}`}
         />,
       );
 

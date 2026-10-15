@@ -90,7 +90,7 @@ async function RightRailSection({ modelPromise, showResendPanel }: { readonly mo
       <SendDetailsPanel model={model} />
       <WebVersionPanel runId={model.run.id} webVersion={model.webVersion} />
       <AudienceCriteriaPanel model={model} />
-      {showResendPanel ? <ResendPanel parentRunId={model.run.id} child={resend === null ? null : { id: resend.id, state: resend.state, scheduledAt: resend.scheduledAt, audienceSize: resend.audienceSize }} workspace={model.run.workspace} detailHref={(runId) => `${model.run.workspace === "donors" ? "/donors" : "/broadcasts"}/${encodeURIComponent(runId)}`} /> : null}
+      {showResendPanel ? <ResendPanel parentRunId={model.run.id} child={resend === null ? null : { id: resend.id, state: resend.state, scheduledAt: resend.scheduledAt, audienceSize: resend.audienceSize }} workspace={model.run.workspace} /> : null}
       {model.provider === "mailchimp" ? null : (
         <RunAuditLog entries={model.auditEntries} />
       )}
