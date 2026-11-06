@@ -12,6 +12,7 @@ vi.mock("@/src/server/auth/session", () => ({
 import {
   saveCampaignWizardDraftAction,
   getAudienceBuilderBootstrap,
+  loadAudienceStateCountsAction,
   loadSmsCsvAudienceSummaryAction,
   loadMemberStatusCountsForProjects,
   previewAudienceAction,
@@ -237,6 +238,23 @@ async function seedNewsletterSuppression(
       ${new Date("2026-06-01T12:00:00.000Z").toISOString()}::timestamptz
     )
   `);
+}
+
+async function seedResidenceStates(
+  runtime: Stage1WebTestRuntime,
+  states: readonly { readonly email: string; readonly code: "MT" | "ID" | null }[],
+  syncedAt = new Date("2026-11-06T12:00:00.000Z"),
+): Promise<void> {
+  await runtime.runtime.campaigns.salesforceContactStates.replaceAll(
+    states.map((state, index) => ({
+      normalizedEmail: state.email,
+      stateCode: state.code,
+      rawState: state.code ?? "",
+      salesforceContactId: `salesforce-${String(index)}`,
+      salesforceLastModifiedAt: new Date("2026-11-01T12:00:00.000Z"),
+    })),
+    syncedAt,
+  );
 }
 
 async function createProjectBroadcastDraft(
@@ -670,10 +688,21 @@ describe("campaign audience data source", () => {
       firstName: "Bravo",
       status: "subscribed",
     });
+    await seedNewsletterSubscriber(runtime, {
+      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      email: "charlie@example.org",
+      firstName: "Charlie",
+      status: "subscribed",
+    });
     await seedNewsletterSuppression(runtime, {
       id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
       email: "bravo@example.org",
     });
+    await seedResidenceStates(runtime, [
+      { email: "alpha@example.org", code: "MT" },
+      { email: "bravo@example.org", code: "ID" },
+      { email: "charlie@example.org", code: "ID" },
+    ]);
 
     const result = await resolveAudienceCountAction({
       runId: "newsletter-preview",
@@ -687,6 +716,7 @@ describe("campaign audience data source", () => {
         lastActivityWindow: "all_time",
         hasReplied: "either",
         hasClicked: "either",
+        states: ["MT"],
         initialFilter: "all_available",
       },
     });
@@ -696,6 +726,375 @@ describe("campaign audience data source", () => {
       data: {
         count: 1,
         hasAppliedFilters: true,
+      },
+    });
+  });
+
+  it("filters project/status audiences by state for both stored resolution and the count action", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-state",
+      projectName: "Stateful Forests",
+      email: "states@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-mt",
+      displayName: "Montana Member",
+      email: "montana@example.org",
+    });
+    await seedContact(runtime, {
+      contactId: "contact-id",
+      displayName: "Idaho Member",
+      email: "idaho@example.org",
+    });
+    await seedMembership(runtime, {
+      id: "membership-mt",
+      contactId: "contact-mt",
+      projectId: "project-state",
+      status: "Active",
+    });
+    await seedMembership(runtime, {
+      id: "membership-id",
+      contactId: "contact-id",
+      projectId: "project-state",
+      status: "Active",
+    });
+    await seedResidenceStates(runtime, [
+      { email: "montana@example.org", code: "MT" },
+      { email: "idaho@example.org", code: "ID" },
+    ]);
+    const criteria = {
+      projectId: "project-state",
+      projectIds: ["project-state"],
+      statuses: [],
+      contactIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time" as const,
+      hasReplied: "either" as const,
+      hasClicked: "either" as const,
+      states: ["MT" as const],
+      initialFilter: "project_status" as const,
+    };
+
+    const audience = await resolveStoredCampaignAudience({
+      kind: "project",
+      criteria,
+      at: new Date("2026-11-06T12:00:00.000Z"),
+    });
+    const count = await resolveAudienceCountAction({
+      runId: "state-preview",
+      kind: "project",
+      criteria,
+    });
+
+    expect(audience.map((member) => member.frozenEmail)).toEqual([
+      "montana@example.org",
+    ]);
+    expect(count).toMatchObject({ ok: true, data: { count: 1 } });
+  });
+
+  it("filters all-approved newsletter audiences at freeze instead of falling back to subscribers", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-1111-1111-1111-111111111111",
+      email: "subscriber@example.org",
+      firstName: "Subscriber",
+      status: "subscribed",
+    });
+    await seedResidenceStates(runtime, [
+      { email: "approved@example.org", code: "MT" },
+      { email: "subscriber@example.org", code: "ID" },
+    ]);
+    (
+      runtime.runtime.connection as {
+        sql: (strings: TemplateStringsArray, ...values: readonly unknown[]) => Promise<readonly unknown[]>;
+      }
+    ).sql = vi.fn(() => Promise.resolve([{
+      contactId: "approved-contact",
+      displayName: "Approved Contact",
+      email: "approved@example.org",
+      projectId: "approved-project",
+      projectName: "Approved Project",
+    }]));
+
+    const audience = await resolveStoredCampaignAudience({
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: ["MT"],
+        initialFilter: "all_approved",
+      },
+      at: new Date("2026-11-06T12:00:00.000Z"),
+    });
+
+    expect(audience.map((member) => member.frozenEmail)).toEqual([
+      "approved@example.org",
+    ]);
+  });
+
+  it("freezes hand-picked subscribers even when the mode marker says all_available (never widens)", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-3333-3333-3333-333333333333",
+      email: "picked@example.org",
+      firstName: "Picked",
+      status: "subscribed",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-4444-4444-4444-444444444444",
+      email: "not-picked@example.org",
+      firstName: "Other",
+      status: "subscribed",
+    });
+
+    const audience = await resolveStoredCampaignAudience({
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: ["88888888-3333-3333-3333-333333333333"],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "all_available",
+      },
+      at: new Date("2026-11-06T12:00:00.000Z"),
+    });
+
+    expect(audience.map((member) => member.frozenEmail)).toEqual([
+      "picked@example.org",
+    ]);
+  });
+
+  it("ignores states for specific and CSV-upload audiences without looking up state records", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-2222-2222-2222-222222222222",
+      email: "specific@example.org",
+      firstName: "Specific",
+      status: "subscribed",
+    });
+    await seedProject(runtime, {
+      projectId: "project-csv-state",
+      projectName: "CSV State Project",
+      email: "csv-states@example.org",
+    });
+    await createProjectBroadcastDraft(runtime, {
+      runId: "run-csv-state",
+      projectId: "project-csv-state",
+      fromEmail: "csv-states@example.org",
+    });
+    await uploadBroadcastAudienceCsvAction({
+      runId: "run-csv-state",
+      csvText: "email\ncsv@example.org",
+    });
+    const findByEmails = vi.spyOn(
+      runtime.runtime.campaigns.salesforceContactStates,
+      "findByEmails",
+    );
+
+    const specific = await resolveStoredCampaignAudience({
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: ["88888888-2222-2222-2222-222222222222"],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: ["ID"],
+        initialFilter: "specific",
+      },
+      at: new Date("2026-11-06T12:00:00.000Z"),
+    });
+    const csv = await resolveStoredCampaignAudience({
+      kind: "project",
+      runId: "run-csv-state",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: ["ID"],
+        initialFilter: "csv_upload",
+      },
+      at: new Date("2026-11-06T12:00:00.000Z"),
+      fromEmail: "csv-states@example.org",
+      projectId: "project-csv-state",
+    });
+
+    expect(specific.map((member) => member.frozenEmail)).toEqual([
+      "specific@example.org",
+    ]);
+    expect(csv.map((member) => member.frozenEmail)).toEqual(["csv@example.org"]);
+    expect(findByEmails).not.toHaveBeenCalled();
+  });
+
+  it("does not look up state records when a project/status state selection is empty", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-no-state",
+      projectName: "No State Project",
+      email: "no-state@example.org",
+    });
+    const findByEmails = vi.spyOn(
+      runtime.runtime.campaigns.salesforceContactStates,
+      "findByEmails",
+    );
+
+    await resolveStoredCampaignAudience({
+      kind: "project",
+      criteria: {
+        projectId: "project-no-state",
+        projectIds: ["project-no-state"],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: [],
+        initialFilter: "project_status",
+      },
+      at: new Date("2026-11-06T12:00:00.000Z"),
+    });
+
+    expect(findByEmails).not.toHaveBeenCalled();
+  });
+
+  it("returns empty state counts without querying when project/status has no project", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    const findByEmails = vi.spyOn(
+      runtime.runtime.campaigns.salesforceContactStates,
+      "findByEmails",
+    );
+    const lastSyncedAt = vi.spyOn(
+      runtime.runtime.campaigns.salesforceContactStates,
+      "lastSyncedAt",
+    );
+
+    const result = await loadAudienceStateCountsAction({
+      kind: "project",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: ["MT"],
+        initialFilter: "project_status",
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        byState: [],
+        noStateOnFile: 0,
+        total: 0,
+        lastSyncedAt: null,
+      },
+    });
+    expect(findByEmails).not.toHaveBeenCalled();
+    expect(lastSyncedAt).not.toHaveBeenCalled();
+  });
+
+  it("returns state counts for the unfiltered audience and the snapshot timestamp", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-3333-3333-3333-333333333333",
+      email: "montana-subscriber@example.org",
+      firstName: "Montana",
+      status: "subscribed",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-4444-4444-4444-444444444444",
+      email: "idaho-subscriber@example.org",
+      firstName: "Idaho",
+      status: "subscribed",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "88888888-5555-5555-5555-555555555555",
+      email: "missing-subscriber@example.org",
+      firstName: "Missing",
+      status: "subscribed",
+    });
+    await seedResidenceStates(
+      runtime,
+      [
+        { email: "montana-subscriber@example.org", code: "MT" },
+        { email: "idaho-subscriber@example.org", code: "ID" },
+      ],
+      new Date("2026-11-06T15:30:00.000Z"),
+    );
+
+    const result = await loadAudienceStateCountsAction({
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        states: ["MT"],
+        initialFilter: "all_available",
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        byState: [
+          { code: "ID", count: 1 },
+          { code: "MT", count: 1 },
+        ],
+        noStateOnFile: 1,
+        total: 3,
+        lastSyncedAt: "2026-11-06T15:30:00.000Z",
       },
     });
   });

@@ -18,6 +18,7 @@ vi.mock("lucide-react", () => ({
   Filter: () => null,
   LoaderCircle: () => null,
   Lock: () => null,
+  Plus: () => null,
   Search: () => null,
   Sparkles: () => null,
   User: () => null,
@@ -145,10 +146,20 @@ const baseProps: React.ComponentProps<typeof AudienceBuilderStep> = {
   statusCounts: {},
   statusCountsLoading: false,
   statusCountsErrorMessage: null,
+  stateCounts: {
+    byState: [],
+    noStateOnFile: 0,
+    total: 0,
+    lastSyncedAt: "2026-11-06T00:00:00.000Z",
+  },
+  stateCountsLoading: false,
+  stateCountsErrorMessage: null,
   onInitialFilterChange: () => undefined,
   onProjectChange: () => undefined,
   onToggleAllStatuses: () => undefined,
   onStatusToggle: () => undefined,
+  onStateToggle: () => undefined,
+  onClearStates: () => undefined,
   onVolunteerSearchQueryChange: () => undefined,
   onVolunteerToggle: () => undefined,
   onCsvUpload: () => Promise.resolve(),
@@ -211,8 +222,56 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain(
       "This broadcast goes to every subscribed newsletter recipient, minus suppressions.",
     );
-    expect(markup).not.toContain("Audience filters");
+    expect(markup).toContain("Audience filters");
+    expect(markup).toContain("State");
     expect(markup).not.toContain("Find volunteers");
+  });
+
+  it("shows State only for supported email audience modes", () => {
+    const allApproved = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        availableModes={["all_approved"]}
+        criteria={{ ...baseProps.criteria, initialFilter: "all_approved" }}
+        countState={{ count: 12, hasAppliedFilters: true }}
+      />,
+    );
+    const smsProject = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        launchType="sms"
+        hasPickedMode={true}
+        criteria={{
+          ...baseProps.criteria,
+          projectId: "project-1",
+          projectIds: ["project-1"],
+          statuses: ["Waitlist"],
+          initialFilter: "project_status",
+        }}
+        countState={{ count: 12, hasAppliedFilters: true }}
+      />,
+    );
+    const specific = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        criteria={{ ...baseProps.criteria, initialFilter: "specific" }}
+      />,
+    );
+    const csvUpload = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...baseProps}
+        hasPickedMode={true}
+        criteria={{ ...baseProps.criteria, initialFilter: "csv_upload" }}
+      />,
+    );
+
+    expect(allApproved).toContain("Audience filters");
+    expect(allApproved).toContain(">State<");
+    expect(smsProject).not.toContain(">State<");
+    expect(specific).not.toContain(">State<");
+    expect(csvUpload).not.toContain(">State<");
   });
 
   it("renders the CSV upload surface for project email audiences", () => {
@@ -397,6 +456,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("Audience filters");
     expect(markup).toContain("Inherited from forests@");
     expect(markup).toContain("Member status");
+    expect(markup).toContain("State");
     expect(markup).toContain("Waitlist");
     expect(markup).not.toContain("TOP-FUNNEL");
     expect(markup).not.toContain("Search by name or email");
@@ -422,6 +482,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).toContain("Search by name or email");
     expect(markup).not.toContain("Audience filters");
     expect(markup).not.toContain("Member status");
+    expect(markup).not.toContain("State");
     expect(markup).not.toContain("Toggle expedition-member status");
   });
 
@@ -714,6 +775,17 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadAudienceStateCountsAction: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          data: {
+            byState: [],
+            noStateOnFile: 0,
+            total: 5,
+            lastSyncedAt: "2026-11-06T00:00:00.000Z",
+          },
+        }),
+      ),
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
       loadSelectedAliasSignatureAction: vi.fn(() =>
@@ -1001,6 +1073,17 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadAudienceStateCountsAction: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          data: {
+            byState: [],
+            noStateOnFile: 0,
+            total: 5,
+            lastSyncedAt: "2026-11-06T00:00:00.000Z",
+          },
+        }),
+      ),
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
       loadSelectedAliasSignatureAction: vi.fn(() =>
@@ -1231,6 +1314,17 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadAudienceStateCountsAction: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          data: {
+            byState: [],
+            noStateOnFile: 0,
+            total: 5,
+            lastSyncedAt: "2026-11-06T00:00:00.000Z",
+          },
+        }),
+      ),
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
       loadSelectedAliasSignatureAction: vi.fn(() =>
@@ -1479,6 +1573,17 @@ describe("AudienceBuilderStep initial filter gate", () => {
     );
 
     vi.doMock("../../app/broadcasts/_lib/audience-data-source", () => ({
+      loadAudienceStateCountsAction: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          data: {
+            byState: [],
+            noStateOnFile: 0,
+            total: 5,
+            lastSyncedAt: "2026-11-06T00:00:00.000Z",
+          },
+        }),
+      ),
       loadMemberStatusCountsForProjects,
       loadComposePreviewAction,
       loadSelectedAliasSignatureAction: vi.fn(() =>

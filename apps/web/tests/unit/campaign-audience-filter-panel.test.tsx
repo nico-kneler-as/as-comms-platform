@@ -9,6 +9,7 @@ Object.assign(globalThis, { React });
 
 vi.mock("lucide-react", () => ({
   Check: () => null,
+  Plus: () => null,
   LoaderCircle: () => null,
   Lock: () => null,
 }));
@@ -101,9 +102,19 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof AudienceFilt
     },
     statusCountsLoading: false,
     statusCountsErrorMessage: null,
+    stateCounts: {
+      byState: [],
+      noStateOnFile: 0,
+      total: 0,
+      lastSyncedAt: "2026-11-06T00:00:00.000Z",
+    },
+    stateCountsLoading: false,
+    stateCountsErrorMessage: null,
     onToggleAllStatuses: () => undefined,
     onProjectChange: () => undefined,
     onStatusToggle: () => undefined,
+    onStateToggle: () => undefined,
+    onClearStates: () => undefined,
     ...overrides,
   };
 

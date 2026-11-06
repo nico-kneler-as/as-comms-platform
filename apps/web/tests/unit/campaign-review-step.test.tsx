@@ -57,6 +57,7 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   subject: "Gear pickup for Sam",
   selectedSenderVerified: true,
   audienceSize: 1247,
+  states: [],
   smsPreviewData: null,
   sendMode: "now",
   scheduleDate: "2026-05-20",
