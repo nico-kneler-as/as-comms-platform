@@ -196,6 +196,7 @@ describe("Stage 1 contracts", () => {
       lastActivityWindow: "all_time", hasReplied: "either", hasClicked: "either",
     };
     const parsed = audienceCriteriaSchema.parse(legacy);
+    expect(parsed.states).toEqual([]);
     expect(parsed.exclusions).toEqual({ salesforceListIds: [], useUploadedExclusions: false, previousRuns: [] });
     expect(audienceCriteriaSchema.parse(parsed)).toEqual(parsed);
     // A draft may pick the mode before any campaign; sending enforces a selection.
@@ -206,6 +207,14 @@ describe("Stage 1 contracts", () => {
       audienceCriteria: { initialFilter: "salesforce_lists", salesforceListIds: ["campaign:1"] },
       createdAt: "2026-10-14T00:00:00.000Z", updatedAt: "2026-10-14T00:00:00.000Z",
     }).success).toBe(false);
+  });
+
+  it("normalizes optional residence-state criteria as canonical codes", () => {
+    expect(audienceCriteriaSchema.parse({}).states).toEqual([]);
+    expect(audienceCriteriaSchema.parse({
+      states: [" mt", "MT", "id", "Montana", "ZZ", 5],
+    }).states).toEqual(["MT", "ID"]);
+    expect(audienceCriteriaSchema.parse({ projectIds: ["project-1"] }).states).toEqual([]);
   });
 
   it("accepts every campaign email activity type on a timeline item", () => {

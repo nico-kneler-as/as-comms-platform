@@ -99,6 +99,14 @@ describe("use-new-campaign-wizard-state saved-draft fingerprint", () => {
     );
   });
 
+  it("notices a residence-state-only change", () => {
+    const changed = { ...onScreen, states: ["MT" as const] };
+
+    expect(JSON.stringify(normalizeCriteriaForFingerprint(changed))).not.toBe(
+      JSON.stringify(normalizeCriteriaForFingerprint(onScreen)),
+    );
+  });
+
   it("ignores the key order Postgres gives back for an email design", () => {
     expect(designJsonFingerprint({ body: { rows: [] }, counters: { u_row: 1 } })).toBe(
       designJsonFingerprint({ counters: { u_row: 1 }, body: { rows: [] } }),

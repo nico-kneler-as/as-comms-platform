@@ -168,6 +168,7 @@ export function normalizeCriteriaForFingerprint(
 ): unknown {
   return sortKeysDeep({
     ...criteria,
+    states: criteria.states ?? [],
     salesforceListIds: criteria.salesforceListIds ?? [],
     exclusions: {
       salesforceListIds: criteria.exclusions?.salesforceListIds ?? [],
