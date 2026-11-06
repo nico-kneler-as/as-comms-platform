@@ -75,6 +75,7 @@ import {
   type SuppressionListRecord,
   type SuppressionReason,
   type SalesforceAudienceListsSnapshot,
+  type ResidenceStateCode,
   type UpsertNewsletterSuppressionInput,
   type UpdateDraftInput,
   type WebhookDeadLetterFailureKind,
@@ -199,6 +200,7 @@ import {
   salesforceCommunicationDetails,
   salesforceAudienceListMembers,
   salesforceAudienceLists,
+  salesforceContactStates,
   salesforceReconciliationRuns,
   salesforceEventContext,
   simpleTextingMessageDetails,
@@ -354,6 +356,7 @@ export class StaleCampaignRunDraftError extends Error {
 
 export interface Stage5RepositoryBundle {
   readonly salesforceAudienceLists: SalesforceAudienceListsRepository;
+  readonly salesforceContactStates: SalesforceContactStatesRepository;
   readonly audienceComposition: {
     listUploadedExclusions(runId: string): Promise<readonly string[]>;
     upsertUploadedExclusions(runId: string, emails: readonly string[]): Promise<number>;
@@ -552,6 +555,21 @@ export interface SalesforceAudienceListsRepository {
   listAll(): Promise<readonly SalesforceAudienceListRecord[]>;
   emailsForLists(listIds: readonly string[]): Promise<readonly string[]>;
   lastSyncedAt(): Promise<string | null>;
+}
+
+export interface SalesforceContactStateRecord {
+  readonly normalizedEmail: string;
+  readonly stateCode: ResidenceStateCode | null;
+  readonly rawState: string;
+  readonly salesforceContactId: string;
+  readonly salesforceLastModifiedAt: Date;
+}
+
+export interface SalesforceContactStatesRepository {
+  replaceAll(records: readonly SalesforceContactStateRecord[], syncedAt: Date): Promise<void>;
+  findByEmails(normalizedEmails: readonly string[]): Promise<ReadonlyMap<string, ResidenceStateCode | null>>;
+  lastSyncedAt(): Promise<Date | null>;
+  countAll(): Promise<number>;
 }
 
 export function defineStage5RepositoryBundle<T extends Stage5RepositoryBundle>(
@@ -7740,6 +7758,8 @@ function mapCampaignRunMutationFields(
 // binds 22, so a single INSERT fails for any audience above ~2,978 recipients.
 const AUDIENCE_SNAPSHOT_BULK_INSERT_CHUNK_SIZE = 1_000;
 const SALESFORCE_AUDIENCE_LIST_MEMBER_INSERT_CHUNK_SIZE = 1_000;
+const SALESFORCE_CONTACT_STATE_INSERT_CHUNK_SIZE = 1_000;
+const SALESFORCE_CONTACT_STATE_LOOKUP_CHUNK_SIZE = 5_000;
 
 function createSalesforceAudienceListsRepository(
   db: Stage1Database,
@@ -7941,6 +7961,72 @@ function createSalesforceAudienceListsRepository(
   };
 }
 
+function createSalesforceContactStatesRepository(
+  db: Stage1Database,
+): SalesforceContactStatesRepository {
+  return {
+    async replaceAll(records, syncedAt) {
+      await db.transaction(async (tx) => {
+        await tx.delete(salesforceContactStates);
+        for (
+          let index = 0;
+          index < records.length;
+          index += SALESFORCE_CONTACT_STATE_INSERT_CHUNK_SIZE
+        ) {
+          await tx.insert(salesforceContactStates).values(
+            records
+              .slice(index, index + SALESFORCE_CONTACT_STATE_INSERT_CHUNK_SIZE)
+              .map((record) => ({ ...record, syncedAt })),
+          );
+        }
+      });
+    },
+
+    async findByEmails(normalizedEmails) {
+      const result = new Map<string, ResidenceStateCode | null>();
+      const emails = [...new Set(normalizedEmails)];
+      for (
+        let index = 0;
+        index < emails.length;
+        index += SALESFORCE_CONTACT_STATE_LOOKUP_CHUNK_SIZE
+      ) {
+        const rows = await db
+          .select({
+            normalizedEmail: salesforceContactStates.normalizedEmail,
+            stateCode: salesforceContactStates.stateCode,
+          })
+          .from(salesforceContactStates)
+          .where(
+            inArray(
+              salesforceContactStates.normalizedEmail,
+              emails.slice(index, index + SALESFORCE_CONTACT_STATE_LOOKUP_CHUNK_SIZE),
+            ),
+          );
+        for (const row of rows) {
+          result.set(row.normalizedEmail, row.stateCode as ResidenceStateCode | null);
+        }
+      }
+      return result;
+    },
+
+    async lastSyncedAt() {
+      const [row] = await db
+        .select({ syncedAt: salesforceContactStates.syncedAt })
+        .from(salesforceContactStates)
+        .orderBy(desc(salesforceContactStates.syncedAt))
+        .limit(1);
+      return row?.syncedAt ?? null;
+    },
+
+    async countAll() {
+      const [row] = await db
+        .select({ count: count() })
+        .from(salesforceContactStates);
+      return row?.count ?? 0;
+    },
+  };
+}
+
 function mapAudienceSnapshotInsert(
   runId: string,
   member: NewAudienceSnapshot,
@@ -8084,6 +8170,7 @@ export function createStage5RepositoryBundle(
 
   return defineStage5RepositoryBundle({
     salesforceAudienceLists: createSalesforceAudienceListsRepository(db),
+    salesforceContactStates: createSalesforceContactStatesRepository(db),
     audienceComposition: {
       listUploadedExclusions: (runId) => listBroadcastUploadedExclusionsForRun(db, runId),
       upsertUploadedExclusions: (runId, emails) =>

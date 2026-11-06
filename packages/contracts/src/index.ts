@@ -7,6 +7,7 @@ export * from "./ops-digest.js";
 export * from "./settings.js";
 export * from "./settings-records.js";
 export * from "./salesforce-audience-lists.js";
+export * from "./salesforce-contact-states.js";
 export * from "./residence-states.js";
 export * from "./stage5-broadcast-link-clicks.js";
 export * from "./stage5-broadcast-opens.js";

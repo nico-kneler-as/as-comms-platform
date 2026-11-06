@@ -2383,3 +2383,22 @@ export const salesforceAudienceListMembers = pgTable(
     ),
   ],
 );
+
+export const salesforceContactStates = pgTable(
+  "salesforce_contact_states",
+  {
+    normalizedEmail: text("normalized_email").primaryKey(),
+    stateCode: text("state_code"),
+    rawState: text("raw_state").notNull(),
+    salesforceContactId: text("salesforce_contact_id").notNull(),
+    salesforceLastModifiedAt: timestamp("salesforce_last_modified_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    syncedAt: timestamp("synced_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+  },
+  (table) => [index("salesforce_contact_states_state_code_idx").on(table.stateCode)],
+);

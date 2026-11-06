@@ -9,10 +9,13 @@ import {
   salesforceLiveCaptureBatchPayloadSchema,
   salesforceAudienceListsCaptureRequestSchema,
   salesforceAudienceListsCaptureResponseSchema,
+  salesforceContactStatesCaptureRequestSchema,
+  salesforceContactStatesCaptureResponseSchema,
   integrationHealthCheckResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type SalesforceAudienceListsSnapshot,
+  type SalesforceContactStatesSnapshot,
   type IntegrationHealthCheckResponse,
   type IntegrationHealthStatus,
 } from "@as-comms/contracts";
@@ -1538,6 +1541,7 @@ export interface SalesforceCaptureService {
     payload: SalesforceLiveCaptureBatchPayload,
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
   captureAudienceLists(): Promise<SalesforceAudienceListsSnapshot>;
+  captureContactStates(): Promise<SalesforceContactStatesSnapshot>;
   handleHttpRequest(
     request: CaptureServiceHttpRequest,
   ): Promise<CaptureServiceHttpResponse>;
@@ -1976,6 +1980,26 @@ export function createSalesforceCaptureService(
     });
   }
 
+  async function captureContactStates(): Promise<SalesforceContactStatesSnapshot> {
+    const rows = await apiClient.queryAll(
+      "SELECT Id, Email, State__c, LastModifiedDate FROM Contact WHERE Email != null AND State__c != null",
+    );
+    return salesforceContactStatesCaptureResponseSchema.parse({
+      rows: rows.flatMap((row) => {
+        const salesforceContactId = getStringField(row, "Id");
+        const email = getStringField(row, "Email");
+        const rawState = getStringField(row, "State__c");
+        const lastModifiedAt = toIsoTimestamp(
+          getStringField(row, "LastModifiedDate"),
+        );
+        return salesforceContactId === null || email === null || rawState === null || lastModifiedAt === null
+          ? []
+          : [{ salesforceContactId, email, rawState, lastModifiedAt }];
+      }),
+      capturedAt: now().toISOString(),
+    });
+  }
+
   return {
     captureHistoricalBatch(payload) {
       const parsedPayload =
@@ -2008,6 +2032,7 @@ export function createSalesforceCaptureService(
     },
 
     captureAudienceLists,
+    captureContactStates,
 
     async handleHttpRequest(request) {
       if (!hasBearerToken(request, parsedConfig.bearerToken)) {
@@ -2049,6 +2074,14 @@ export function createSalesforceCaptureService(
           return jsonResponse(200, await this.captureAudienceLists());
         }
 
+        if (request.path === "/contact-states") {
+          parseJsonRequestBody(
+            request,
+            salesforceContactStatesCaptureRequestSchema,
+          );
+          return jsonResponse(200, await this.captureContactStates());
+        }
+
         return jsonResponse(404, {
           error: "not_found",
         });
@@ -2064,7 +2097,7 @@ export function createSalesforceCaptureService(
         }
 
         if (
-          request.path === "/audience-lists" &&
+          (request.path === "/audience-lists" || request.path === "/contact-states") &&
           error instanceof SalesforceQueryError
         ) {
           return jsonResponse(error.status, {
@@ -2079,6 +2112,14 @@ export function createSalesforceCaptureService(
             error: "salesforce_capture_failed",
             code: "salesforce_capture_failed",
             message: "Salesforce audience-list capture failed.",
+          });
+        }
+
+        if (request.path === "/contact-states" && error instanceof Error) {
+          return jsonResponse(502, {
+            error: "salesforce_capture_failed",
+            code: "salesforce_capture_failed",
+            message: "Salesforce contact-state capture failed.",
           });
         }
 

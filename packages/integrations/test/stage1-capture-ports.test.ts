@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createGmailCapturePort,
-  createMailchimpCapturePort
+  createMailchimpCapturePort,
+  createSalesforceCapturePort
 } from "../src/index.js";
 
 function createJsonResponse(body: unknown, status = 200): Response {
@@ -40,6 +41,22 @@ function resolveRequestUrl(input: unknown): string {
 }
 
 describe("Stage 1 provider capture ports", () => {
+  it("posts a validated contact-state snapshot request", async () => {
+    let requestUrl = "";
+    const port = createSalesforceCapturePort(
+      { baseUrl: "https://capture.example.test/salesforce", bearerToken: "salesforce-token", timeoutMs: 1_000 },
+      { fetchImplementation: (input) => {
+        requestUrl = resolveRequestUrl(input);
+        return Promise.resolve(createJsonResponse({
+          rows: [{ salesforceContactId: "003-contact", email: "person@example.org", rawState: "Montana", lastModifiedAt: "2026-11-06T12:00:00.000Z" }],
+          capturedAt: "2026-11-06T12:01:00.000Z",
+        }));
+      } },
+    );
+
+    await expect(port.captureContactStates({ version: 1 })).resolves.toMatchObject({ rows: [{ rawState: "Montana" }] });
+    expect(requestUrl).toBe("https://capture.example.test/salesforce/contact-states");
+  });
   it("posts Gmail historical batch payloads to the configured capture endpoint", async () => {
     let requestUrl = "";
     let requestInit: RequestInit | undefined;

@@ -3,10 +3,14 @@ import {
   salesforceLiveCaptureBatchPayloadSchema,
   salesforceAudienceListsCaptureRequestSchema,
   salesforceAudienceListsCaptureResponseSchema,
+  salesforceContactStatesCaptureRequestSchema,
+  salesforceContactStatesCaptureResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type SalesforceAudienceListsCaptureRequest,
-  type SalesforceAudienceListsSnapshot
+  type SalesforceAudienceListsSnapshot,
+  type SalesforceContactStatesCaptureRequest,
+  type SalesforceContactStatesSnapshot,
 } from "@as-comms/contracts";
 
 import {
@@ -20,6 +24,8 @@ import {
   type CapturePortHttpConfig,
   type FetchImplementation
 } from "./shared.js";
+
+const SALESFORCE_CONTACT_STATES_MIN_TIMEOUT_MS = 120_000;
 
 const salesforceCapturedBatchSchema = createCapturedBatchResponseSchema(
   salesforceRecordSchema
@@ -40,6 +46,9 @@ export function createSalesforceCapturePort(
   captureAudienceLists(
     payload: SalesforceAudienceListsCaptureRequest
   ): Promise<SalesforceAudienceListsSnapshot>;
+  captureContactStates(
+    payload: SalesforceContactStatesCaptureRequest
+  ): Promise<SalesforceContactStatesSnapshot>;
 } {
   return {
     captureHistoricalBatch(payload) {
@@ -69,6 +78,24 @@ export function createSalesforceCapturePort(
         payload,
         payloadSchema: salesforceAudienceListsCaptureRequestSchema,
         responseSchema: salesforceAudienceListsCaptureResponseSchema,
+        fetchImplementation: input?.fetchImplementation
+      });
+    },
+    captureContactStates(payload) {
+      return requestCaptureBatch({
+        // Full-table snapshot (~21K contacts, ~11 Salesforce pages): the
+        // default 15s capture timeout is sized for incremental batches.
+        config: {
+          ...config,
+          timeoutMs: Math.max(
+            config.timeoutMs,
+            SALESFORCE_CONTACT_STATES_MIN_TIMEOUT_MS
+          )
+        },
+        path: "/contact-states",
+        payload,
+        payloadSchema: salesforceContactStatesCaptureRequestSchema,
+        responseSchema: salesforceContactStatesCaptureResponseSchema,
         fetchImplementation: input?.fetchImplementation
       });
     }

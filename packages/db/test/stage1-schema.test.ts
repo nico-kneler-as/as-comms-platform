@@ -39,6 +39,7 @@ import {
   projectKnowledgeEntries,
   salesforceAudienceListMembers,
   salesforceAudienceLists,
+  salesforceContactStates,
   suppressionList,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
@@ -104,6 +105,7 @@ describe("Stage 1 DB schema", () => {
       "salesforceAudienceListMembers",
       "salesforceAudienceLists",
       "salesforceCommunicationDetails",
+      "salesforceContactStates",
       "salesforceEventContext",
       "sessions",
       "simpleTextingMessageDetails",
@@ -174,6 +176,9 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(salesforceAudienceListMembers)).toBe(
       "salesforce_audience_list_members"
+    );
+    expect(getTableName(salesforceContactStates)).toBe(
+      "salesforce_contact_states"
     );
   });
 

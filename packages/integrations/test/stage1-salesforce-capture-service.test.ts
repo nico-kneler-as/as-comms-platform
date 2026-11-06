@@ -1985,4 +1985,52 @@ describe("Salesforce capture service", () => {
       message: "Campaign is not accessible.",
     });
   });
+
+  it("captures all contact states without volunteer scoping and drops incomplete rows", async () => {
+    const queryAll = vi.fn().mockResolvedValue([
+      { Id: "003-state", Email: " Person@Example.org ", State__c: " Montana ", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: "003-blank", Email: "blank@example.org", State__c: "   ", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: null, Email: "missing-id@example.org", State__c: "Idaho", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+    ]);
+    const service = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createStubSalesforceApiClient(queryAll),
+      now: () => new Date("2026-11-06T12:01:00.000Z"),
+    });
+
+    const response = await service.handleHttpRequest({
+      method: "POST", path: "/contact-states", headers: { authorization: "Bearer salesforce-token" }, bodyText: JSON.stringify({ version: 1 }),
+    });
+
+    expect(queryAll).toHaveBeenCalledWith(
+      "SELECT Id, Email, State__c, LastModifiedDate FROM Contact WHERE Email != null AND State__c != null",
+    );
+    expect(JSON.parse(response.body)).toMatchObject({
+      rows: [{ salesforceContactId: "003-state", email: "Person@Example.org", rawState: "Montana" }],
+    });
+  });
+
+  it("maps contact-state route validation and capture errors", async () => {
+    const invalid = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createStubSalesforceApiClient(() => Promise.resolve([])),
+    });
+    await expect(invalid.handleHttpRequest({
+      method: "POST", path: "/contact-states", headers: { authorization: "Bearer salesforce-token" }, bodyText: JSON.stringify({ version: 2 }),
+    })).resolves.toMatchObject({ status: 400 });
+
+    const accessFailure = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createStubSalesforceApiClient(() => Promise.reject(new SalesforceQueryError(403, "INSUFFICIENT_ACCESS", "Contact is not accessible."))),
+    });
+    await expect(accessFailure.handleHttpRequest({
+      method: "POST", path: "/contact-states", headers: { authorization: "Bearer salesforce-token" }, bodyText: JSON.stringify({ version: 1 }),
+    })).resolves.toMatchObject({ status: 403 });
+
+    const genericFailure = createSalesforceCaptureService(createSalesforceServiceConfig(), {
+      apiClient: createStubSalesforceApiClient(() => Promise.reject(new Error("network failed"))),
+    });
+    const response = await genericFailure.handleHttpRequest({
+      method: "POST", path: "/contact-states", headers: { authorization: "Bearer salesforce-token" }, bodyText: JSON.stringify({ version: 1 }),
+    });
+    expect(response.status).toBe(502);
+    expect(JSON.parse(response.body)).toMatchObject({ code: "salesforce_capture_failed", message: "Salesforce contact-state capture failed." });
+  });
 });
