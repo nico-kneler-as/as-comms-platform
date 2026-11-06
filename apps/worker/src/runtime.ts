@@ -102,6 +102,7 @@ import {
 import { sweepPendingOutboundsJobName } from "./jobs/sweep-pending-outbounds.js";
 import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-status/index.js";
 import { salesforceAudienceListsSyncJobName } from "./jobs/salesforce-audience-lists-sync.js";
+import { salesforceContactStatesSyncJobName } from "./jobs/salesforce-contact-states-sync.js";
 import { createOpsAlertSender } from "./ops-alert/sender.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
@@ -220,6 +221,7 @@ export function buildWorkerCrontab(
     `30 10 * * * ${reconcileCaptureGapsJobName} ?id=capture-gap-reconcile&max=1`,
     `*/15 * * * * ${reconcileRoutingReviewQueueJobName} ?id=routing-review-queue-reconcile&max=1`,
     `*/30 * * * * ${salesforceAudienceListsSyncJobName} ?id=salesforce-audience-lists-sync&max=1`,
+    `20 */6 * * * ${salesforceContactStatesSyncJobName} ?id=salesforce-contact-states-sync&max=1`,
     ...(input?.reconcileSalesforceStateRegistered === false
       ? []
       : [
@@ -1228,6 +1230,10 @@ export async function createStage1WorkerRuntimeServices(
       salesforceAudienceListsSync: {
         capture: capture.salesforce,
         repository: campaigns.salesforceAudienceLists,
+      },
+      salesforceContactStatesSync: {
+        capture: capture.salesforce,
+        repository: campaigns.salesforceContactStates,
       },
       campaignEventsTailFinalize: {
         db: connection.db,

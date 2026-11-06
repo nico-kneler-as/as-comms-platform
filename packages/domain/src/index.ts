@@ -26,6 +26,7 @@ export * from "./pii-mask.js";
 export * from "./phone.js";
 export * from "./readiness.js";
 export * from "./residence-state.js";
+export * from "./salesforce-contact-states.js";
 export * from "./persistence.js";
 export * from "./records.js";
 export * from "./repositories.js";

@@ -33,6 +33,11 @@ import {
   type SalesforceAudienceListsSyncTaskDependencies,
 } from "./jobs/salesforce-audience-lists-sync.js";
 import {
+  createSalesforceContactStatesSyncTask,
+  salesforceContactStatesSyncJobName,
+  type SalesforceContactStatesSyncTaskDependencies,
+} from "./jobs/salesforce-contact-states-sync.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -119,6 +124,7 @@ export function createTaskList(
     readonly automatedEmailSend?: AutomatedEmailSendTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly salesforceAudienceListsSync?: SalesforceAudienceListsSyncTaskDependencies;
+    readonly salesforceContactStatesSync?: SalesforceContactStatesSyncTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
@@ -170,6 +176,13 @@ export function createTaskList(
       : {
           [salesforceAudienceListsSyncJobName]: createSalesforceAudienceListsSyncTask(
             input.salesforceAudienceListsSync,
+          ),
+        }),
+    ...(input?.salesforceContactStatesSync === undefined
+      ? {}
+      : {
+          [salesforceContactStatesSyncJobName]: createSalesforceContactStatesSyncTask(
+            input.salesforceContactStatesSync,
           ),
         }),
     ...(input?.campaignEventsTailFinalize === undefined
