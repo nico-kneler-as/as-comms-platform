@@ -23,6 +23,7 @@ import type {
   AudienceCriteria,
   ExpeditionMemberStatus,
   LaunchType,
+  ResidenceStateCode,
 } from "@as-comms/contracts";
 
 import type {
@@ -36,7 +37,10 @@ import type {
   CsvUploadSummary,
   SmsCsvAudienceSummary,
 } from "../../_lib/audience-data-source";
-import { AudienceFilterPanel } from "./audience-filter-panel";
+import {
+  AudienceFilterPanel,
+  type AudienceStateCounts,
+} from "./audience-filter-panel";
 import { AudiencePreviewList } from "./audience-preview-list";
 import { StepHeader, WizardFooter } from "./wizard-shell";
 
@@ -58,8 +62,8 @@ const MODE_META: Record<
   }
 > = {
   project_status: {
-    title: "Project / status",
-    hint: "Start with one or more projects, then narrow by member status.",
+    title: "Project / status / state",
+    hint: "Start with one or more projects, then narrow by member status and state.",
     Icon: Filter,
   },
   specific: {
@@ -69,12 +73,12 @@ const MODE_META: Record<
   },
   all_approved: {
     title: "All approved contacts",
-    hint: "Every approved contact across all projects, minus auto-exclusions.",
+    hint: "Every approved contact across all projects, minus auto-exclusions. Optionally narrow by state.",
     Icon: Users,
   },
   all_available: {
     title: "All newsletter subscribers",
-    hint: "Everyone subscribed to the newsletter, minus suppressions.",
+    hint: "Everyone subscribed to the newsletter, minus suppressions. Optionally narrow by state.",
     Icon: Users,
   },
   csv_upload: {
@@ -114,10 +118,15 @@ interface AudienceBuilderStepProps {
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsLoading: boolean;
   readonly statusCountsErrorMessage: string | null;
+  readonly stateCounts: AudienceStateCounts;
+  readonly stateCountsLoading: boolean;
+  readonly stateCountsErrorMessage: string | null;
   readonly onInitialFilterChange: (value: AudienceInitialFilter) => void;
   readonly onProjectChange: (projectId: string) => void;
   readonly onToggleAllStatuses: (selectAll: boolean) => void;
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
+  readonly onStateToggle: (code: ResidenceStateCode) => void;
+  readonly onClearStates: () => void;
   readonly onVolunteerSearchQueryChange: (value: string) => void;
   readonly onVolunteerToggle: (contactId: string) => void;
   readonly onCsvUpload: (csvText: string) => Promise<void>;
@@ -152,10 +161,15 @@ export function AudienceBuilderStep({
   statusCounts,
   statusCountsLoading,
   statusCountsErrorMessage,
+  stateCounts,
+  stateCountsLoading,
+  stateCountsErrorMessage,
   onInitialFilterChange,
   onProjectChange,
   onToggleAllStatuses,
   onStatusToggle,
+  onStateToggle,
+  onClearStates,
   onVolunteerSearchQueryChange,
   onVolunteerToggle,
   onCsvUpload,
@@ -217,9 +231,15 @@ export function AudienceBuilderStep({
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
                   statusCountsErrorMessage={statusCountsErrorMessage}
+                  stateCounts={stateCounts}
+                  stateCountsLoading={stateCountsLoading}
+                  stateCountsErrorMessage={stateCountsErrorMessage}
+                  showStateSection={launchType !== "sms"}
                   onProjectChange={onProjectChange}
                   onToggleAllStatuses={onToggleAllStatuses}
                   onStatusToggle={onStatusToggle}
+                  onStateToggle={onStateToggle}
+                  onClearStates={onClearStates}
                 />
 
                 <AudiencePreviewList
@@ -242,6 +262,7 @@ export function AudienceBuilderStep({
                     statusCountsLoading={statusCountsLoading}
                     statusCountsErrorMessage={statusCountsErrorMessage}
                     showStatusSection={false}
+                    showStateSection={false}
                     onProjectChange={onProjectChange}
                     onToggleAllStatuses={onToggleAllStatuses}
                     onStatusToggle={onStatusToggle}
@@ -276,6 +297,27 @@ export function AudienceBuilderStep({
                   </p>
                 </section>
 
+                {launchType !== "sms" ? (
+                  <AudienceFilterPanel
+                    criteria={criteria}
+                    projectOptions={[]}
+                    statusOptions={statusOptions}
+                    statusCounts={statusCounts}
+                    statusCountsLoading={statusCountsLoading}
+                    statusCountsErrorMessage={statusCountsErrorMessage}
+                    stateCounts={stateCounts}
+                    stateCountsLoading={stateCountsLoading}
+                    stateCountsErrorMessage={stateCountsErrorMessage}
+                    showProjectSection={false}
+                    showStatusSection={false}
+                    onProjectChange={onProjectChange}
+                    onToggleAllStatuses={onToggleAllStatuses}
+                    onStatusToggle={onStatusToggle}
+                    onStateToggle={onStateToggle}
+                    onClearStates={onClearStates}
+                  />
+                ) : null}
+
                 <AudiencePreviewList
                   rows={previewRows}
                   loading={previewLoading}
@@ -292,6 +334,27 @@ export function AudienceBuilderStep({
                     minus suppressions.
                   </p>
                 </section>
+
+                {launchType !== "sms" ? (
+                  <AudienceFilterPanel
+                    criteria={criteria}
+                    projectOptions={[]}
+                    statusOptions={statusOptions}
+                    statusCounts={statusCounts}
+                    statusCountsLoading={statusCountsLoading}
+                    statusCountsErrorMessage={statusCountsErrorMessage}
+                    stateCounts={stateCounts}
+                    stateCountsLoading={stateCountsLoading}
+                    stateCountsErrorMessage={stateCountsErrorMessage}
+                    showProjectSection={false}
+                    showStatusSection={false}
+                    onProjectChange={onProjectChange}
+                    onToggleAllStatuses={onToggleAllStatuses}
+                    onStatusToggle={onStatusToggle}
+                    onStateToggle={onStateToggle}
+                    onClearStates={onClearStates}
+                  />
+                ) : null}
 
                 <AudiencePreviewList
                   rows={previewRows}

@@ -23,6 +23,7 @@ import type {
 } from "../../_lib/audience-data-source";
 import {
   loadComposePreviewAction,
+  loadAudienceStateCountsAction,
   loadMemberStatusCountsForProjects,
   loadSelectedAliasSignatureAction,
   loadSmsCsvAudienceSummaryAction,
@@ -36,6 +37,7 @@ import type {
   AudienceInitialFilter,
   CampaignAudienceCriteria,
 } from "./audience-builder-step";
+import type { AudienceStateCounts } from "./audience-filter-panel";
 
 type AutosavePersistDraft = (successMessage: string) => Promise<boolean>;
 type ProjectSelectionMode = "multi" | "single";
@@ -397,6 +399,7 @@ function buildCriteriaForMode(input: {
   if (input.mode === "all_approved") {
     return {
       ...input.current,
+      states: [],
       initialFilter: "all_approved",
       projectId: null,
       projectIds: [],
@@ -409,6 +412,7 @@ function buildCriteriaForMode(input: {
   if (input.mode === "all_available") {
     return {
       ...input.current,
+      states: [],
       initialFilter: "all_available",
       projectId: null,
       projectIds: [],
@@ -421,6 +425,7 @@ function buildCriteriaForMode(input: {
   if (input.mode === "specific") {
     return {
       ...input.current,
+      states: [],
       initialFilter: "specific",
       ...projectSelection,
       statuses: [],
@@ -432,6 +437,7 @@ function buildCriteriaForMode(input: {
   if (input.mode === "csv_upload") {
     return {
       ...input.current,
+      states: [],
       initialFilter: "csv_upload",
       projectId: null,
       projectIds: [],
@@ -443,6 +449,7 @@ function buildCriteriaForMode(input: {
 
   return {
     ...input.current,
+    states: [],
     initialFilter: "project_status",
     ...projectSelection,
     statuses: [],
@@ -460,6 +467,7 @@ function clearAudienceCriteria(
     projectId: null,
     projectIds: [],
     statuses: [],
+    states: [],
     contactIds: [],
     newsletterSubscriberIds: [],
   };
@@ -492,6 +500,7 @@ function buildInitialCriteria(
       null,
     contactIds: draft.audienceCriteria.contactIds ?? [],
     newsletterSubscriberIds: draft.audienceCriteria.newsletterSubscriberIds ?? [],
+    states: draft.audienceCriteria.states ?? [],
     initialFilter,
   };
 }
@@ -690,6 +699,16 @@ export function useNewCampaignWizardState({
   const [statusCountsErrorMessage, setStatusCountsErrorMessage] = useState<
     string | null
   >(null);
+  const [stateCounts, setStateCounts] = useState<AudienceStateCounts>({
+    byState: [],
+    noStateOnFile: 0,
+    total: 0,
+    lastSyncedAt: null,
+  });
+  const [stateCountsLoading, setStateCountsLoading] = useState(false);
+  const [stateCountsErrorMessage, setStateCountsErrorMessage] = useState<
+    string | null
+  >(null);
   const [volunteerSearchQuery, setVolunteerSearchQuery] = useState("");
   const [volunteerSearchRows, setVolunteerSearchRows] = useState<
     readonly (
@@ -733,6 +752,7 @@ export function useNewCampaignWizardState({
     useTransition();
   const [smsPreviewPending, startSmsPreviewTransition] = useTransition();
   const [, startStatusCountsTransition] = useTransition();
+  const [, startStateCountsTransition] = useTransition();
   const [volunteerSearchPending, startVolunteerSearchTransition] =
     useTransition();
   const [csvUploadPending, startCsvUploadTransition] = useTransition();
@@ -741,6 +761,7 @@ export function useNewCampaignWizardState({
   const [testSendPending, startTestSendTransition] = useTransition();
   const countRequestRef = useRef(0);
   const statusCountsRequestRef = useRef(0);
+  const stateCountsRequestRef = useRef(0);
   const audiencePreviewRequestRef = useRef(0);
   const volunteerSearchRequestRef = useRef(0);
   const composePreviewRequestRef = useRef(0);
@@ -859,6 +880,7 @@ export function useNewCampaignWizardState({
   );
   const selectedProjectIds = readProjectIds(criteria);
   const selectedProjectIdsKey = selectedProjectIds.join(",");
+  const selectedStatusesKey = criteria.statuses.join(",");
   const warningDismissed =
     warningDismissFingerprint !== null &&
     warningDismissFingerprint === previewFingerprint;
@@ -938,6 +960,7 @@ export function useNewCampaignWizardState({
         if (current.initialFilter === "specific") {
           return {
             ...current,
+            states: [],
             newsletterSubscriberIds: [],
           };
         }
@@ -946,7 +969,7 @@ export function useNewCampaignWizardState({
           current.initialFilter === "project_status" ||
           current.initialFilter === "csv_upload"
         ) {
-          return current;
+          return { ...current, states: [] };
         }
 
         return clearAudienceCriteria(current);
@@ -1081,6 +1104,70 @@ export function useNewCampaignWizardState({
     hasPickedAudienceMode,
     launchType,
     selectedProjectIdsKey,
+  ]);
+
+  useEffect(() => {
+    const mode = criteria.initialFilter;
+    const supportsStateCounts =
+      mode === "project_status" ||
+      mode === "all_approved" ||
+      mode === "all_available";
+    const needsProject = mode === "project_status";
+
+    if (
+      !hasPickedAudienceMode ||
+      launchType === "sms" ||
+      !supportsStateCounts ||
+      (needsProject && selectedProjectIds.length === 0)
+    ) {
+      stateCountsRequestRef.current += 1;
+      setStateCounts({
+        byState: [],
+        noStateOnFile: 0,
+        total: 0,
+        lastSyncedAt: null,
+      });
+      setStateCountsLoading(false);
+      setStateCountsErrorMessage(null);
+      return;
+    }
+
+    const requestId = ++stateCountsRequestRef.current;
+    setStateCountsLoading(true);
+    setStateCountsErrorMessage(null);
+    startStateCountsTransition(async () => {
+      const result = await loadAudienceStateCountsAction({
+        runId: draft.runId,
+        kind,
+        criteria: toActionCriteria({ ...criteria, states: [] }),
+      });
+      if (requestId !== stateCountsRequestRef.current) {
+        return;
+      }
+
+      setStateCountsLoading(false);
+      if (!result.ok) {
+        setStateCounts({
+          byState: [],
+          noStateOnFile: 0,
+          total: 0,
+          lastSyncedAt: null,
+        });
+        setStateCountsErrorMessage(result.message);
+        return;
+      }
+
+      setStateCounts(result.data);
+      setStateCountsErrorMessage(null);
+    });
+  }, [
+    criteria.initialFilter,
+    draft.runId,
+    hasPickedAudienceMode,
+    kind,
+    launchType,
+    selectedProjectIdsKey,
+    selectedStatusesKey,
   ]);
 
   useEffect(() => {
@@ -1466,6 +1553,9 @@ export function useNewCampaignWizardState({
     statusCounts,
     statusCountsLoading,
     statusCountsErrorMessage,
+    stateCounts,
+    stateCountsLoading,
+    stateCountsErrorMessage,
     volunteerSearchQuery,
     setVolunteerSearchQuery,
     volunteerSearchRows,

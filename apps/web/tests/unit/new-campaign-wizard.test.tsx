@@ -13,6 +13,7 @@ const previewAudienceActionMock = vi.hoisted(() => vi.fn());
 const loadComposePreviewActionMock = vi.hoisted(() => vi.fn());
 const loadSelectedAliasSignatureActionMock = vi.hoisted(() => vi.fn());
 const loadMemberStatusCountsForProjectsMock = vi.hoisted(() => vi.fn());
+const loadAudienceStateCountsActionMock = vi.hoisted(() => vi.fn());
 const loadSmsCsvAudienceSummaryActionMock = vi.hoisted(() => vi.fn());
 const getVolunteerExclusionBroadcastsActionMock = vi.hoisted(() => vi.fn());
 const previewVolunteerExclusionsActionMock = vi.hoisted(() => vi.fn());
@@ -29,6 +30,7 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   confirmCampaignWizardDraftCurrentAction:
     confirmCampaignWizardDraftCurrentActionMock,
   loadComposePreviewAction: loadComposePreviewActionMock,
+  loadAudienceStateCountsAction: loadAudienceStateCountsActionMock,
   loadMemberStatusCountsForProjects: loadMemberStatusCountsForProjectsMock,
   loadSelectedAliasSignatureAction: loadSelectedAliasSignatureActionMock,
   loadSmsCsvAudienceSummaryAction: loadSmsCsvAudienceSummaryActionMock,
@@ -892,6 +894,15 @@ beforeEach(() => {
   loadMemberStatusCountsForProjectsMock.mockResolvedValue({
     ok: true,
     data: { Waitlist: 2 },
+  });
+  loadAudienceStateCountsActionMock.mockResolvedValue({
+    ok: true,
+    data: {
+      byState: [],
+      noStateOnFile: 0,
+      total: 2,
+      lastSyncedAt: "2026-11-06T00:00:00.000Z",
+    },
   });
   loadSmsCsvAudienceSummaryActionMock.mockResolvedValue({
     ok: true,

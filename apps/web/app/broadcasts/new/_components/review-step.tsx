@@ -18,7 +18,7 @@ import { formatSmsEstimatedCostUsd } from "@/src/lib/sms-pricing";
 import { cn } from "@/lib/utils";
 import { ResendToNonOpeners } from "@/app/_components/audience-exclusions/resend-to-non-openers";
 
-import type { CampaignRunRecord, LaunchType } from "@as-comms/contracts";
+import type { CampaignRunRecord, LaunchType, ResidenceStateCode } from "@as-comms/contracts";
 
 import { SmsSampleBubble } from "./sms-sample-bubble";
 import { SectionPanel, StepHeader, WizardFooter } from "./wizard-shell";
@@ -31,6 +31,7 @@ interface ReviewStepProps {
   readonly subject: string;
   readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
+  readonly states: readonly ResidenceStateCode[];
   /** People the Exclude step removed; already subtracted from audienceSize. */
   readonly skippedByExclusions?: number;
   readonly smsPreviewData: {
@@ -104,6 +105,7 @@ export function ReviewStep({
   subject,
   selectedSenderVerified,
   audienceSize,
+  states,
   skippedByExclusions = 0,
   smsPreviewData,
   sendMode,
@@ -204,6 +206,9 @@ export function ReviewStep({
                 )
               }
             />
+            {states.length > 0 ? (
+              <SummaryRow label="States" value={states.join(", ")} />
+            ) : null}
             {isSmsLaunch ? (
               <SummaryRow
                 label="Send"

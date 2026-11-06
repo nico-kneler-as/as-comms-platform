@@ -6,6 +6,7 @@ import type {
   AudienceCriteria,
   CampaignKind,
   ExpeditionMemberStatus,
+  ResidenceStateCode,
 } from "@as-comms/contracts";
 
 import type {
@@ -517,6 +518,9 @@ export function NewCampaignWizard({
     statusCounts,
     statusCountsLoading,
     statusCountsErrorMessage,
+    stateCounts,
+    stateCountsLoading,
+    stateCountsErrorMessage,
     volunteerSearchQuery,
     setVolunteerSearchQuery,
     volunteerSearchRows,
@@ -857,6 +861,19 @@ export function NewCampaignWizard({
     }));
   }
 
+  function toggleState(code: ResidenceStateCode) {
+    updateCriteria((current) => ({
+      ...current,
+      states: (current.states ?? []).includes(code)
+        ? (current.states ?? []).filter((value) => value !== code)
+        : [...(current.states ?? []), code],
+    }));
+  }
+
+  function clearStates() {
+    updateCriteria((current) => ({ ...current, states: [] }));
+  }
+
   function toggleVolunteer(contactId: string) {
     updateCriteria((current) => ({
       ...current,
@@ -1153,10 +1170,15 @@ export function NewCampaignWizard({
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
                   statusCountsErrorMessage={statusCountsErrorMessage}
+                  stateCounts={stateCounts}
+                  stateCountsLoading={stateCountsLoading}
+                  stateCountsErrorMessage={stateCountsErrorMessage}
                   onInitialFilterChange={changeInitialFilter}
                   onProjectChange={toggleProject}
                   onToggleAllStatuses={toggleAllStatuses}
                   onStatusToggle={toggleStatus}
+                  onStateToggle={toggleState}
+                  onClearStates={clearStates}
                   onVolunteerSearchQueryChange={setVolunteerSearchQuery}
                   onVolunteerToggle={toggleVolunteer}
                   onCsvUpload={handleCsvUpload}
@@ -1283,6 +1305,7 @@ export function NewCampaignWizard({
                     composePreview?.audienceSize ??
                     countState.count
                   }
+                  states={criteria.states ?? []}
                   skippedByExclusions={skippedByExclusions}
                   smsPreviewData={smsPreview}
                   sendMode={sendMode}
