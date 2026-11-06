@@ -39,7 +39,7 @@
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.8.0",
     "mcp-handler": "^1.1.0",
-    "next": "^15.5.24",
+    "next": "^15.5.28",
     "next-auth": "^5.0.0-beta.32",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
