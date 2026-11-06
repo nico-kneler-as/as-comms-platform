@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isResidenceStateCode, residenceStateCodeSchema, type ResidenceStateCode } from "./residence-states.js";
+
 const idSchema = z.string().min(1);
 const timestampSchema = z.string().datetime();
 const nullableTimestampSchema = timestampSchema.nullable();
@@ -191,6 +193,7 @@ const audienceCriteriaDefaults = {
   lastActivityWindow: "all_time" as const,
   hasReplied: "either" as const,
   hasClicked: "either" as const,
+  states: [] as ResidenceStateCode[],
   salesforceListIds: [] as string[],
   exclusions: {
     salesforceListIds: [] as string[],
@@ -240,6 +243,13 @@ export const audienceCriteriaSchema = z
             typeof entry === "string" && entry.trim().length > 0,
           ).map((entry) => entry.trim()))]
         : [];
+    const normalizedStates = Array.isArray(input.states)
+      ? input.states.flatMap((entry) => {
+          if (typeof entry !== "string") return [];
+          const code = entry.trim().toUpperCase();
+          return isResidenceStateCode(code) ? [code] : [];
+        }).filter((entry, index, values) => values.indexOf(entry) === index)
+      : [];
     const rawExclusions =
       input.exclusions !== null && typeof input.exclusions === "object" && !Array.isArray(input.exclusions)
         ? input.exclusions as Record<string, unknown>
@@ -250,6 +260,7 @@ export const audienceCriteriaSchema = z
       projectId: normalizedProjectIds[0] ?? null,
       projectIds: normalizedProjectIds,
       statuses: filteredStatuses,
+      states: normalizedStates,
       salesforceListIds: normalizeStringList(input.salesforceListIds),
       exclusions: {
         salesforceListIds: normalizeStringList(rawExclusions.salesforceListIds),
@@ -293,6 +304,7 @@ export const audienceCriteriaSchema = z
     hasClicked: audienceTriStateSchema.default(
       audienceCriteriaDefaults.hasClicked,
     ),
+    states: z.array(residenceStateCodeSchema).default(audienceCriteriaDefaults.states),
     salesforceListIds: z.array(z.string().min(1)).default(
       audienceCriteriaDefaults.salesforceListIds,
     ),
@@ -318,11 +330,12 @@ export const audienceCriteriaSchema = z
 type ParsedAudienceCriteria = z.infer<typeof audienceCriteriaSchema>;
 export type AudienceCriteria = Omit<
   ParsedAudienceCriteria,
-  "projectId" | "contactIds" | "newsletterSubscriberIds" | "salesforceListIds" | "exclusions"
+  "projectId" | "contactIds" | "newsletterSubscriberIds" | "states" | "salesforceListIds" | "exclusions"
 > & {
   readonly projectId?: string | null;
   readonly contactIds?: string[];
   readonly newsletterSubscriberIds?: string[];
+  readonly states?: ResidenceStateCode[];
   readonly salesforceListIds?: string[];
   readonly exclusions?: {
     readonly salesforceListIds: string[];
