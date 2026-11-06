@@ -17,6 +17,7 @@ import {
   type ExpeditionMemberStatus,
   type LaunchType,
   type PostmarkSenderStatus,
+  type ResidenceStateCode,
 } from "@as-comms/contracts";
 import {
   buildBroadcastWebVersionUrl,
@@ -26,6 +27,7 @@ import {
   composeAudience,
   createExclusionFilter,
   createMergeRenderer,
+  filterAudienceByResidenceState,
   formatOrgAddress,
   intersectSmsAudience,
   normalizeAliasEmail,
@@ -34,6 +36,7 @@ import {
   resolveContactsByEmail,
   resolveUploadedAudienceForRun,
   renderBroadcastEmail,
+  summarizeResidenceStates,
   type AudienceMember,
   type SmsBroadcastAudienceMember,
   type SmsBroadcastDropReason,
@@ -504,6 +507,52 @@ function readAudienceMode(
   return criteria.initialFilter ?? "project_status";
 }
 
+function readEffectiveResidenceStates(
+  criteria: AudienceCriteria,
+): readonly ResidenceStateCode[] {
+  switch (readAudienceMode(criteria)) {
+    case "project_status":
+    case "all_approved":
+    case "all_available":
+      return criteria.states ?? [];
+    case "specific":
+    case "csv_upload":
+    case "salesforce_lists":
+      return [];
+  }
+}
+
+async function applyResidenceStateFilter<
+  T extends { readonly frozenEmail: string },
+>(
+  members: readonly T[],
+  criteria: AudienceCriteria,
+) {
+  const states = readEffectiveResidenceStates(criteria);
+  if (states.length === 0) {
+    return filterAudienceByResidenceState({
+      members,
+      states,
+      lookup: new Map(),
+    });
+  }
+
+  const normalizedEmails = [
+    ...new Set(
+      members.flatMap((member) => {
+        const normalizedEmail = normalizeEmailAddress(member.frozenEmail);
+        return normalizedEmail === null ? [] : [normalizedEmail];
+      }),
+    ),
+  ];
+  const runtime = await getStage1WebRuntime();
+  const lookup = await runtime.campaigns.salesforceContactStates.findByEmails(
+    normalizedEmails,
+  );
+
+  return filterAudienceByResidenceState({ members, states, lookup });
+}
+
 function readAudienceRecipientKey(member: AudienceMember): string {
   return (
     member.contactId ?? member.newsletterSubscriberId ?? member.frozenEmail
@@ -565,6 +614,7 @@ function toStoredAudienceCriteria(
     statuses: criteria.statuses,
     contactIds: criteria.contactIds ?? [],
     newsletterSubscriberIds: criteria.newsletterSubscriberIds ?? [],
+    states: criteria.states ?? [],
     // Exclusions (and Salesforce lists) must survive a wizard save; dropping
     // them here silently sent to everyone the composer was meant to skip.
     ...(criteria.salesforceListIds === undefined
@@ -1247,7 +1297,8 @@ export async function resolveStoredCampaignAudience(input: {
   readonly fromEmail?: string | null;
   readonly projectId?: string | null;
 }): Promise<readonly AudienceMember[]> {
-  if (readAudienceMode(input.criteria) === "csv_upload") {
+  const mode = readAudienceMode(input.criteria);
+  if (mode === "csv_upload") {
     if (input.runId === undefined) {
       throw new Error("CSV-upload audiences require a campaign run id.");
     }
@@ -1260,6 +1311,8 @@ export async function resolveStoredCampaignAudience(input: {
   }
 
   if (input.kind === "newsletter") {
+    // Hand-picked recipients win over the mode marker (which can be stale or
+    // missing): this keeps freeze fail-safe — it can only narrow, never widen.
     if ((input.criteria.newsletterSubscriberIds?.length ?? 0) > 0) {
       return loadSpecificNewsletterSubscribersAudience(
         input.criteria,
@@ -1269,14 +1322,21 @@ export async function resolveStoredCampaignAudience(input: {
     if ((input.criteria.contactIds?.length ?? 0) > 0) {
       return loadSpecificContactsAudience(input.criteria, input.at);
     }
-    return loadNewsletterSubscriberAudience();
+    // all_approved must freeze the same audience the wizard previews
+    // (approved contacts), not the subscriber list.
+    const base =
+      mode === "all_approved"
+        ? await loadApprovedContactsAudience(input.at)
+        : await loadNewsletterSubscriberAudience();
+    return (await applyResidenceStateFilter(base, input.criteria)).members;
   }
 
   const resolver = await createResolver();
-  return filterAudienceMembersBySelection(
+  const members = filterAudienceMembersBySelection(
     await resolver.resolveAudience(input.criteria, input.at),
     input.criteria,
   );
+  return (await applyResidenceStateFilter(members, input.criteria)).members;
 }
 
 /** Read-only audience composition preview used by the broadcast wizard. */
@@ -1359,14 +1419,20 @@ async function resolveWizardAudience(
   },
 ): Promise<readonly AudienceMember[]> {
   const parsedCriteria = audienceCriteriaSchema.parse(input.criteria);
-  const mode = readAudienceMode(input.criteria);
+  const mode = readAudienceMode(parsedCriteria);
 
   if (mode === "all_approved" && input.kind === "newsletter") {
-    return loadApprovedContactsAudience(input.at);
+    return (await applyResidenceStateFilter(
+      await loadApprovedContactsAudience(input.at),
+      parsedCriteria,
+    )).members;
   }
 
   if (mode === "all_available" && input.kind === "newsletter") {
-    return loadNewsletterSubscriberAudience();
+    return (await applyResidenceStateFilter(
+      await loadNewsletterSubscriberAudience(),
+      parsedCriteria,
+    )).members;
   }
 
   if (mode === "specific" && input.kind === "newsletter") {
@@ -1645,6 +1711,72 @@ export async function resolveAudienceCountAction(input: {
       error instanceof Error
         ? error.message
         : "Unable to resolve the audience count.",
+      true,
+    );
+  }
+}
+
+export async function loadAudienceStateCountsAction(input: {
+  readonly kind: CampaignKind;
+  readonly criteria: AudienceCriteria;
+  readonly runId?: string;
+}): Promise<UiResult<{
+  readonly byState: readonly {
+    readonly code: ResidenceStateCode;
+    readonly count: number;
+  }[];
+  readonly noStateOnFile: number;
+  readonly total: number;
+  readonly lastSyncedAt: string | null;
+}>> {
+  await requireVolunteerSession();
+
+  try {
+    const criteria = audienceCriteriaSchema.parse(input.criteria);
+    const mode = readAudienceMode(criteria);
+    const empty = {
+      byState: [],
+      noStateOnFile: 0,
+      total: 0,
+      lastSyncedAt: null,
+    } as const;
+    if (
+      !["project_status", "all_approved", "all_available"].includes(mode) ||
+      (mode === "project_status" &&
+        (criteria.projectId ?? criteria.projectIds[0] ?? null) === null)
+    ) {
+      return successResult(empty);
+    }
+
+    const members = await resolveWizardAudience({
+      kind: input.kind,
+      criteria: { ...criteria, states: [] },
+      at: new Date(),
+      ...(input.runId === undefined ? {} : { runId: input.runId }),
+    });
+    const normalizedEmails = [
+      ...new Set(
+        members.flatMap((member) => {
+          const normalizedEmail = normalizeEmailAddress(member.frozenEmail);
+          return normalizedEmail === null ? [] : [normalizedEmail];
+        }),
+      ),
+    ];
+    const runtime = await getStage1WebRuntime();
+    const lookup = await runtime.campaigns.salesforceContactStates.findByEmails(
+      normalizedEmails,
+    );
+    const summary = summarizeResidenceStates({ members, lookup });
+    const lastSyncedAt = await runtime.campaigns.salesforceContactStates.lastSyncedAt();
+
+    return successResult({
+      ...summary,
+      lastSyncedAt: lastSyncedAt?.toISOString() ?? null,
+    });
+  } catch {
+    return errorResult(
+      "campaign_audience_state_counts_failed",
+      "Unable to load audience state counts.",
       true,
     );
   }
