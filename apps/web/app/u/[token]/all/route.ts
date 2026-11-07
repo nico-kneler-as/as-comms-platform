@@ -25,6 +25,7 @@ export async function POST(
       scope: { type: "all" },
       source: "recipient_click",
       sourceRunId: target.runId,
+      email: target.email,
     });
   }
   if (

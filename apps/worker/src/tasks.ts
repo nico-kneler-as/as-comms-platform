@@ -43,6 +43,11 @@ import {
   type SalesforceProjectBoxesSyncTaskDependencies,
 } from "./jobs/salesforce-project-boxes-sync.js";
 import {
+  createSalesforceSubscriptionPushTask,
+  salesforceSubscriptionPushJobName,
+  type SalesforceSubscriptionPushTaskDependencies,
+} from "./jobs/salesforce-subscription-push.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -131,6 +136,7 @@ export function createTaskList(
     readonly salesforceAudienceListsSync?: SalesforceAudienceListsSyncTaskDependencies;
     readonly salesforceContactStatesSync?: SalesforceContactStatesSyncTaskDependencies;
     readonly salesforceProjectBoxesSync?: SalesforceProjectBoxesSyncTaskDependencies;
+    readonly salesforceSubscriptionPush?: SalesforceSubscriptionPushTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
@@ -197,6 +203,14 @@ export function createTaskList(
           [salesforceProjectBoxesSyncJobName]:
             createSalesforceProjectBoxesSyncTask(
               input.salesforceProjectBoxesSync,
+            ),
+        }),
+    ...(input?.salesforceSubscriptionPush === undefined
+      ? {}
+      : {
+          [salesforceSubscriptionPushJobName]:
+            createSalesforceSubscriptionPushTask(
+              input.salesforceSubscriptionPush,
             ),
         }),
     ...(input?.campaignEventsTailFinalize === undefined

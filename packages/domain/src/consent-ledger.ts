@@ -11,6 +11,8 @@ export interface Repositories {
       scope: { readonly type: ConsentScopeType; readonly id?: string },
       source: ConsentSource,
       sourceRunId?: string,
+      email?: string,
+      occurredAt?: Date,
     ): Promise<void>;
     listForContact(contactId: string): Promise<readonly ContactConsentRecord[]>;
   };
@@ -22,6 +24,8 @@ export interface ConsentLedger {
     scope: { type: "project" | "newsletter" | "all"; id?: string };
     source: "recipient_click" | "admin_action" | "provider_event" | "import";
     sourceRunId?: string;
+    email?: string;
+    occurredAt?: Date;
   }): Promise<void>;
   isConsentedFor(
     contactId: string,
@@ -63,6 +67,8 @@ export function createConsentLedger(deps: {
         input.scope,
         input.source,
         input.sourceRunId,
+        input.email,
+        input.occurredAt,
       );
     },
 

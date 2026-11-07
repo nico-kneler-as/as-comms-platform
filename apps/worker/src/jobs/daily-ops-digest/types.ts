@@ -85,6 +85,10 @@ export interface DailyOpsDigestSnapshot {
     readonly failedCount: number;
     readonly orphanedCount: number;
   }>;
+  readonly subscriptionPush: DailyOpsDigestSignal<{
+    readonly pendingCount: number;
+    readonly parkedCount: number;
+  }>;
   readonly smsMessages: DailyOpsDigestSignal<{
     readonly failedCount: number;
     readonly undeliveredCount: number;
@@ -128,6 +132,7 @@ export type DailyOpsDigestSectionKind =
   | "source_evidence_quarantine"
   | "postmark_webhook_dead_letter"
   | "pending_composer_outbounds"
+  | "subscription_push"
   | "sms_messages"
   | "integration_health"
   | "review_queues"

@@ -1835,6 +1835,69 @@ export const contactConsent = pgTable(
   ],
 );
 
+export const salesforceSubscriptionOutbox = pgTable(
+  "salesforce_subscription_outbox",
+  {
+    id: uuid("id").primaryKey(),
+    email: text("email").notNull(),
+    contactId: text("contact_id"),
+    eventKind: text("event_kind")
+      .$type<
+        | "newsletter_opt_out"
+        | "project_opt_out"
+        | "all_opt_out"
+        | "newsletter_signup"
+        | "hard_bounce"
+      >()
+      .notNull(),
+    projectId: text("project_id"),
+    occurredAt: timestamp("occurred_at", {
+      mode: "date",
+      withTimezone: true,
+    }).notNull(),
+    status: text("status")
+      .$type<"pending" | "sent" | "parked">()
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", {
+      mode: "date",
+      withTimezone: true,
+    })
+      .notNull()
+      .defaultNow(),
+    lastErrorKind: text("last_error_kind").$type<
+      "transient" | "permanent" | "permission" | null
+    >(),
+    lastErrorCode: text("last_error_code"),
+    sentAt: timestamp("sent_at", { mode: "date", withTimezone: true }),
+    claimedAt: timestamp("claimed_at", { mode: "date", withTimezone: true }),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    check(
+      "salesforce_subscription_outbox_event_kind_check",
+      sql`${table.eventKind} IN ('newsletter_opt_out', 'project_opt_out', 'all_opt_out', 'newsletter_signup', 'hard_bounce')`,
+    ),
+    check(
+      "salesforce_subscription_outbox_project_shape_check",
+      sql`((${table.eventKind} = 'project_opt_out' AND ${table.projectId} IS NOT NULL) OR (${table.eventKind} <> 'project_opt_out' AND ${table.projectId} IS NULL))`,
+    ),
+    check(
+      "salesforce_subscription_outbox_status_check",
+      sql`${table.status} IN ('pending', 'sent', 'parked')`,
+    ),
+    check(
+      "salesforce_subscription_outbox_attempts_check",
+      sql`${table.attempts} >= 0`,
+    ),
+    index("salesforce_subscription_outbox_pending_idx")
+      .on(table.nextAttemptAt)
+      .where(sql`${table.status} = 'pending'`),
+    index("salesforce_subscription_outbox_email_idx").on(table.email),
+  ],
+);
+
 export const suppressionList = pgTable(
   "suppression_list",
   {

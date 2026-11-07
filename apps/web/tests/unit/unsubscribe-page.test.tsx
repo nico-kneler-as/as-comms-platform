@@ -275,6 +275,20 @@ describe("public unsubscribe page", () => {
       source: "recipient_click",
       sourceRunId: "run-token-project",
     });
+    // Raw SQL: apps/web tests may not import @as-comms/db (boundary rule).
+    const outboxResult = await runtime.context.db.execute(sql`
+      select email, contact_id, event_kind from salesforce_subscription_outbox
+    `);
+    const outboxRows =
+      (outboxResult as { rows?: readonly Record<string, unknown>[] }).rows ??
+      [];
+    expect(outboxRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        email: "taylor@example.org",
+        contact_id: "contact-unsubscribe",
+        event_kind: "project_opt_out",
+      }),
+    ]));
   });
 
   it("GET with ?confirmed=1 renders the success page", async () => {
@@ -567,6 +581,20 @@ describe("public unsubscribe page", () => {
         }),
       ]),
     );
+    // Raw SQL: apps/web tests may not import @as-comms/db (boundary rule).
+    const outboxResult = await runtime.context.db.execute(sql`
+      select email, contact_id, event_kind from salesforce_subscription_outbox
+    `);
+    const outboxRows =
+      (outboxResult as { rows?: readonly Record<string, unknown>[] }).rows ??
+      [];
+    expect(outboxRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        email: "taylor@example.org",
+        contact_id: "contact-unsubscribe",
+        event_kind: "all_opt_out",
+      }),
+    ]));
   });
 
   it("writes a newsletter suppression for a null-contact newsletter confirm click", async () => {

@@ -9,6 +9,7 @@ import {
   pendingComposerOutbounds,
   postmarkWebhookDeadLetter,
   routingReviewQueue,
+  salesforceSubscriptionOutbox,
   smsMessages,
   sourceEvidenceQuarantine,
   syncState,
@@ -241,6 +242,7 @@ export async function collectDailyOpsDigestSnapshot(input: {
     sourceEvidenceQuarantineSignal,
     postmarkWebhookDeadLetterSignal,
     pendingComposerOutboundsSignal,
+    subscriptionPushSignal,
     smsMessagesSignal,
     integrationHealthSignal,
     reviewQueuesSignal,
@@ -313,6 +315,18 @@ export async function collectDailyOpsDigestSnapshot(input: {
       return {
         failedCount: rows.filter((row) => row.status === "failed").length,
         orphanedCount: rows.filter((row) => row.status === "orphaned").length,
+      };
+    }),
+    collectSignal(async () => {
+      const rows = await input.db
+        .select({ status: salesforceSubscriptionOutbox.status })
+        .from(salesforceSubscriptionOutbox)
+        .where(
+          inArray(salesforceSubscriptionOutbox.status, ["pending", "parked"]),
+        );
+      return {
+        pendingCount: rows.filter((row) => row.status === "pending").length,
+        parkedCount: rows.filter((row) => row.status === "parked").length,
       };
     }),
     collectSignal(async () => {
@@ -435,6 +449,7 @@ export async function collectDailyOpsDigestSnapshot(input: {
     sourceEvidenceQuarantine: sourceEvidenceQuarantineSignal,
     postmarkWebhookDeadLetter: postmarkWebhookDeadLetterSignal,
     pendingComposerOutbounds: pendingComposerOutboundsSignal,
+    subscriptionPush: subscriptionPushSignal,
     smsMessages: smsMessagesSignal,
     integrationHealth: integrationHealthSignal,
     reviewQueues: reviewQueuesSignal,

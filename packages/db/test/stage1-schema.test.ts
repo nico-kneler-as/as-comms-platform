@@ -40,6 +40,7 @@ import {
   salesforceAudienceListMembers,
   salesforceAudienceLists,
   salesforceContactStates,
+  salesforceSubscriptionOutbox,
   suppressionList,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
@@ -107,6 +108,7 @@ describe("Stage 1 DB schema", () => {
       "salesforceCommunicationDetails",
       "salesforceContactStates",
       "salesforceEventContext",
+      "salesforceSubscriptionOutbox",
       "sessions",
       "simpleTextingMessageDetails",
       "smsMessages",
@@ -179,6 +181,9 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(salesforceContactStates)).toBe(
       "salesforce_contact_states"
+    );
+    expect(getTableName(salesforceSubscriptionOutbox)).toBe(
+      "salesforce_subscription_outbox"
     );
   });
 

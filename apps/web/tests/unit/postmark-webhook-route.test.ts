@@ -8,6 +8,7 @@ import {
   createStage5RepositoryBundle,
   newsletterSubscribers,
   postmarkWebhookDeadLetter,
+  salesforceSubscriptionOutbox,
 } from "@as-comms/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -657,6 +658,16 @@ describe("Postmark webhook route handler", () => {
     expect(consentRows[0]?.scopeType).toBe("project");
     expect(consentRows[0]?.scopeId).toBe("project-postmark");
     expect(consentRows[0]?.source).toBe("provider_event");
+    const outboxRows = await runtime.context.db
+      .select()
+      .from(salesforceSubscriptionOutbox);
+    expect(outboxRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        email: "john@example.com",
+        contactId: "contact-postmark",
+        eventKind: "project_opt_out",
+      }),
+    ]));
   });
 
   it("records a newsletter-kind unsubscribe with scope='newsletter'", async () => {

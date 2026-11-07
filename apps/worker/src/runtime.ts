@@ -13,6 +13,7 @@ import {
 import {
   closeDatabaseConnection,
   createMailchimpCampaignTailStateRepository,
+  createSalesforceSubscriptionOutboxRepository,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
   createStage5RepositoryBundleFromConnection,
@@ -38,6 +39,7 @@ import {
   createMailchimpCapturePort,
   createPostmarkClient,
   createSalesforceApiClient,
+  createSalesforceWriteClient,
   InlineTextFetcher,
   invokeModel,
   NotionPageFetcher,
@@ -104,6 +106,7 @@ import { pollPostmarkSenderStatusJobName } from "./jobs/poll-postmark-sender-sta
 import { salesforceAudienceListsSyncJobName } from "./jobs/salesforce-audience-lists-sync.js";
 import { salesforceContactStatesSyncJobName } from "./jobs/salesforce-contact-states-sync.js";
 import { salesforceProjectBoxesSyncJobName } from "./jobs/salesforce-project-boxes-sync.js";
+import { salesforceSubscriptionPushJobName } from "./jobs/salesforce-subscription-push.js";
 import { createOpsAlertSender } from "./ops-alert/sender.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
@@ -194,6 +197,7 @@ export function buildWorkerCrontab(
   config: WorkerConfig,
   input?: {
     readonly reconcileSalesforceStateRegistered?: boolean;
+    readonly salesforceSubscriptionPushRegistered?: boolean;
   },
 ): string {
   const gmailMinutes = toCronMinuteInterval(
@@ -224,6 +228,11 @@ export function buildWorkerCrontab(
     `*/30 * * * * ${salesforceAudienceListsSyncJobName} ?id=salesforce-audience-lists-sync&max=1`,
     `20 */6 * * * ${salesforceContactStatesSyncJobName} ?id=salesforce-contact-states-sync&max=1`,
     `35 * * * * ${salesforceProjectBoxesSyncJobName} ?id=salesforce-project-boxes-sync&max=1`,
+    ...(input?.salesforceSubscriptionPushRegistered === true
+      ? [
+          `* * * * * ${salesforceSubscriptionPushJobName} ?id=salesforce-subscription-push&max=1`,
+        ]
+      : []),
     ...(input?.reconcileSalesforceStateRegistered === false
       ? []
       : [
@@ -675,6 +684,57 @@ function buildSmsBroadcastSendDependencies(input: {
   };
 }
 
+function buildSalesforceSubscriptionPushDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly connection: DatabaseConnection;
+  readonly repositories: ReturnType<
+    typeof createStage1RepositoryBundleFromConnection
+  >;
+  readonly settings: ReturnType<
+    typeof createStage2RepositoryBundleFromConnection
+  >;
+}) {
+  const requiredKeys = [
+    "SALESFORCE_LOGIN_URL",
+    "SALESFORCE_CLIENT_ID",
+    "SALESFORCE_USERNAME",
+    "SALESFORCE_JWT_PRIVATE_KEY",
+  ] as const;
+  const enabled = input.env.SALESFORCE_SUBSCRIPTION_PUSH_ENABLED === "true";
+  const complete = requiredKeys.every((key) => Boolean(input.env[key]?.trim()));
+  if (!enabled || !complete) {
+    console.info(JSON.stringify({
+      event: "salesforce.subscription_push.disabled",
+    }));
+    return undefined;
+  }
+
+  return {
+    outbox: createSalesforceSubscriptionOutboxRepository(input.connection.db),
+    projectDimensions: input.repositories.projectDimensions,
+    writeClient: createSalesforceWriteClient({
+      loginUrl: readRequiredEnv(input.env, "SALESFORCE_LOGIN_URL"),
+      clientId: readRequiredEnv(input.env, "SALESFORCE_CLIENT_ID"),
+      username: readRequiredEnv(input.env, "SALESFORCE_USERNAME"),
+      jwtPrivateKey: readRequiredEnv(input.env, "SALESFORCE_JWT_PRIVATE_KEY"),
+      jwtExpirationSeconds: readOptionalPositiveIntegerEnv(
+        input.env,
+        "SALESFORCE_JWT_EXPIRATION_SECONDS",
+        180,
+      ),
+      apiVersion: readOptionalStringEnv(
+        input.env,
+        "SALESFORCE_API_VERSION",
+        "61.0",
+      ),
+    }),
+    opsAlertSender: createOpsAlertSender({
+      env: input.env,
+      stateRepository: input.settings.opsAlertState,
+    }),
+  };
+}
+
 function buildReconcileSalesforceStateDependencies(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly db: Stage1Database;
@@ -1123,6 +1183,13 @@ export async function createStage1WorkerRuntimeServices(
     campaigns,
     repositories,
   });
+  const salesforceSubscriptionPush =
+    buildSalesforceSubscriptionPushDependencies({
+      env: input?.env ?? process.env,
+      connection,
+      repositories,
+      settings,
+    });
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -1242,6 +1309,9 @@ export async function createStage1WorkerRuntimeServices(
         capture: capture.salesforce,
         repository: repositories.projectDimensions,
       },
+      ...(salesforceSubscriptionPush === undefined
+        ? {}
+        : { salesforceSubscriptionPush }),
       campaignEventsTailFinalize: {
         db: connection.db,
         campaigns,
@@ -1386,6 +1456,8 @@ export async function startWorker(
       crontab: buildWorkerCrontab(config, {
         reconcileSalesforceStateRegistered:
           reconcileSalesforceStateJobName in runtime.taskList,
+        salesforceSubscriptionPushRegistered:
+          salesforceSubscriptionPushJobName in runtime.taskList,
       }),
       noHandleSignals: true,
       pollInterval: 2000,
