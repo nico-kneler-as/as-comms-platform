@@ -22,6 +22,7 @@ export * from "./capture-services/gmail.js";
 export * from "./capture-services/mailchimp.js";
 export * from "./capture-services/salesforce.js";
 export * from "./capture-services/salesforce-state-diff.js";
+export * from "./salesforce-write-client.js";
 export * from "./providers/gmail.js";
 export * from "./providers/gmail-body.js";
 export * from "./providers/gmail-mbox.js";

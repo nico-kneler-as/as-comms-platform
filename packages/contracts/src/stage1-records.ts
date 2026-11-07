@@ -166,6 +166,7 @@ export const projectDimensionSchema = z.object({
   // projects sharing one inbox alias / AI knowledge by marking one as the
   // host and the other(s) connected to it.
   connectedToProjectId: nullableStringSchema.optional(),
+  subscriptionBox: nullableStringSchema.optional(),
   source: recordSourceSchema,
   isActive: z.boolean().optional(),
   aiKnowledgeUrl: nullableStringSchema.optional(),

@@ -501,6 +501,18 @@ export interface ProjectDraftFacts {
 }
 
 export interface ProjectDimensionRepository {
+  replaceProjectSubscriptionBoxes(
+    rows: readonly {
+      readonly projectId: string;
+      readonly subscriptionBox: string | null;
+    }[],
+    syncedAt: Date,
+  ): Promise<{
+    readonly updated: number;
+    readonly cleared: number;
+    readonly unknownProjectIds: readonly string[];
+  }>;
+  listProjectSubscriptionBoxes(): Promise<ReadonlyMap<string, string>>;
   /**
    * Returns active projects only — rows with
    * `salesforce_deleted_at IS NOT NULL` (tombstoned by the weekly SF

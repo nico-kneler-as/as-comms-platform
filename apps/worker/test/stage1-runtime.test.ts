@@ -5,6 +5,7 @@ import {
   gmailHistoricalCaptureBatchPayloadSchema,
   salesforceAudienceListsSyncJobName,
   salesforceContactStatesSyncJobName,
+  salesforceProjectBoxesSyncJobName,
 } from "@as-comms/contracts";
 
 import {
@@ -207,6 +208,7 @@ describe("Stage 1 worker runtime task registration", () => {
         "*/15 * * * * reconcile-routing-review-queue ?id=routing-review-queue-reconcile&max=1",
         `*/30 * * * * ${salesforceAudienceListsSyncJobName} ?id=salesforce-audience-lists-sync&max=1`,
         `20 */6 * * * ${salesforceContactStatesSyncJobName} ?id=salesforce-contact-states-sync&max=1`,
+        `35 * * * * ${salesforceProjectBoxesSyncJobName} ?id=salesforce-project-boxes-sync&max=1`,
         "0 11 * * 0 reconcile-superseded-projections ?id=superseded-projections-reconcile&max=1",
         `0 13 * * * ${dailyOpsDigestJobName} ?id=daily-ops-digest&max=1`,
       ].join("\n"),

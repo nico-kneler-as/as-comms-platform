@@ -903,6 +903,7 @@ Alias drift outbound message.
           source: "salesforce",
           isActive: false,
           connectedToProjectId: null,
+          subscriptionBox: null,
           aiKnowledgeUrl: null,
           aiKnowledgeSyncedAt: null,
           aiKnowledgeSources: [],

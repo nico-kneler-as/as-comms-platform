@@ -435,6 +435,7 @@ export const projectDimensions = pgTable(
     // raw SQL). FK with ON DELETE SET NULL: deleting a host disconnects
     // its sub-projects safely.
     connectedToProjectId: text("connected_to_project_id"),
+    subscriptionBox: text("subscription_box"),
     aiKnowledgeUrl: text("ai_knowledge_url"),
     aiKnowledgeSyncedAt: timestamp("ai_knowledge_synced_at", {
       mode: "date",
