@@ -178,7 +178,7 @@ deliberate exceptions; each one needs a reason here.
 | --- | --- | --- |
 | GHSA-mh99-v99m-4gvg | brace-expansion 1.1.16 | Dev-only path (`eslint → @eslint/config-array / eslintrc → minimatch@3 → brace-expansion@^1.1.7`), never shipped to production and fed only our own lint globs. The advisory's patched range is `>=5.0.8`, i.e. a major jump: **no patched v1 exists** (1.1.16 is the last v1), and forcing v5 wholesale breaks eslint (`TypeError: expand is not a function` — v5 changed its exports). Real v5 consumers are pinned to `^5.0.8` via overrides. Revisit if eslint ships a minimatch bump. Added 2026-07-27. |
 | GHSA-vfj7-8cjw-p6xm | braces 3.0.3 | No patched release exists (`<=3.0.3`). Reached only through build/lint-time globbing (`tailwindcss → chokidar / fast-glob / micromatch`, `@next/eslint-plugin-next → fast-glob`), which expands our own source globs and never sees user input. Revisit when braces ships a fix. Added 2026-10-06 (#729). |
-| GHSA-6qxp-vccf-f47h | @modelcontextprotocol/sdk 1.26.0 | The flaw is in the SDK's OAuth *client* (the MCP server picks which authorization server receives the token); our `/api/mcp` is a server and does not use the SDK's OAuth client. `mcp-handler` 1.1.0 pins SDK 1.26.0 exactly, so the patched SDK needs the `mcp-handler` 2.x migration. Revisit with that migration. Added 2026-10-06 (#729). |
+| GHSA-mrhx-c7xc-m3w5 | zod 3.25.76 | Memory exhaustion while validating oversized constrained collections. Patched only in zod 4 (`>=4.6.6`); every workspace package is still on zod `^3.24.2`, so no in-range fix exists. The MCP tool schemas already run on patched zod 4 through the `zod-v4` alias in `apps/web` (floor `^4.6.6`). Clears with a repo-wide zod 4 migration. Added 2026-11-06 (#747). |
 
 Before adding an entry: confirm the vulnerable copy is dev-only or otherwise
 unreachable at runtime, try an override first, and record the attempt.
@@ -187,12 +187,14 @@ unreachable at runtime, try an override first, and record the attempt.
 surfaces an ignored advisory, confirm the exception is still earned: a patched
 release inside our existing semver range may have shipped since it was added, and
 an advisory may have been withdrawn outright. Two entries were removed on
-2026-08-24 for exactly those reasons:
+2026-08-24 for exactly those reasons, and the MCP SDK entries on 2026-11-07 once
+the migration that unblocked them landed:
 
 | GHSA | Package | Why removed |
 | --- | --- | --- |
 | GHSA-5xrq-8626-4rwp | vitest | **Critical** (CVE-2026-47429) — arbitrary file read/execute while the Vitest UI server is listening. We only ever run `vitest run` (no UI server), so exposure was limited, but vitest 3.2.6 patches the v3 line and our declared `^3.1.1` already permitted it — the lockfile was simply pinned to 3.2.4. Bumped to `^3.2.6` (resolves 3.2.7, full suite green) and the exception dropped. No override and no major-version jump were needed. |
 | GHSA-gv7w-rqvm-qjhr | esbuild | Withdrawn by GitHub on 2026-06-17, and it only ever described esbuild's Deno distribution, which we do not use. Nothing left to ignore. |
+| GHSA-6qxp-vccf-f47h, GHSA-f897-62hf-6gxq, GHSA-22jm-h49p-29qw, GHSA-46jr-4wx8-v453 | @modelcontextprotocol/sdk 1.26.0 | Four highs (OAuth client token routing, unbounded request bodies, task/session binding, validation memory exhaustion). Ignored since #729 and #747 only because `mcp-handler` 1.x pinned the SDK exactly at 1.26.0. Removed 2026-11-07 by moving `/api/mcp` to `mcp-handler` ^2.3.1 on `@modelcontextprotocol/server` ^2.4.0, which drops `@modelcontextprotocol/sdk` entirely and sits above the 2.x fixes for the two advisories that also hit the v2 server (2.1.0 and 2.3.0). |
 
 The lesson worth keeping: an `ignoreGhsas` entry is a snapshot of what was true the
 day it was written. A critical advisory sat suppressed here while a one-line

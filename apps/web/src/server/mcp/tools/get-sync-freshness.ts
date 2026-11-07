@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod-v4"
 
 import { getInboxFreshness } from "@/app/inbox/_lib/selectors"
 import { classifySyncFreshness } from "@/app/inbox/_lib/sync-freshness"

@@ -34,6 +34,9 @@ function resolveEnvironmentName(): string {
   return DEFAULT_MCP_ENVIRONMENT_NAME
 }
 
+// mcp-handler 2.x serves whatever request it is handed (stateless Streamable
+// HTTP, no SSE transport), so mounting it at this route is the whole routing
+// config. Every request reaches it only after the bearer check below.
 const mcpHandler = createMcpHandler(
   (server) => {
     registerConnectorTools(server, {
@@ -45,10 +48,6 @@ const mcpHandler = createMcpHandler(
       name: MCP_SERVER_NAME,
       version: MCP_CONNECTOR_VERSION
     }
-  },
-  {
-    basePath: "/api",
-    disableSse: true
   }
 )
 

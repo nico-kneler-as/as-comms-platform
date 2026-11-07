@@ -1,24 +1,22 @@
 import { describe, expect, it, vi } from "vitest"
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js"
-import type { AnyZodObject } from "zod"
-import { z } from "zod"
+import { z } from "zod-v4"
 
 import {
   createMcpToolRegistry,
-  type McpToolEntry
+  type McpToolCallContext,
+  type McpToolEntry,
+  type McpToolInputSchema
 } from "../../src/server/mcp/tool-registry"
 
 interface RegisteredToolCapture {
   config: {
     title: string
     description: string
-    inputSchema: AnyZodObject
+    inputSchema: McpToolInputSchema
   }
   callback: (
     input: unknown,
-    extra?: {
-      authInfo?: AuthInfo
-    }
+    context?: McpToolCallContext
   ) => Promise<unknown>
 }
 
@@ -45,13 +43,11 @@ function createFakeServer() {
         config: {
           title: string
           description: string
-          inputSchema: AnyZodObject
+          inputSchema: McpToolInputSchema
         },
         callback: (
           input: unknown,
-          extra?: {
-            authInfo?: AuthInfo
-          }
+          context?: McpToolCallContext
         ) => Promise<unknown>
       ) => {
       registrations.set(name, { config, callback })
@@ -221,14 +217,16 @@ describe("mcp tool registry", () => {
     const registered = getRegistration(registrations, "auth_context_tool")
 
     await registered.callback(undefined, {
-      authInfo: {
-        token: "token-1",
-        clientId: "client-1",
-        scopes: ["mcp:read"],
-        extra: {
-          userEmail: "operator@adventurescientists.org",
-          userId: "user-1",
-          userRole: "operator"
+      http: {
+        authInfo: {
+          token: "token-1",
+          clientId: "client-1",
+          scopes: ["mcp:read"],
+          extra: {
+            userEmail: "operator@adventurescientists.org",
+            userId: "user-1",
+            userRole: "operator"
+          }
         }
       }
     })

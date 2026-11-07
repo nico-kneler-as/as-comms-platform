@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod-v4"
 
 import { MCP_CONNECTOR_VERSION } from "../constants"
 import type { McpToolEntry } from "../tool-registry"
