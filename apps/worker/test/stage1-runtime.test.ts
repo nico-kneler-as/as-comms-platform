@@ -6,6 +6,7 @@ import {
   salesforceAudienceListsSyncJobName,
   salesforceContactStatesSyncJobName,
   salesforceProjectBoxesSyncJobName,
+  salesforceSubscriptionPushJobName,
 } from "@as-comms/contracts";
 
 import {
@@ -221,6 +222,18 @@ describe("Stage 1 worker runtime task registration", () => {
     ).toContain(
       `0 6 * * 0 ${reconcileSalesforceStateJobName} ?id=sf-state-reconcile&max=1`,
     );
+    expect(crontabWithoutSalesforceReconciliation).not.toContain(
+      salesforceSubscriptionPushJobName,
+    );
+    expect(
+      buildWorkerCrontab(config, {
+        reconcileSalesforceStateRegistered: false,
+        salesforceSubscriptionPushRegistered: true,
+      }),
+    ).toContain(
+      `* * * * * ${salesforceSubscriptionPushJobName} ?id=salesforce-subscription-push&max=1`,
+    );
+    expect(createTaskList()[salesforceSubscriptionPushJobName]).toBeUndefined();
   });
 
   it("registers Stage 1 task names and executes them through the existing orchestration path", async () => {

@@ -83,6 +83,10 @@ function makeSnapshot(
       failedCount: 0,
       orphanedCount: 0,
     }),
+    subscriptionPush: ok({
+      pendingCount: 0,
+      parkedCount: 0,
+    }),
     smsMessages: ok({
       failedCount: 0,
       undeliveredCount: 0,

@@ -35,6 +35,9 @@ Optional env vars:
 - `WORKER_CONCURRENCY`
 - `INBOX_REVALIDATE_BASE_URL`
 - `INBOX_REVALIDATE_TOKEN`
+- `SALESFORCE_SUBSCRIPTION_PUSH_ENABLED=true` enables the one-minute outbound
+  subscription queue task only when the Salesforce JWT env is also complete;
+  unset or any other value leaves both the task and cron unregistered.
 
 ## Local Dev
 

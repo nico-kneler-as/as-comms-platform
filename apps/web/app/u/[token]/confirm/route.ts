@@ -27,6 +27,7 @@ export async function POST(
         scope,
         source: "recipient_click",
         sourceRunId: target.runId,
+        email: target.email,
       });
     }
   }

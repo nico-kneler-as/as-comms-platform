@@ -99,6 +99,7 @@ import {
   upsertNewsletterSuppression,
   type NewsletterSubscriberSignupResult,
 } from "./newsletter-subscribers-repository.js";
+import { enqueueSalesforceSubscriptionEvent } from "./salesforce-subscription-outbox-repository.js";
 import {
   mapAiKnowledgeEntryRow,
   mapAiKnowledgeEntryToInsert,
@@ -449,6 +450,8 @@ export interface Stage5RepositoryBundle {
       },
       source: ConsentSource,
       sourceRunId?: string,
+      email?: string,
+      occurredAt?: Date,
     ): Promise<void>;
     isOptedOut(
       contactId: string,
@@ -485,6 +488,7 @@ export interface Stage5RepositoryBundle {
   readonly newsletterSuppressions: {
     upsert(
       input: UpsertNewsletterSuppressionInput,
+      occurredAt?: Date,
     ): Promise<NewsletterSuppressionRecord>;
     findByEmail(email: string): Promise<NewsletterSuppressionRecord | null>;
   };
@@ -8699,21 +8703,55 @@ export function createStage5RepositoryBundle(
     },
 
     contactConsent: {
-      async recordOptOut(contactId, scope, source, sourceRunId) {
+      async recordOptOut(contactId, scope, source, sourceRunId, email, occurredAt) {
         const normalizedScope = normalizeConsentScope(scope);
-        await db
-          .insert(contactConsent)
-          .values({
-            id: crypto.randomUUID(),
+        await db.transaction(async (tx) => {
+          const eventAt = occurredAt ?? new Date();
+          const [inserted] = await tx
+            .insert(contactConsent)
+            .values({
+              id: crypto.randomUUID(),
+              contactId,
+              scopeType: normalizedScope.scopeType,
+              scopeId: normalizedScope.scopeId,
+              source,
+              sourceRunId: sourceRunId ?? null,
+              optedOutAt: eventAt,
+              createdAt: new Date(),
+            })
+            .onConflictDoNothing()
+            .returning({ id: contactConsent.id });
+          if (inserted === undefined) return;
+
+          let recipientEmail = email?.trim() ?? "";
+          if (recipientEmail.length === 0) {
+            const [contact] = await tx
+              .select({ primaryEmail: contacts.primaryEmail })
+              .from(contacts)
+              .where(eq(contacts.id, contactId))
+              .limit(1);
+            recipientEmail = contact?.primaryEmail?.trim() ?? "";
+          }
+          if (recipientEmail.length === 0) {
+            console.info(JSON.stringify({
+              event: "salesforce.subscription_outbox.skipped_no_email",
+              count: 1,
+            }));
+            return;
+          }
+          await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+            email: recipientEmail,
             contactId,
-            scopeType: normalizedScope.scopeType,
-            scopeId: normalizedScope.scopeId,
-            source,
-            sourceRunId: sourceRunId ?? null,
-            optedOutAt: new Date(),
-            createdAt: new Date(),
-          })
-          .onConflictDoNothing();
+            eventKind:
+              normalizedScope.scopeType === "newsletter"
+                ? "newsletter_opt_out"
+                : normalizedScope.scopeType === "project"
+                  ? "project_opt_out"
+                  : "all_opt_out",
+            projectId: normalizedScope.scopeId,
+            occurredAt: eventAt,
+          });
+        });
       },
 
       async isOptedOut(contactId, scope, at) {
@@ -8759,29 +8797,38 @@ export function createStage5RepositoryBundle(
         const normalizedEmail = normalizeSuppressionEmail(email);
         const eventAtIso = eventAt.toISOString();
 
-        await db
-          .insert(suppressionList)
-          .values({
-            id: crypto.randomUUID(),
-            normalizedEmail,
-            reason,
-            firstEventAt: eventAt,
-            lastEventAt: eventAt,
-            lastProviderEventId: providerEventId,
-            notes: null,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .onConflictDoUpdate({
-            target: suppressionList.normalizedEmail,
-            set: {
+        await db.transaction(async (tx) => {
+          await tx
+            .insert(suppressionList)
+            .values({
+              id: crypto.randomUUID(),
+              normalizedEmail,
               reason,
-              firstEventAt: sql`least(${suppressionList.firstEventAt}, ${eventAtIso}::timestamptz)`,
-              lastEventAt: sql`greatest(${suppressionList.lastEventAt}, ${eventAtIso}::timestamptz)`,
+              firstEventAt: eventAt,
+              lastEventAt: eventAt,
               lastProviderEventId: providerEventId,
+              notes: null,
+              createdAt: new Date(),
               updatedAt: new Date(),
-            },
-          });
+            })
+            .onConflictDoUpdate({
+              target: suppressionList.normalizedEmail,
+              set: {
+                reason,
+                firstEventAt: sql`least(${suppressionList.firstEventAt}, ${eventAtIso}::timestamptz)`,
+                lastEventAt: sql`greatest(${suppressionList.lastEventAt}, ${eventAtIso}::timestamptz)`,
+                lastProviderEventId: providerEventId,
+                updatedAt: new Date(),
+              },
+            });
+          if (reason === "hard_bounce") {
+            await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+              email: normalizedEmail,
+              eventKind: "hard_bounce",
+              occurredAt: eventAt,
+            });
+          }
+        });
       },
 
       async isSuppressed(normalizedEmail, at) {
@@ -8822,13 +8869,42 @@ export function createStage5RepositoryBundle(
       },
 
       async signUp(input) {
-        return signUpNewsletterSubscriber(db, input);
+        return db.transaction(async (tx) => {
+          const result = await signUpNewsletterSubscriber(
+            tx as Stage1Database,
+            input,
+          );
+          if (result.disposition !== "already_subscribed") {
+            await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+              email: input.email,
+              eventKind: "newsletter_signup",
+              occurredAt: new Date(input.optinTime),
+            });
+          }
+          return result;
+        });
       },
     },
 
     newsletterSuppressions: {
-      async upsert(input) {
-        return upsertNewsletterSuppression(db, input);
+      async upsert(input, occurredAt) {
+        return db.transaction(async (tx) => {
+          const result = await upsertNewsletterSuppression(
+            tx as Stage1Database,
+            input,
+          );
+          if (
+            input.reason === "platform_optout" ||
+            input.reason === "unsubscribed"
+          ) {
+            await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+              email: input.email,
+              eventKind: "newsletter_opt_out",
+              occurredAt: occurredAt ?? new Date(),
+            });
+          }
+          return result;
+        });
       },
 
       async findByEmail(email) {

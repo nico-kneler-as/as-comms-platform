@@ -10,6 +10,9 @@
 
 - This file is the current inventory from `buildWorkerCrontab` and `createTaskList`.
 - The first two cron lines are env-derived from `GMAIL_LIVE_POLL_INTERVAL_SECONDS` and `SALESFORCE_TASK_POLL_INTERVAL_SECONDS`.
+- `salesforce-subscription-push` is absent by default and is registered only
+  when `SALESFORCE_SUBSCRIPTION_PUSH_ENABLED=true` and the Salesforce JWT env
+  is complete.
 - Non-cron task types remain callable even when they are usually reached through cron fan-out.
 
 ## Live cron jobs
@@ -25,6 +28,7 @@
 | `campaign-events-tail-finalize`       | `0 3 * * *`                                              | Finalize older completed campaign runs after the 30-day event tail window.                     | none                                                                                                 |
 | `sweep-pending-outbounds`             | `*/5 * * * *`                                            | Sweep long-lived pending composer email rows to `orphaned`.                                    | none                                                                                                 |
 | `reconcile-stale-running`             | `* * * * *`                                              | Clear or alert on stuck Graphile jobs still marked running.                                    | none                                                                                                 |
+| `salesforce-subscription-push`        | `* * * * *` (conditionally registered)                   | Push leased platform subscription events to Salesforce Email Subscription Preference records. | none                                                                                                 |
 | `reconcile-stranded-campaign-runs`    | `*/5 * * * *`                                            | Re-enqueue email campaign sends whose run is still `sending` but has no live job.              | [reconcile-stranded-campaign-runs.ts](../../apps/worker/src/ops/reconcile-stranded-campaign-runs.ts) |
 | `reconcile-identity-queue`            | `*/15 * * * *`                                           | Re-run identity review cases against stored evidence and current data.                         | [reconcile-identity-queue.ts](../../apps/worker/src/ops/reconcile-identity-queue.ts)                 |
 | `poll-inbox-read-state`               | `*/10 * * * *`                                           | Check Gmail read/out-of-inbox state for `New` rows and flip them to `Opened` when appropriate. | [poll-inbox-read-state.ts](../../apps/worker/src/ops/poll-inbox-read-state.ts)                       |

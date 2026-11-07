@@ -471,6 +471,33 @@ function buildPendingComposerSection(
   };
 }
 
+function buildSubscriptionPushSection(
+  snapshot: DailyOpsDigestSnapshot,
+): DailyOpsDigestSection | null {
+  if (snapshot.subscriptionPush.kind === "gap") {
+    return buildGapSection({
+      kind: "subscription_push",
+      title: "Salesforce subscription push",
+      detail: snapshot.subscriptionPush.detail,
+      linkTarget: "logs",
+    });
+  }
+  const { pendingCount, parkedCount } = snapshot.subscriptionPush.value;
+  if (pendingCount === 0 && parkedCount === 0) return null;
+  return {
+    kind: "subscription_push",
+    tone: "alert",
+    title: "Salesforce subscription push",
+    summary: `${pluralize(pendingCount, "pending row")}; ${pluralize(parkedCount, "parked row")}.`,
+    baseline: "No pending or parked subscription rows.",
+    details: [
+      { label: "subscription_push_pending", value: String(pendingCount) },
+      { label: "subscription_push_parked", value: String(parkedCount) },
+    ],
+    linkTarget: "logs",
+  };
+}
+
 function buildSmsSection(
   snapshot: DailyOpsDigestSnapshot,
 ): DailyOpsDigestSection | null {
@@ -703,6 +730,7 @@ export function buildDailyOpsDigest(input: {
     buildSourceEvidenceQuarantineSection(input.snapshot),
     buildPostmarkSection(input.snapshot, input.watermark),
     buildPendingComposerSection(input.snapshot),
+    buildSubscriptionPushSection(input.snapshot),
     buildSmsSection(input.snapshot),
     buildIntegrationHealthSection(input.snapshot, input.watermark),
     buildReviewQueueSection(input.snapshot, input.watermark),

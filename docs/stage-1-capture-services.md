@@ -125,6 +125,9 @@ Required env:
 
 Optional env:
 
+- `SALESFORCE_SUBSCRIPTION_PUSH_ENABLED`
+  - worker-only, defaults to disabled; only the exact value `true` registers
+    the outbound subscription push task and its one-minute cron
 - `SALESFORCE_JWT_EXPIRATION_SECONDS`
   - defaults to `180`
 - `SALESFORCE_API_VERSION`

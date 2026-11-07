@@ -9,6 +9,7 @@ export * from "./settings-records.js";
 export * from "./salesforce-audience-lists.js";
 export * from "./salesforce-contact-states.js";
 export * from "./salesforce-subscription-preferences.js";
+export * from "./salesforce-subscription-outbox.js";
 export * from "./residence-states.js";
 export * from "./stage5-broadcast-link-clicks.js";
 export * from "./stage5-broadcast-opens.js";

@@ -561,6 +561,8 @@ async function processEvent(
             : { type: "newsletter" },
           "provider_event",
           run.id,
+          snapshot.frozenEmail,
+          new Date(occurredAt),
         );
       }
 
@@ -575,7 +577,7 @@ async function processEvent(
           email: snapshot.frozenEmail,
           reason: "platform_optout",
           source: "provider_event",
-        });
+        }, new Date(occurredAt));
       }
       if (
         snapshot.contactId === null &&
