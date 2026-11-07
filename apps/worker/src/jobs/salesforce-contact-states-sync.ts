@@ -54,6 +54,7 @@ export function createSalesforceContactStatesSyncTask(
         stored: records.length,
         with_state_code: stats.withStateCode,
         without_state_code: stats.withoutStateCode,
+        with_opt_out: stats.withOptOut,
         duplicates_collapsed: stats.duplicatesCollapsed,
         dropped_invalid_email: stats.droppedInvalidEmail,
         captured_at: snapshot.capturedAt,

@@ -560,7 +560,8 @@ export interface SalesforceAudienceListsRepository {
 export interface SalesforceContactStateRecord {
   readonly normalizedEmail: string;
   readonly stateCode: ResidenceStateCode | null;
-  readonly rawState: string;
+  readonly rawState: string | null;
+  readonly hasOptedOutOfEmail: boolean;
   readonly salesforceContactId: string;
   readonly salesforceLastModifiedAt: Date;
 }
@@ -568,6 +569,7 @@ export interface SalesforceContactStateRecord {
 export interface SalesforceContactStatesRepository {
   replaceAll(records: readonly SalesforceContactStateRecord[], syncedAt: Date): Promise<void>;
   findByEmails(normalizedEmails: readonly string[]): Promise<ReadonlyMap<string, ResidenceStateCode | null>>;
+  listOptedOutEmails(): Promise<ReadonlySet<string>>;
   lastSyncedAt(): Promise<Date | null>;
   countAll(): Promise<number>;
 }
@@ -8007,6 +8009,14 @@ function createSalesforceContactStatesRepository(
         }
       }
       return result;
+    },
+
+    async listOptedOutEmails() {
+      const rows = await db
+        .select({ normalizedEmail: salesforceContactStates.normalizedEmail })
+        .from(salesforceContactStates)
+        .where(eq(salesforceContactStates.hasOptedOutOfEmail, true));
+      return new Set(rows.map((row) => row.normalizedEmail));
     },
 
     async lastSyncedAt() {

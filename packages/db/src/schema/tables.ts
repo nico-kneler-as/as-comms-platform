@@ -2389,7 +2389,8 @@ export const salesforceContactStates = pgTable(
   {
     normalizedEmail: text("normalized_email").primaryKey(),
     stateCode: text("state_code"),
-    rawState: text("raw_state").notNull(),
+    rawState: text("raw_state"),
+    hasOptedOutOfEmail: boolean("has_opted_out_of_email").notNull().default(false),
     salesforceContactId: text("salesforce_contact_id").notNull(),
     salesforceLastModifiedAt: timestamp("salesforce_last_modified_at", {
       mode: "date",
@@ -2400,5 +2401,10 @@ export const salesforceContactStates = pgTable(
       withTimezone: true,
     }).notNull(),
   },
-  (table) => [index("salesforce_contact_states_state_code_idx").on(table.stateCode)],
+  (table) => [
+    index("salesforce_contact_states_state_code_idx").on(table.stateCode),
+    index("salesforce_contact_states_opted_out_email_idx")
+      .on(table.normalizedEmail)
+      .where(sql`${table.hasOptedOutOfEmail}`),
+  ],
 );

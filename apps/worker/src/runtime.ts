@@ -421,6 +421,7 @@ function buildCampaignSendDependencies(input: {
           (await input.campaigns.newsletterSuppressions.findByEmail(email)) !==
           null,
       },
+      salesforceEmailOptOuts: input.campaigns.salesforceContactStates,
     },
   });
   const mergeRenderer = createMergeRenderer();

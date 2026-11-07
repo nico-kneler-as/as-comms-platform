@@ -1982,19 +1982,20 @@ export function createSalesforceCaptureService(
 
   async function captureContactStates(): Promise<SalesforceContactStatesSnapshot> {
     const rows = await apiClient.queryAll(
-      "SELECT Id, Email, State__c, LastModifiedDate FROM Contact WHERE Email != null AND State__c != null",
+      "SELECT Id, Email, State__c, HasOptedOutOfEmail, LastModifiedDate FROM Contact WHERE Email != null",
     );
     return salesforceContactStatesCaptureResponseSchema.parse({
       rows: rows.flatMap((row) => {
         const salesforceContactId = getStringField(row, "Id");
         const email = getStringField(row, "Email");
         const rawState = getStringField(row, "State__c");
+        const hasOptedOutOfEmail = row.HasOptedOutOfEmail === true;
         const lastModifiedAt = toIsoTimestamp(
           getStringField(row, "LastModifiedDate"),
         );
-        return salesforceContactId === null || email === null || rawState === null || lastModifiedAt === null
+        return salesforceContactId === null || email === null || lastModifiedAt === null
           ? []
-          : [{ salesforceContactId, email, rawState, lastModifiedAt }];
+          : [{ salesforceContactId, email, rawState, hasOptedOutOfEmail, lastModifiedAt }];
       }),
       capturedAt: now().toISOString(),
     });

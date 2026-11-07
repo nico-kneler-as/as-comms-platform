@@ -5,11 +5,16 @@ import { createTestStage1Context } from "./helpers.js";
 
 type TestContext = Awaited<ReturnType<typeof createTestStage1Context>>;
 
-function record(index: number, stateCode: "MT" | "ID" | null = "MT") {
+function record(
+  index: number,
+  stateCode: "MT" | "ID" | null = "MT",
+  hasOptedOutOfEmail = false,
+) {
   return {
     normalizedEmail: `person-${String(index)}@example.org`,
     stateCode,
-    rawState: stateCode === "MT" ? "Montana" : stateCode === "ID" ? "Idaho" : "Bali",
+    rawState: stateCode === "MT" ? "Montana" : stateCode === "ID" ? "Idaho" : null,
+    hasOptedOutOfEmail,
     salesforceContactId: `003-${String(index)}`,
     salesforceLastModifiedAt: new Date("2026-11-06T12:00:00.000Z"),
   };
@@ -48,7 +53,7 @@ describe("Salesforce contact-states repository", () => {
 
     await expect(repository.replaceAll([
       record(1),
-      { ...record(2), rawState: null as never },
+      { ...record(2), normalizedEmail: null as never },
     ], new Date("2026-11-06T14:00:00.000Z"))).rejects.toThrow();
     expect(await repository.countAll()).toBe(2_500);
   });
@@ -64,5 +69,22 @@ describe("Salesforce contact-states repository", () => {
       ["person-1@example.org", "MT"],
       ["person-2@example.org", null],
     ]));
+  });
+
+  it("round-trips opt-outs and stateless contacts", async () => {
+    context = await createTestStage1Context();
+    const repository = createStage5RepositoryBundle(context.db).salesforceContactStates;
+    await repository.replaceAll([
+      record(1, "MT", true),
+      record(2, null, false),
+      record(3, "ID", false),
+    ], new Date("2026-11-06T12:00:00.000Z"));
+
+    expect(await repository.listOptedOutEmails()).toEqual(
+      new Set(["person-1@example.org"]),
+    );
+    expect(await repository.findByEmails(["person-2@example.org"])).toEqual(
+      new Map([["person-2@example.org", null]]),
+    );
   });
 });

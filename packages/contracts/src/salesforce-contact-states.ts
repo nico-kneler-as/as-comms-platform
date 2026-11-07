@@ -10,7 +10,8 @@ export type SalesforceContactStatesCaptureRequest = z.infer<
 export const salesforceContactStateRowSchema = z.object({
   salesforceContactId: z.string().min(1),
   email: z.string().trim().min(1),
-  rawState: z.string(),
+  rawState: z.string().nullable(),
+  hasOptedOutOfEmail: z.boolean(),
   lastModifiedAt: z.string().datetime(),
 });
 export type SalesforceContactStateRow = z.infer<

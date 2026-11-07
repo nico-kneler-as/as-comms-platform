@@ -9,6 +9,7 @@ function row(input: Partial<SalesforceContactStateRow> = {}): SalesforceContactS
     salesforceContactId: "003-default",
     email: "person@example.org",
     rawState: "Montana",
+    hasOptedOutOfEmail: false,
     lastModifiedAt: "2026-11-06T12:00:00.000Z",
     ...input,
   };
@@ -28,7 +29,7 @@ describe("buildSalesforceContactStateRows", () => {
     ]);
     expect(result.stats).toEqual({
       inputRows: 3, droppedInvalidEmail: 1, duplicatesCollapsed: 0,
-      withStateCode: 1, withoutStateCode: 1,
+      withStateCode: 1, withoutStateCode: 1, withOptOut: 0,
     });
   });
 
@@ -43,5 +44,30 @@ describe("buildSalesforceContactStateRows", () => {
       expect.objectContaining({ salesforceContactId: "003-a", stateCode: "WA" }),
     ]);
     expect(result.stats.duplicatesCollapsed).toBe(2);
+  });
+
+  it("keeps the newest state while OR-ing Salesforce opt-outs across duplicates", () => {
+    const result = buildSalesforceContactStateRows([
+      row({ salesforceContactId: "003-old", rawState: "Montana", hasOptedOutOfEmail: true }),
+      row({ salesforceContactId: "003-new", rawState: "Idaho", hasOptedOutOfEmail: false, lastModifiedAt: "2026-11-06T13:00:00.000Z" }),
+    ]);
+
+    expect(result.records).toEqual([
+      expect.objectContaining({
+        salesforceContactId: "003-new",
+        stateCode: "ID",
+        hasOptedOutOfEmail: true,
+      }),
+    ]);
+    expect(result.stats.withOptOut).toBe(1);
+  });
+
+  it("keeps contacts with no state as stateCode null", () => {
+    const result = buildSalesforceContactStateRows([row({ rawState: null })]);
+
+    expect(result.records).toEqual([
+      expect.objectContaining({ rawState: null, stateCode: null }),
+    ]);
+    expect(result.stats.withoutStateCode).toBe(1);
   });
 });

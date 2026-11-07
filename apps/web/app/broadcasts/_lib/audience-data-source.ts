@@ -1371,6 +1371,7 @@ export async function previewComposedAudience(runId: string): Promise<{
         isSuppressed: async (email) =>
           (await runtime.campaigns.newsletterSuppressions.findByEmail(email)) !== null,
       },
+      salesforceEmailOptOuts: runtime.campaigns.salesforceContactStates,
     },
   }).applyExclusions(composed.members, runId, at);
   return {
