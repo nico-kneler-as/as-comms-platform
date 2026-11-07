@@ -48,6 +48,7 @@ export const consentSourceValues = [
   "admin_action",
   "provider_event",
   "import",
+  "salesforce",
 ] as const;
 export const consentSourceSchema = z.enum(consentSourceValues);
 export type ConsentSource = z.infer<typeof consentSourceSchema>;

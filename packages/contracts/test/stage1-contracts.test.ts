@@ -13,10 +13,16 @@ import {
   resolveCanonicalChannel,
   routingReviewReasonCodeValues,
   sourceEvidenceSchema,
-  syncStateSchema
+  syncStateSchema,
+  consentSourceValues,
+  salesforceSubscriptionReadbackModeSchema
 } from "../src/index.js";
 
 describe("Stage 1 contracts", () => {
+  it("keeps Salesforce subscription readback source and modes explicit", () => {
+    expect(consentSourceValues).toContain("salesforce");
+    expect(salesforceSubscriptionReadbackModeSchema.options).toEqual(["dry_run", "apply"]);
+  });
   it("keeps the canonical event taxonomy and channel mapping aligned", () => {
     // 15 original Stage 1 + 3 Stage 5A additions
     // (campaign.email.delivered / .bounced / .complained, written by the

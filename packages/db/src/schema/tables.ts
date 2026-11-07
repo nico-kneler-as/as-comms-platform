@@ -1815,7 +1815,7 @@ export const contactConsent = pgTable(
     ),
     check(
       "contact_consent_source_check",
-      sql`${table.source} IN ('recipient_click', 'admin_action', 'provider_event', 'import')`,
+      sql`${table.source} IN ('recipient_click', 'admin_action', 'provider_event', 'import', 'salesforce')`,
     ),
     check(
       "contact_consent_scope_shape_check",
@@ -1833,6 +1833,78 @@ export const contactConsent = pgTable(
       .on(table.contactId, table.scopeType)
       .where(sql`${table.scopeType} IN ('newsletter', 'all')`),
   ],
+);
+
+export const salesforceSubscriptionPreferences = pgTable(
+  "salesforce_subscription_preferences",
+  {
+    salesforceRecordId: text("salesforce_record_id").primaryKey(),
+    email: text("email").notNull(),
+    salesforceContactId: text("salesforce_contact_id"),
+    generalNewsletter: boolean("general_newsletter").notNull(),
+    oregonShoresNewsletter: boolean("oregon_shores_newsletter").notNull(),
+    pnwForestMonitoring: boolean("pnw_forest_monitoring").notNull(),
+    beechAndButternut: boolean("beech_and_butternut").notNull(),
+    trackingWhitebarkPine: boolean("tracking_whitebark_pine").notNull(),
+    coralReefExpansion: boolean("coral_reef_expansion").notNull(),
+    monitoringKillerWhalesProject: boolean("monitoring_killer_whales_project").notNull(),
+    unsubscribedFromAll: boolean("unsubscribed_from_all").notNull(),
+    unsubscribedAt: timestamp("unsubscribed_at", { mode: "date", withTimezone: true }),
+    emailBounced: boolean("email_bounced").notNull(),
+    recordCreationSource: text("record_creation_source"),
+    isDeleted: boolean("is_deleted").notNull().default(false),
+    sfLastModifiedAt: timestamp("sf_last_modified_at", { mode: "date", withTimezone: true }).notNull(),
+    sfLastModifiedById: text("sf_last_modified_by_id"),
+    capturedAt: timestamp("captured_at", { mode: "date", withTimezone: true }).notNull(),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+  (table) => [
+    index("salesforce_subscription_preferences_email_idx").on(table.email),
+    index("salesforce_subscription_preferences_contact_idx").on(table.salesforceContactId),
+    index("salesforce_subscription_preferences_modified_idx").on(table.sfLastModifiedAt),
+  ],
+);
+
+export const salesforceSubscriptionReadbackEvents = pgTable(
+  "salesforce_subscription_readback_events",
+  {
+    id: uuid("id").primaryKey(),
+    salesforceRecordId: text("salesforce_record_id").notNull(),
+    email: text("email").notNull(),
+    field: text("field").notNull(),
+    projectBox: text("project_box"),
+    fromValue: boolean("from_value"),
+    toValue: boolean("to_value").notNull(),
+    sfModifiedAt: timestamp("sf_modified_at", { mode: "date", withTimezone: true }).notNull(),
+    sfModifiedByUsername: text("sf_modified_by_username"),
+    mode: text("mode").notNull(),
+    outcome: text("outcome").notNull(),
+    contactsMatched: integer("contacts_matched").notNull(),
+    rowsChanged: integer("rows_changed").notNull(),
+    createdAt: createdAtColumn,
+  },
+  (table) => [index("salesforce_subscription_readback_events_created_idx").on(table.createdAt), index("salesforce_subscription_readback_events_email_idx").on(table.email)],
+);
+
+export const contactConsentClears = pgTable(
+  "contact_consent_clears",
+  {
+    id: text("id").primaryKey(),
+    consentId: text("consent_id").notNull(),
+    contactId: text("contact_id").notNull(),
+    scopeType: text("scope_type").notNull(),
+    scopeId: text("scope_id"),
+    source: text("source").notNull(),
+    sourceRunId: text("source_run_id"),
+    optedOutAt: timestamp("opted_out_at", { mode: "date", withTimezone: true }).notNull(),
+    clearedAt: timestamp("cleared_at", { mode: "date", withTimezone: true }).notNull(),
+    clearedBySource: text("cleared_by_source").notNull(),
+    salesforceRecordId: text("salesforce_record_id"),
+    readbackEventId: uuid("readback_event_id"),
+    createdAt: createdAtColumn,
+  },
+  (table) => [check("contact_consent_clears_source_check", sql`${table.clearedBySource} = 'salesforce'`), index("contact_consent_clears_contact_idx").on(table.contactId)],
 );
 
 export const salesforceSubscriptionOutbox = pgTable(

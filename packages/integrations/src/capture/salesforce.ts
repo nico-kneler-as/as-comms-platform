@@ -7,6 +7,8 @@ import {
   salesforceContactStatesCaptureResponseSchema,
   salesforceProjectBoxesSyncPayloadSchema,
   salesforceProjectBoxesCaptureResponseSchema,
+  salesforceSubscriptionPreferencesCaptureRequestSchema,
+  salesforceSubscriptionPreferencesCaptureResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type SalesforceAudienceListsCaptureRequest,
@@ -14,6 +16,8 @@ import {
   type SalesforceContactStatesCaptureRequest,
   type SalesforceContactStatesSnapshot,
   type SalesforceProjectBoxesCaptureResponse,
+  type SalesforceSubscriptionPreferencesCaptureRequest,
+  type SalesforceSubscriptionPreferencesCaptureResponse,
 } from "@as-comms/contracts";
 
 import {
@@ -29,6 +33,7 @@ import {
 } from "./shared.js";
 
 const SALESFORCE_CONTACT_STATES_MIN_TIMEOUT_MS = 120_000;
+const SALESFORCE_SUBSCRIPTION_PREFERENCES_MIN_TIMEOUT_MS = 120_000;
 
 const salesforceCapturedBatchSchema = createCapturedBatchResponseSchema(
   salesforceRecordSchema
@@ -55,6 +60,9 @@ export function createSalesforceCapturePort(
   captureProjectSubscriptionBoxes(payload: {
     readonly version: 1;
   }): Promise<SalesforceProjectBoxesCaptureResponse>;
+  captureSubscriptionPreferences(
+    payload: SalesforceSubscriptionPreferencesCaptureRequest,
+  ): Promise<SalesforceSubscriptionPreferencesCaptureResponse>;
 } {
   return {
     captureHistoricalBatch(payload) {
@@ -112,6 +120,19 @@ export function createSalesforceCapturePort(
         payload,
         payloadSchema: salesforceProjectBoxesSyncPayloadSchema,
         responseSchema: salesforceProjectBoxesCaptureResponseSchema,
+        fetchImplementation: input?.fetchImplementation,
+      });
+    },
+    captureSubscriptionPreferences(payload) {
+      return requestCaptureBatch({
+        config: {
+          ...config,
+          timeoutMs: Math.max(config.timeoutMs, SALESFORCE_SUBSCRIPTION_PREFERENCES_MIN_TIMEOUT_MS),
+        },
+        path: "/subscription-preferences",
+        payload,
+        payloadSchema: salesforceSubscriptionPreferencesCaptureRequestSchema,
+        responseSchema: salesforceSubscriptionPreferencesCaptureResponseSchema,
         fetchImplementation: input?.fetchImplementation,
       });
     },

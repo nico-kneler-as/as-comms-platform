@@ -9,11 +9,13 @@ import {
   campaignSendJobMaxAttempts,
   campaignSendJobName,
   campaignSendPayloadSchema,
+  salesforceSubscriptionFormsUsernamesDefault,
 } from "@as-comms/contracts";
 import {
   closeDatabaseConnection,
   createMailchimpCampaignTailStateRepository,
   createSalesforceSubscriptionOutboxRepository,
+  createSalesforceSubscriptionReadbackRepository,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
   createStage5RepositoryBundleFromConnection,
@@ -107,6 +109,7 @@ import { salesforceAudienceListsSyncJobName } from "./jobs/salesforce-audience-l
 import { salesforceContactStatesSyncJobName } from "./jobs/salesforce-contact-states-sync.js";
 import { salesforceProjectBoxesSyncJobName } from "./jobs/salesforce-project-boxes-sync.js";
 import { salesforceSubscriptionPushJobName } from "./jobs/salesforce-subscription-push.js";
+import { salesforceSubscriptionReadbackJobName } from "./jobs/salesforce-subscription-readback.js";
 import { createOpsAlertSender } from "./ops-alert/sender.js";
 
 const defaultSyncStateLeaseThresholdMs = 5 * 60 * 1000;
@@ -198,6 +201,7 @@ export function buildWorkerCrontab(
   input?: {
     readonly reconcileSalesforceStateRegistered?: boolean;
     readonly salesforceSubscriptionPushRegistered?: boolean;
+    readonly salesforceSubscriptionReadbackRegistered?: boolean;
   },
 ): string {
   const gmailMinutes = toCronMinuteInterval(
@@ -232,6 +236,9 @@ export function buildWorkerCrontab(
       ? [
           `* * * * * ${salesforceSubscriptionPushJobName} ?id=salesforce-subscription-push&max=1`,
         ]
+      : []),
+    ...(input?.salesforceSubscriptionReadbackRegistered === true
+      ? [`*/5 * * * * ${salesforceSubscriptionReadbackJobName} ?id=salesforce-subscription-readback&max=1`]
       : []),
     ...(input?.reconcileSalesforceStateRegistered === false
       ? []
@@ -735,6 +742,89 @@ function buildSalesforceSubscriptionPushDependencies(input: {
   };
 }
 
+export type SalesforceSubscriptionReadbackSettings =
+  | {
+      readonly enabled: false;
+      readonly reason:
+        | "mode_off"
+        | "invalid_mode"
+        | "missing_salesforce_username";
+    }
+  | {
+      readonly enabled: true;
+      readonly mode: "dry_run" | "apply";
+      readonly integrationUsername: string;
+      readonly formsUsernames: readonly string[];
+    };
+
+/**
+ * Pure env parsing for the Salesforce subscription readback job. Off unless
+ * SALESFORCE_SUBSCRIPTION_READBACK_MODE is exactly dry_run or apply. A blank
+ * SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES falls back to the default list: an
+ * empty list would turn website-form unticks into opt-outs.
+ */
+export function readSalesforceSubscriptionReadbackSettings(
+  env: NodeJS.ProcessEnv,
+): SalesforceSubscriptionReadbackSettings {
+  const mode = (env.SALESFORCE_SUBSCRIPTION_READBACK_MODE ?? "off")
+    .trim()
+    .toLowerCase();
+  if (mode === "" || mode === "off") {
+    return { enabled: false, reason: "mode_off" };
+  }
+  if (mode !== "dry_run" && mode !== "apply") {
+    return { enabled: false, reason: "invalid_mode" };
+  }
+  const integrationUsername = readOptionalTrimmedEnv(env.SALESFORCE_USERNAME);
+  if (integrationUsername === null) {
+    return { enabled: false, reason: "missing_salesforce_username" };
+  }
+  const configuredForms = (env.SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  return {
+    enabled: true,
+    mode,
+    integrationUsername,
+    formsUsernames:
+      configuredForms.length === 0
+        ? salesforceSubscriptionFormsUsernamesDefault
+        : configuredForms,
+  };
+}
+
+function buildSalesforceSubscriptionReadbackDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly connection: DatabaseConnection;
+  readonly capture: ReturnType<typeof createSalesforceCapturePort>;
+}) {
+  const settings = readSalesforceSubscriptionReadbackSettings(input.env);
+  if (!settings.enabled) {
+    if (settings.reason === "invalid_mode") {
+      console.error(
+        JSON.stringify({ event: "salesforce.subscription_readback.invalid_mode" }),
+      );
+    }
+    console.info(
+      JSON.stringify({
+        event: "salesforce.subscription_readback.disabled",
+        reason: settings.reason,
+      }),
+    );
+    return undefined;
+  }
+  return {
+    mode: settings.mode,
+    integrationUsername: settings.integrationUsername,
+    formsUsernames: settings.formsUsernames,
+    capture: input.capture,
+    repository: createSalesforceSubscriptionReadbackRepository(
+      input.connection.db,
+    ),
+  } as const;
+}
+
 function buildReconcileSalesforceStateDependencies(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly db: Stage1Database;
@@ -1230,6 +1320,11 @@ export async function createStage1WorkerRuntimeServices(
         ? createDeferredMailchimpCapturePort()
         : createMailchimpCapturePort(config.capture.mailchimp, fetchOptions),
   };
+  const salesforceSubscriptionReadback = buildSalesforceSubscriptionReadbackDependencies({
+    env: input?.env ?? process.env,
+    connection,
+    capture: capture.salesforce,
+  });
   const revalidateInboxViews = createWebInboxInvalidationPort(
     config.web,
     fetchImplementation,
@@ -1312,6 +1407,9 @@ export async function createStage1WorkerRuntimeServices(
       ...(salesforceSubscriptionPush === undefined
         ? {}
         : { salesforceSubscriptionPush }),
+      ...(salesforceSubscriptionReadback === undefined
+        ? {}
+        : { salesforceSubscriptionReadback }),
       campaignEventsTailFinalize: {
         db: connection.db,
         campaigns,
@@ -1458,6 +1556,8 @@ export async function startWorker(
           reconcileSalesforceStateJobName in runtime.taskList,
         salesforceSubscriptionPushRegistered:
           salesforceSubscriptionPushJobName in runtime.taskList,
+        salesforceSubscriptionReadbackRegistered:
+          salesforceSubscriptionReadbackJobName in runtime.taskList,
       }),
       noHandleSignals: true,
       pollInterval: 2000,
