@@ -29,6 +29,7 @@ export {
 } from "./pii-policy"
 export {
   createMcpToolRegistry,
+  type McpToolCallContext,
   type McpToolEntry,
   type McpToolInputSchema,
   type McpToolPayload,

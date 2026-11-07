@@ -18,7 +18,7 @@
     "@as-comms/integrations": "workspace:*",
     "@as-comms/ui": "workspace:*",
     "@auth/drizzle-adapter": "^1.7.4",
-    "@modelcontextprotocol/sdk": "1.26.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -38,7 +38,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.8.0",
-    "mcp-handler": "^1.1.0",
+    "mcp-handler": "^2.3.1",
     "next": "^15.5.28",
     "next-auth": "^5.0.0-beta.32",
     "react": "^19.0.0",
@@ -47,6 +47,7 @@
     "sharp": "^0.35.5",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "zod-v4": "npm:zod@^4.6.6"
   }
 }

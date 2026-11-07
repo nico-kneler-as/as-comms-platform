@@ -1,9 +1,12 @@
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import type * as z from "zod"
+import type { AuthInfo, CallToolResult } from "@modelcontextprotocol/server"
+// MCP SDK v2 only accepts schemas that can describe themselves as JSON Schema
+// (`~standard.jsonSchema`), which zod 3 cannot. Tool input schemas therefore use
+// zod 4 through the `zod-v4` alias; the rest of the app stays on zod 3 for now.
+// Keep `zod-v4` inside src/server/mcp so the two never mix in one schema.
+import type * as z from "zod-v4"
 
 export type McpToolPayload = Record<string, unknown>
-export type McpToolInputSchema = z.AnyZodObject
+export type McpToolInputSchema = z.ZodObject
 
 export interface McpAuthenticatedOperator {
   userEmail: string
@@ -48,11 +51,17 @@ export interface McpToolRegistrar {
     },
     callback: (
       input: unknown,
-      extra?: {
-        authInfo?: AuthInfo
-      }
+      context?: McpToolCallContext
     ) => Promise<CallToolResult>
   ): unknown
+}
+
+// The slice of the SDK's per-call `ServerContext` the registry reads. mcp-handler
+// forwards `request.auth` (set by /api/mcp after bearer validation) here.
+export interface McpToolCallContext {
+  http?: {
+    authInfo?: AuthInfo
+  }
 }
 
 type McpToolErrorCode = "validation_error" | "tool_error" | "internal_error"
@@ -162,12 +171,7 @@ export function createMcpToolRegistry(
             description: entry.description,
             inputSchema: entry.inputSchema
           },
-          async (
-            input: unknown,
-            extra?: {
-              authInfo?: AuthInfo
-            }
-          ) => {
+          async (input: unknown, context?: McpToolCallContext) => {
             const parsedInput = entry.inputSchema.safeParse(input ?? {})
 
             if (!parsedInput.success) {
@@ -178,9 +182,10 @@ export function createMcpToolRegistry(
             }
 
             try {
+              const authInfo = context?.http?.authInfo
               const payload = await entry.handler(parsedInput.data, {
-                authInfo: extra?.authInfo,
-                authenticatedUser: readAuthenticatedUser(extra?.authInfo)
+                authInfo,
+                authenticatedUser: readAuthenticatedUser(authInfo)
               })
               return createToolSuccessResult(payload)
             } catch (error) {

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js"
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import type { AnyZodObject } from "zod"
+import type { AuthInfo, CallToolResult } from "@modelcontextprotocol/server"
 
 vi.mock("next/cache", () => ({
   unstable_cache: (loader: () => unknown) => loader,
@@ -15,7 +13,12 @@ vi.mock("@/src/server/auth/session", () => ({
 }))
 
 import { getInboxList } from "../../app/inbox/_lib/selectors"
-import { DEFAULT_MCP_RESPONSE_BUDGET_CAP, registerConnectorTools } from "../../src/server/mcp"
+import {
+  DEFAULT_MCP_RESPONSE_BUDGET_CAP,
+  registerConnectorTools,
+  type McpToolCallContext,
+  type McpToolInputSchema
+} from "../../src/server/mcp"
 import { waitForPendingSecurityAuditTasksForTests } from "../../src/server/security/audit"
 import {
   createStage1WebTestRuntime,
@@ -31,13 +34,11 @@ interface RegisteredToolCapture {
   config: {
     title: string
     description: string
-    inputSchema: AnyZodObject
+    inputSchema: McpToolInputSchema
   }
   callback: (
     input: unknown,
-    extra?: {
-      authInfo?: AuthInfo
-    }
+    context?: McpToolCallContext
   ) => Promise<CallToolResult>
 }
 
@@ -51,7 +52,7 @@ function createFakeServer() {
         config: {
           title: string
           description: string
-          inputSchema: AnyZodObject
+          inputSchema: McpToolInputSchema
         },
         callback: RegisteredToolCapture["callback"]
       ) => {
@@ -190,7 +191,7 @@ describe("mcp inbox tools", () => {
         contactId: "contact:sarah-martinez"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -259,7 +260,7 @@ describe("mcp inbox tools", () => {
         contactId: "contact:missing"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -279,7 +280,7 @@ describe("mcp inbox tools", () => {
         contactId: "contact:missing"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -296,7 +297,7 @@ describe("mcp inbox tools", () => {
         query: "ab"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -316,7 +317,7 @@ describe("mcp inbox tools", () => {
         folder: "later"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -345,7 +346,7 @@ describe("mcp inbox tools", () => {
         cursor: ""
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -380,7 +381,7 @@ describe("mcp inbox tools", () => {
         query: "Ridge"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 
@@ -413,7 +414,7 @@ describe("mcp inbox tools", () => {
         folder: "inbox"
       },
       {
-        authInfo: buildAuthInfo()
+        http: { authInfo: buildAuthInfo() }
       }
     )
 

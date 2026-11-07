@@ -76,10 +76,6 @@
       "ignoreGhsas": [
         "GHSA-mh99-v99m-4gvg",
         "GHSA-vfj7-8cjw-p6xm",
-        "GHSA-6qxp-vccf-f47h",
-        "GHSA-f897-62hf-6gxq",
-        "GHSA-22jm-h49p-29qw",
-        "GHSA-46jr-4wx8-v453",
         "GHSA-mrhx-c7xc-m3w5"
       ]
     }

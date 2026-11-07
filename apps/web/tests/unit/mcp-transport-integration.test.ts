@@ -286,6 +286,73 @@ describe("mcp transport (real mcp-handler)", () => {
     )
   })
 
+  // The SDK derives each tool's advertised JSON Schema from its zod schema.
+  // Pin one representative shape so an SDK or zod bump that changes the
+  // conversion (required fields, strictness, nullable filters) fails here.
+  it("advertises tool input schemas derived from the zod definitions", async () => {
+    const accessToken = await issueAccessToken()
+
+    const response = await MCP_POST(
+      mcpRequest(
+        { jsonrpc: "2.0", id: 6, method: "tools/list", params: {} },
+        accessToken
+      )
+    )
+
+    expect(response.status).toBe(200)
+
+    const payload = (await readMcpBody(response)) as {
+      result?: {
+        tools?: readonly { name?: string; inputSchema?: unknown }[]
+      }
+    }
+    const queueTool = (payload.result?.tools ?? []).find(
+      (tool) => tool.name === "get_inbox_queue"
+    )
+
+    expect(queueTool?.inputSchema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["folder"],
+      properties: {
+        folder: { type: "string", minLength: 1 },
+        projectId: { type: ["string", "null"] },
+        cursor: { type: ["string", "null"] },
+        limit: { type: "integer", maximum: 25 }
+      }
+    })
+  })
+
+  it("rejects invalid tool arguments without running the tool", async () => {
+    const accessToken = await issueAccessToken()
+
+    const response = await MCP_POST(
+      mcpRequest(
+        {
+          jsonrpc: "2.0",
+          id: 7,
+          method: "tools/call",
+          params: { name: "search_contacts", arguments: { query: "S" } }
+        },
+        accessToken
+      )
+    )
+
+    expect(response.status).toBe(200)
+
+    const payload = (await readMcpBody(response)) as {
+      result?: {
+        isError?: boolean
+        structuredContent?: unknown
+        content?: readonly { type?: string; text?: string }[]
+      }
+    }
+
+    expect(payload.result?.isError).toBe(true)
+    expect(payload.result?.structuredContent).toBeUndefined()
+    expect(payload.result?.content?.[0]?.text).toContain("query")
+  })
+
   it("executes get_connector_info through tools/call", async () => {
     const accessToken = await issueAccessToken()
     const initializeResponse = await MCP_POST(
