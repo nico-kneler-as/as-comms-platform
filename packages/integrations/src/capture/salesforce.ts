@@ -5,12 +5,15 @@ import {
   salesforceAudienceListsCaptureResponseSchema,
   salesforceContactStatesCaptureRequestSchema,
   salesforceContactStatesCaptureResponseSchema,
+  salesforceProjectBoxesSyncPayloadSchema,
+  salesforceProjectBoxesCaptureResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type SalesforceAudienceListsCaptureRequest,
   type SalesforceAudienceListsSnapshot,
   type SalesforceContactStatesCaptureRequest,
   type SalesforceContactStatesSnapshot,
+  type SalesforceProjectBoxesCaptureResponse,
 } from "@as-comms/contracts";
 
 import {
@@ -49,6 +52,9 @@ export function createSalesforceCapturePort(
   captureContactStates(
     payload: SalesforceContactStatesCaptureRequest
   ): Promise<SalesforceContactStatesSnapshot>;
+  captureProjectSubscriptionBoxes(payload: {
+    readonly version: 1;
+  }): Promise<SalesforceProjectBoxesCaptureResponse>;
 } {
   return {
     captureHistoricalBatch(payload) {
@@ -98,6 +104,16 @@ export function createSalesforceCapturePort(
         responseSchema: salesforceContactStatesCaptureResponseSchema,
         fetchImplementation: input?.fetchImplementation
       });
-    }
+    },
+    captureProjectSubscriptionBoxes(payload) {
+      return requestCaptureBatch({
+        config,
+        path: "/project-subscription-boxes",
+        payload,
+        payloadSchema: salesforceProjectBoxesSyncPayloadSchema,
+        responseSchema: salesforceProjectBoxesCaptureResponseSchema,
+        fetchImplementation: input?.fetchImplementation,
+      });
+    },
   };
 }

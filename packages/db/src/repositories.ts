@@ -12,6 +12,7 @@ import {
   isNull,
   lt,
   lte,
+  not,
   or,
   sql,
   type SQL,
@@ -3734,6 +3735,73 @@ function createStage1RepositoriesInternal(
     ...smsRepositories,
 
     projectDimensions: {
+      async replaceProjectSubscriptionBoxes(rows, syncedAt) {
+        return db.transaction(async (tx) => {
+          const byProjectId = new Map(
+            rows.map((row) => [row.projectId, row.subscriptionBox]),
+          );
+          const projectIds = [...byProjectId.keys()];
+          const existingRows =
+            projectIds.length === 0
+              ? []
+              : await tx
+                  .select({ projectId: projectDimensions.projectId })
+                  .from(projectDimensions)
+                  .where(inArray(projectDimensions.projectId, projectIds));
+          const existingIds = new Set(existingRows.map((row) => row.projectId));
+          const unknownProjectIds = projectIds.filter(
+            (projectId) => !existingIds.has(projectId),
+          );
+          let updated = 0;
+          for (const projectId of existingIds) {
+            const subscriptionBox = byProjectId.get(projectId) ?? null;
+            // Only touch rows whose box actually changed, so the hourly
+            // sync doesn't bump updated_at on every boxed project.
+            const result = await tx
+              .update(projectDimensions)
+              .set({ subscriptionBox, updatedAt: syncedAt })
+              .where(
+                and(
+                  eq(projectDimensions.projectId, projectId),
+                  sql`${projectDimensions.subscriptionBox} IS DISTINCT FROM ${subscriptionBox}`,
+                ),
+              )
+              .returning({ projectId: projectDimensions.projectId });
+            updated += result.length;
+          }
+          const clearResult = await tx
+            .update(projectDimensions)
+            .set({ subscriptionBox: null, updatedAt: syncedAt })
+            .where(
+              projectIds.length === 0
+                ? isNotNull(projectDimensions.subscriptionBox)
+                : and(
+                    isNotNull(projectDimensions.subscriptionBox),
+                    not(inArray(projectDimensions.projectId, projectIds)),
+                  ),
+            )
+            .returning({ projectId: projectDimensions.projectId });
+          return { updated, cleared: clearResult.length, unknownProjectIds };
+        });
+      },
+
+      async listProjectSubscriptionBoxes() {
+        const rows = await db
+          .select({
+            projectId: projectDimensions.projectId,
+            subscriptionBox: projectDimensions.subscriptionBox,
+          })
+          .from(projectDimensions)
+          .where(isNotNull(projectDimensions.subscriptionBox));
+        return new Map(
+          rows.flatMap((row) =>
+            row.subscriptionBox === null
+              ? []
+              : [[row.projectId, row.subscriptionBox] as const],
+          ),
+        );
+      },
+
       async findById(projectId) {
         const [row] = await db
           .select()

@@ -874,6 +874,9 @@ function buildContext(input: {
       getActiveUsageSnapshot: () => Promise.resolve(null),
     },
     projectDimensions: {
+      replaceProjectSubscriptionBoxes: () =>
+        Promise.resolve({ updated: 0, cleared: 0, unknownProjectIds: [] }),
+      listProjectSubscriptionBoxes: () => Promise.resolve(new Map()),
       findById: () => Promise.resolve(null),
       listAll: () => Promise.resolve([]),
       listActive: () => Promise.resolve([]),

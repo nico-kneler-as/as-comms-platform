@@ -21,6 +21,7 @@
     "ops:worker:inspect": "pnpm --filter @as-comms/worker ops:inspect",
     "ops:worker:inspect-sf-statuses": "pnpm --filter @as-comms/worker ops:inspect-sf-statuses",
     "ops:merge-sf-contact-pair": "pnpm --filter @as-comms/worker ops:merge-sf-contact-pair",
+    "ops:check-sf-subscription-permissions": "pnpm --filter @as-comms/worker ops:check-sf-subscription-permissions",
     "ops:worker:reprocess-pending-campaign-sends": "pnpm --filter @as-comms/worker ops:reprocess-pending-campaign-sends",
     "ops:cleanup-non-volunteer-contacts": "tsx scripts/ops/cleanup-non-volunteer-contacts.ts",
     "ops:mcp-create-oauth-client": "tsx scripts/ops/mcp-create-oauth-client.ts",

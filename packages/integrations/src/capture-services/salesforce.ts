@@ -11,11 +11,14 @@ import {
   salesforceAudienceListsCaptureResponseSchema,
   salesforceContactStatesCaptureRequestSchema,
   salesforceContactStatesCaptureResponseSchema,
+  salesforceProjectBoxesSyncPayloadSchema,
+  salesforceProjectBoxesCaptureResponseSchema,
   integrationHealthCheckResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
   type SalesforceAudienceListsSnapshot,
   type SalesforceContactStatesSnapshot,
+  type SalesforceProjectBoxesCaptureResponse,
   type IntegrationHealthCheckResponse,
   type IntegrationHealthStatus,
 } from "@as-comms/contracts";
@@ -117,7 +120,7 @@ type ResolvedSalesforceJwtBearerTokenExchangeConfig = z.output<
 
 type SalesforceRow = Record<string, unknown>;
 
-interface SalesforceTokenExchangeConfig {
+export interface SalesforceTokenExchangeConfig {
   readonly loginUrl: string;
   readonly clientId: string;
   readonly username: string;
@@ -163,7 +166,7 @@ export interface SalesforceApiClient {
   queryAllIncludingDeleted(soql: string): Promise<readonly SalesforceRow[]>;
 }
 
-interface SalesforceAccessTokenCacheEntry {
+export interface SalesforceAccessTokenCacheEntry {
   readonly accessToken: string;
   readonly instanceUrl: string;
   readonly expiresAtEpochMs: number;
@@ -269,7 +272,7 @@ function resolveRemainingTimeoutMs(input: {
   return Math.max(1, input.timeoutMs - elapsedMs);
 }
 
-async function exchangeSalesforceAccessToken(input: {
+export async function exchangeSalesforceAccessToken(input: {
   readonly config: SalesforceTokenExchangeConfig;
   readonly fetchImplementation: typeof fetch;
   readonly now: () => Date;
@@ -1542,6 +1545,7 @@ export interface SalesforceCaptureService {
   ): Promise<CapturedBatchResponse<SalesforceRecord>>;
   captureAudienceLists(): Promise<SalesforceAudienceListsSnapshot>;
   captureContactStates(): Promise<SalesforceContactStatesSnapshot>;
+  captureProjectSubscriptionBoxes(): Promise<SalesforceProjectBoxesCaptureResponse>;
   handleHttpRequest(
     request: CaptureServiceHttpRequest,
   ): Promise<CaptureServiceHttpResponse>;
@@ -2001,6 +2005,20 @@ export function createSalesforceCaptureService(
     });
   }
 
+  async function captureProjectSubscriptionBoxes(): Promise<SalesforceProjectBoxesCaptureResponse> {
+    const rows = await apiClient.queryAll(
+      "SELECT Id, Subscription_Box__c FROM Project__c WHERE Subscription_Box__c != null",
+    );
+    return salesforceProjectBoxesCaptureResponseSchema.parse({
+      rows: rows.flatMap((row) => {
+        const projectId = getStringField(row, "Id");
+        const subscriptionBox = getStringField(row, "Subscription_Box__c");
+        return projectId === null ? [] : [{ projectId, subscriptionBox }];
+      }),
+      capturedAt: now().toISOString(),
+    });
+  }
+
   return {
     captureHistoricalBatch(payload) {
       const parsedPayload =
@@ -2034,6 +2052,7 @@ export function createSalesforceCaptureService(
 
     captureAudienceLists,
     captureContactStates,
+    captureProjectSubscriptionBoxes,
 
     async handleHttpRequest(request) {
       if (!hasBearerToken(request, parsedConfig.bearerToken)) {
@@ -2083,6 +2102,17 @@ export function createSalesforceCaptureService(
           return jsonResponse(200, await this.captureContactStates());
         }
 
+        if (request.path === "/project-subscription-boxes") {
+          parseJsonRequestBody(
+            request,
+            salesforceProjectBoxesSyncPayloadSchema,
+          );
+          return jsonResponse(
+            200,
+            await this.captureProjectSubscriptionBoxes(),
+          );
+        }
+
         return jsonResponse(404, {
           error: "not_found",
         });
@@ -2098,7 +2128,9 @@ export function createSalesforceCaptureService(
         }
 
         if (
-          (request.path === "/audience-lists" || request.path === "/contact-states") &&
+          (request.path === "/audience-lists" ||
+            request.path === "/contact-states" ||
+            request.path === "/project-subscription-boxes") &&
           error instanceof SalesforceQueryError
         ) {
           return jsonResponse(error.status, {
@@ -2121,6 +2153,17 @@ export function createSalesforceCaptureService(
             error: "salesforce_capture_failed",
             code: "salesforce_capture_failed",
             message: "Salesforce contact-state capture failed.",
+          });
+        }
+
+        if (
+          request.path === "/project-subscription-boxes" &&
+          error instanceof Error
+        ) {
+          return jsonResponse(502, {
+            error: "salesforce_capture_failed",
+            code: "salesforce_capture_failed",
+            message: "Salesforce project subscription-box capture failed.",
           });
         }
 
