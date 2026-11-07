@@ -7,11 +7,13 @@ import {
   salesforceContactStatesSyncJobName,
   salesforceProjectBoxesSyncJobName,
   salesforceSubscriptionPushJobName,
+  salesforceSubscriptionReadbackJobName,
 } from "@as-comms/contracts";
 
 import {
   buildWorkerCrontab,
   readCampaignSendPacingConfig,
+  readSalesforceSubscriptionReadbackSettings,
   readWorkerConfig,
 } from "../src/runtime.js";
 import { dailyOpsDigestJobName } from "../src/jobs/daily-ops-digest/index.js";
@@ -102,6 +104,68 @@ async function seedContact(context: TestWorkerContext): Promise<void> {
 }
 
 describe("Stage 1 worker runtime task registration", () => {
+  it.each([
+    ["unset", {}, "mode_off"],
+    ["off", { SALESFORCE_SUBSCRIPTION_READBACK_MODE: "off" }, "mode_off"],
+    ["blank", { SALESFORCE_SUBSCRIPTION_READBACK_MODE: "  " }, "mode_off"],
+    ["invalid", { SALESFORCE_SUBSCRIPTION_READBACK_MODE: "yes" }, "invalid_mode"],
+    [
+      "no Salesforce username",
+      { SALESFORCE_SUBSCRIPTION_READBACK_MODE: "apply" },
+      "missing_salesforce_username",
+    ],
+  ] as const)(
+    "keeps subscription readback off when %s",
+    (_name, env, reason) => {
+      expect(readSalesforceSubscriptionReadbackSettings(env)).toEqual({
+        enabled: false,
+        reason,
+      });
+    },
+  );
+  it.each(["dry_run", "apply", " APPLY "])(
+    "enables subscription readback for mode %s with the default forms user",
+    (mode) => {
+      expect(
+        readSalesforceSubscriptionReadbackSettings({
+          SALESFORCE_SUBSCRIPTION_READBACK_MODE: mode,
+          SALESFORCE_USERNAME: "volunteers@example.org",
+        }),
+      ).toEqual({
+        enabled: true,
+        mode: mode.trim().toLowerCase(),
+        integrationUsername: "volunteers@example.org",
+        formsUsernames: ["admin+1@adventurescientists.org"],
+      });
+    },
+  );
+  it.each([
+    ["a list", "a@example.org, ,b@example.org", ["a@example.org", "b@example.org"]],
+    ["a blank value", " , ", ["admin+1@adventurescientists.org"]],
+  ])("reads forms usernames from %s", (_name, value, expected) => {
+    const settings = readSalesforceSubscriptionReadbackSettings({
+      SALESFORCE_SUBSCRIPTION_READBACK_MODE: "dry_run",
+      SALESFORCE_USERNAME: "volunteers@example.org",
+      SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES: value,
+    });
+    expect(settings.enabled && settings.formsUsernames).toEqual(expected);
+  });
+  it("registers the subscription readback cron only when explicitly wired", () => {
+    const config = readWorkerConfig(launchScopeEnv);
+    if (config === null) throw new Error("Expected a worker config.");
+    expect(
+      buildWorkerCrontab(config, {
+        salesforceSubscriptionReadbackRegistered: false,
+      }),
+    ).not.toContain(salesforceSubscriptionReadbackJobName);
+    expect(
+      buildWorkerCrontab(config, {
+        salesforceSubscriptionReadbackRegistered: true,
+      }),
+    ).toContain(
+      `*/5 * * * * ${salesforceSubscriptionReadbackJobName} ?id=salesforce-subscription-readback&max=1`,
+    );
+  });
   it("uses default paced-send configuration when the optional env is absent", () => {
     expect(readCampaignSendPacingConfig({})).toEqual({
       thresholdRecipients: 5_000,

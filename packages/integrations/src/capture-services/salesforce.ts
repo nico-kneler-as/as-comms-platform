@@ -13,6 +13,11 @@ import {
   salesforceContactStatesCaptureResponseSchema,
   salesforceProjectBoxesSyncPayloadSchema,
   salesforceProjectBoxesCaptureResponseSchema,
+  salesforceSubscriptionBoxFieldByValue,
+  salesforceSubscriptionBoxValues,
+  salesforceSubscriptionPreferencesCaptureRequestSchema,
+  salesforceSubscriptionPreferencesCaptureResponseSchema,
+  type SalesforceSubscriptionPreferencesCaptureResponse,
   integrationHealthCheckResponseSchema,
   type SalesforceHistoricalCaptureBatchPayload,
   type SalesforceLiveCaptureBatchPayload,
@@ -1546,6 +1551,7 @@ export interface SalesforceCaptureService {
   captureAudienceLists(): Promise<SalesforceAudienceListsSnapshot>;
   captureContactStates(): Promise<SalesforceContactStatesSnapshot>;
   captureProjectSubscriptionBoxes(): Promise<SalesforceProjectBoxesCaptureResponse>;
+  captureSubscriptionPreferences(input: { readonly version: 1; readonly since: string | null }): Promise<SalesforceSubscriptionPreferencesCaptureResponse>;
   handleHttpRequest(
     request: CaptureServiceHttpRequest,
   ): Promise<CaptureServiceHttpResponse>;
@@ -2019,6 +2025,53 @@ export function createSalesforceCaptureService(
     });
   }
 
+  async function captureSubscriptionPreferences(input: { readonly version: 1; readonly since: string | null }): Promise<SalesforceSubscriptionPreferencesCaptureResponse> {
+    const payload = salesforceSubscriptionPreferencesCaptureRequestSchema.parse(input);
+    const since = payload.since === null ? null : new Date(payload.since);
+    const sinceLiteral = since === null ? null : since.toISOString().replace(/\.\d{3}Z$/u, "Z");
+    const projectFields = salesforceSubscriptionBoxValues.map((box) => salesforceSubscriptionBoxFieldByValue[box]);
+    const fields = [
+      "Id", "IsDeleted", "Email__c", "Contact__c", "Adventure_Scientists_General_Newsletter__c",
+      "Oregon_Shores_Newsletter__c", ...projectFields, "Unsubscribed_from_all__c",
+      "Unsubscribed_at__c", "Email_Bounced__c", "Record_Creation_Source__c", "LastModifiedDate",
+      "LastModifiedById", "LastModifiedBy.Username",
+    ];
+    const soql = `SELECT ${fields.join(", ")} FROM Email_Subscription_Preference__c${sinceLiteral === null ? "" : ` WHERE LastModifiedDate >= ${sinceLiteral}`} ORDER BY LastModifiedDate ASC`;
+    const rows = await apiClient.queryAllIncludingDeleted(soql);
+    let droppedRows = 0;
+    const mapped = rows.flatMap((row) => {
+      const salesforceRecordId = getStringField(row, "Id");
+      const emailRaw = getStringField(row, "Email__c");
+      const lastModifiedAt = toIsoTimestamp(getStringField(row, "LastModifiedDate"));
+      if (salesforceRecordId === null || emailRaw === null || lastModifiedAt === null) {
+        droppedRows += 1;
+        return [];
+      }
+      return [{
+        salesforceRecordId,
+        email: emailRaw.trim().toLowerCase(),
+        salesforceContactId: getStringField(row, "Contact__c"),
+        generalNewsletter: row.Adventure_Scientists_General_Newsletter__c === true,
+        oregonShoresNewsletter: row.Oregon_Shores_Newsletter__c === true,
+        projectBoxes: Object.fromEntries(salesforceSubscriptionBoxValues.map((box) => [box, row[salesforceSubscriptionBoxFieldByValue[box]] === true])),
+        unsubscribedFromAll: row.Unsubscribed_from_all__c === true,
+        unsubscribedAt: toIsoTimestamp(getStringField(row, "Unsubscribed_at__c")),
+        emailBounced: row.Email_Bounced__c === true,
+        recordCreationSource: getStringField(row, "Record_Creation_Source__c"),
+        isDeleted: row.IsDeleted === true,
+        lastModifiedAt,
+        lastModifiedById: getStringField(row, "LastModifiedById"),
+        lastModifiedByUsername: (() => {
+          const modifier = row.LastModifiedBy;
+          return typeof modifier === "object" && modifier !== null && typeof (modifier as Record<string, unknown>).Username === "string"
+            ? (modifier as Record<string, string>).Username
+            : null;
+        })(),
+      }];
+    });
+    return salesforceSubscriptionPreferencesCaptureResponseSchema.parse({ rows: mapped, capturedAt: now().toISOString(), droppedRows });
+  }
+
   return {
     captureHistoricalBatch(payload) {
       const parsedPayload =
@@ -2053,6 +2106,7 @@ export function createSalesforceCaptureService(
     captureAudienceLists,
     captureContactStates,
     captureProjectSubscriptionBoxes,
+    captureSubscriptionPreferences,
 
     async handleHttpRequest(request) {
       if (!hasBearerToken(request, parsedConfig.bearerToken)) {
@@ -2113,6 +2167,11 @@ export function createSalesforceCaptureService(
           );
         }
 
+        if (request.path === "/subscription-preferences") {
+          const payload = parseJsonRequestBody(request, salesforceSubscriptionPreferencesCaptureRequestSchema);
+          return jsonResponse(200, await this.captureSubscriptionPreferences(payload));
+        }
+
         return jsonResponse(404, {
           error: "not_found",
         });
@@ -2140,6 +2199,10 @@ export function createSalesforceCaptureService(
           });
         }
 
+        if (request.path === "/subscription-preferences" && error instanceof SalesforceQueryError) {
+          return jsonResponse(error.status, { error: "salesforce_access_error", code: error.code, message: error.message });
+        }
+
         if (request.path === "/audience-lists" && error instanceof Error) {
           return jsonResponse(502, {
             error: "salesforce_capture_failed",
@@ -2165,6 +2228,10 @@ export function createSalesforceCaptureService(
             code: "salesforce_capture_failed",
             message: "Salesforce project subscription-box capture failed.",
           });
+        }
+
+        if (request.path === "/subscription-preferences" && error instanceof Error) {
+          return jsonResponse(502, { error: "salesforce_capture_failed", code: "salesforce_capture_failed", message: "Salesforce subscription-preference capture failed." });
         }
 
         throw error;

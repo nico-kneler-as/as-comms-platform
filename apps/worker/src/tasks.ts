@@ -48,6 +48,11 @@ import {
   type SalesforceSubscriptionPushTaskDependencies,
 } from "./jobs/salesforce-subscription-push.js";
 import {
+  createSalesforceSubscriptionReadbackTask,
+  salesforceSubscriptionReadbackJobName,
+  type SalesforceSubscriptionReadbackTaskDependencies,
+} from "./jobs/salesforce-subscription-readback.js";
+import {
   createDedupHistoricalLedgerTask,
   dedupHistoricalLedgerJobName,
   type DedupHistoricalLedgerTaskDependencies,
@@ -137,6 +142,7 @@ export function createTaskList(
     readonly salesforceContactStatesSync?: SalesforceContactStatesSyncTaskDependencies;
     readonly salesforceProjectBoxesSync?: SalesforceProjectBoxesSyncTaskDependencies;
     readonly salesforceSubscriptionPush?: SalesforceSubscriptionPushTaskDependencies;
+    readonly salesforceSubscriptionReadback?: SalesforceSubscriptionReadbackTaskDependencies;
     readonly campaignEventsTailFinalize?: CampaignEventsTailFinalizeDependencies;
     readonly dailyOpsDigest?: DailyOpsDigestTaskDependencies;
     readonly dedupHistoricalLedger?: DedupHistoricalLedgerTaskDependencies;
@@ -212,6 +218,13 @@ export function createTaskList(
             createSalesforceSubscriptionPushTask(
               input.salesforceSubscriptionPush,
             ),
+        }),
+    ...(input?.salesforceSubscriptionReadback === undefined
+      ? {}
+      : {
+          [salesforceSubscriptionReadbackJobName]: createSalesforceSubscriptionReadbackTask(
+            input.salesforceSubscriptionReadback,
+          ),
         }),
     ...(input?.campaignEventsTailFinalize === undefined
       ? {}

@@ -17,4 +17,5 @@ export * from "./org-senders-repository.js";
 export * from "./parse-source-url.js";
 export * from "./repositories.js";
 export * from "./salesforce-subscription-outbox-repository.js";
+export * from "./salesforce-subscription-readback-repository.js";
 export * from "./schema/index.js";

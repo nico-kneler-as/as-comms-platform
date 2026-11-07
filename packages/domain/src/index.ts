@@ -29,6 +29,7 @@ export * from "./residence-state.js";
 export * from "./residence-state-filter.js";
 export * from "./salesforce-contact-states.js";
 export * from "./salesforce-subscription-push.js";
+export * from "./salesforce-subscription-readback.js";
 export * from "./persistence.js";
 export * from "./records.js";
 export * from "./repositories.js";

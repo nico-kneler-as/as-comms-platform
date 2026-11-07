@@ -38,6 +38,11 @@ Optional env vars:
 - `SALESFORCE_SUBSCRIPTION_PUSH_ENABLED=true` enables the one-minute outbound
   subscription queue task only when the Salesforce JWT env is also complete;
   unset or any other value leaves both the task and cron unregistered.
+- `SALESFORCE_SUBSCRIPTION_READBACK_MODE=off` is the default. Set `dry_run` to
+  mirror and audit Salesforce preference changes, or `apply` to update platform
+  consent; it registers only with complete Salesforce capture config and username.
+- `SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES` optionally replaces the default
+  website-forms username list (comma-separated).
 
 ## Local Dev
 

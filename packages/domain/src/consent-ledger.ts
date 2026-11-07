@@ -22,7 +22,7 @@ export interface ConsentLedger {
   recordOptOut(input: {
     contactId: string;
     scope: { type: "project" | "newsletter" | "all"; id?: string };
-    source: "recipient_click" | "admin_action" | "provider_event" | "import";
+    source: "recipient_click" | "admin_action" | "provider_event" | "import" | "salesforce";
     sourceRunId?: string;
     email?: string;
     occurredAt?: Date;
