@@ -300,6 +300,7 @@ function createOrchestrator(
               (await campaigns.newsletterSuppressions.findByEmail(email)) !==
               null,
           },
+          salesforceEmailOptOuts: campaigns.salesforceContactStates,
         },
       }),
       mergeRenderer: createMergeRenderer(),

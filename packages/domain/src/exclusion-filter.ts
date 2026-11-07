@@ -19,6 +19,9 @@ interface ExclusionFilterRepositories {
   readonly newsletterSuppressions: {
     isSuppressed(normalizedEmail: string): Promise<boolean>;
   };
+  readonly salesforceEmailOptOuts: {
+    listOptedOutEmails(): Promise<ReadonlySet<string>>;
+  };
 }
 
 export interface ExclusionFilter {
@@ -50,9 +53,16 @@ async function resolveExclusionReason(
   run: CampaignRunRecord,
   member: AudienceMember,
   at: Date,
+  salesforceOptedOutEmails: ReadonlySet<string> | null,
 ): Promise<ExcludedMember["reason"] | null> {
   if (await repositories.suppressionList.isSuppressed(normalizeEmail(member.frozenEmail), at)) {
     return "suppressed";
+  }
+
+  if (
+    salesforceOptedOutEmails?.has(normalizeEmail(member.frozenEmail)) === true
+  ) {
+    return "opted_out_salesforce";
   }
 
   if (
@@ -112,6 +122,9 @@ export function createExclusionFilter(deps: {
       if (run === null) {
         throw new Error(`Campaign run ${runId} was not found.`);
       }
+      const salesforceOptedOutEmails = run.launchType === "sms"
+        ? null
+        : await deps.repositories.salesforceEmailOptOuts.listOptedOutEmails();
 
       const eligible: AudienceMember[] = [];
       const excluded: ExcludedMember[] = [];
@@ -122,6 +135,7 @@ export function createExclusionFilter(deps: {
           run,
           member,
           at,
+          salesforceOptedOutEmails,
         );
 
         if (reason === null) {

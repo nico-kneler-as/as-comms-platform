@@ -19,7 +19,8 @@ export interface ExcludedMember extends AudienceMember {
     | "suppressed"
     | "opted_out_project"
     | "opted_out_newsletter"
-    | "opted_out_all";
+    | "opted_out_all"
+    | "opted_out_salesforce";
 }
 
 export interface MergeContext {

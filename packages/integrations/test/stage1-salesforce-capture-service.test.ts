@@ -1986,11 +1986,12 @@ describe("Salesforce capture service", () => {
     });
   });
 
-  it("captures all contact states without volunteer scoping and drops incomplete rows", async () => {
+  it("captures every emailable contact state and Salesforce opt-out status", async () => {
     const queryAll = vi.fn().mockResolvedValue([
-      { Id: "003-state", Email: " Person@Example.org ", State__c: " Montana ", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
-      { Id: "003-blank", Email: "blank@example.org", State__c: "   ", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
-      { Id: null, Email: "missing-id@example.org", State__c: "Idaho", LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: "003-state", Email: " Person@Example.org ", State__c: " Montana ", HasOptedOutOfEmail: true, LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: "003-stateless", Email: "stateless@example.org", State__c: null, HasOptedOutOfEmail: false, LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: "003-null-opt-out", Email: "null-opt-out@example.org", State__c: "Idaho", HasOptedOutOfEmail: null, LastModifiedDate: "2026-11-06T12:00:00.000Z" },
+      { Id: null, Email: "missing-id@example.org", State__c: "Idaho", HasOptedOutOfEmail: true, LastModifiedDate: "2026-11-06T12:00:00.000Z" },
     ]);
     const service = createSalesforceCaptureService(createSalesforceServiceConfig(), {
       apiClient: createStubSalesforceApiClient(queryAll),
@@ -2002,10 +2003,14 @@ describe("Salesforce capture service", () => {
     });
 
     expect(queryAll).toHaveBeenCalledWith(
-      "SELECT Id, Email, State__c, LastModifiedDate FROM Contact WHERE Email != null AND State__c != null",
+      "SELECT Id, Email, State__c, HasOptedOutOfEmail, LastModifiedDate FROM Contact WHERE Email != null",
     );
     expect(JSON.parse(response.body)).toMatchObject({
-      rows: [{ salesforceContactId: "003-state", email: "Person@Example.org", rawState: "Montana" }],
+      rows: [
+        { salesforceContactId: "003-state", email: "Person@Example.org", rawState: "Montana", hasOptedOutOfEmail: true },
+        { salesforceContactId: "003-stateless", rawState: null, hasOptedOutOfEmail: false },
+        { salesforceContactId: "003-null-opt-out", hasOptedOutOfEmail: false },
+      ],
     });
   });
 

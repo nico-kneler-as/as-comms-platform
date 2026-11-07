@@ -9,7 +9,8 @@ import { normalizeStateOfResidence } from "./residence-state.js";
 export interface SalesforceContactStateRecord {
   readonly normalizedEmail: string;
   readonly stateCode: ResidenceStateCode | null;
-  readonly rawState: string;
+  readonly rawState: string | null;
+  readonly hasOptedOutOfEmail: boolean;
   readonly salesforceContactId: string;
   readonly salesforceLastModifiedAt: Date;
 }
@@ -20,6 +21,7 @@ export interface SalesforceContactStateRowBuildStats {
   readonly duplicatesCollapsed: number;
   readonly withStateCode: number;
   readonly withoutStateCode: number;
+  readonly withOptOut: number;
 }
 
 export interface SalesforceContactStateRowBuildResult {
@@ -56,14 +58,21 @@ export function buildSalesforceContactStateRows(
     const record: SalesforceContactStateRecord = {
       normalizedEmail,
       stateCode: normalizeStateOfResidence(row.rawState),
-      rawState: row.rawState.trim(),
+      rawState: row.rawState?.trim() ?? null,
+      hasOptedOutOfEmail: row.hasOptedOutOfEmail,
       salesforceContactId: row.salesforceContactId,
       salesforceLastModifiedAt: new Date(row.lastModifiedAt),
     };
     const existing = recordsByEmail.get(normalizedEmail);
     if (existing !== undefined) {
       duplicatesCollapsed += 1;
-      if (!isPreferred(record, existing)) continue;
+      const preferred = isPreferred(record, existing) ? record : existing;
+      recordsByEmail.set(normalizedEmail, {
+        ...preferred,
+        hasOptedOutOfEmail:
+          existing.hasOptedOutOfEmail || record.hasOptedOutOfEmail,
+      });
+      continue;
     }
     recordsByEmail.set(normalizedEmail, record);
   }
@@ -81,6 +90,7 @@ export function buildSalesforceContactStateRows(
       duplicatesCollapsed,
       withStateCode,
       withoutStateCode: records.length - withStateCode,
+      withOptOut: records.filter((record) => record.hasOptedOutOfEmail).length,
     },
   };
 }

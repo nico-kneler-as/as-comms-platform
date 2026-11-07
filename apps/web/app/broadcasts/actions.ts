@@ -317,6 +317,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
             (await input.campaigns.newsletterSuppressions.findByEmail(email)) !==
             null,
         },
+        salesforceEmailOptOuts: input.campaigns.salesforceContactStates,
       },
     }),
     mergeRenderer: createMergeRenderer(),
@@ -651,6 +652,7 @@ async function freezeNewsletterAudienceForSend(input: {
             email,
           )) !== null,
       },
+      salesforceEmailOptOuts: input.transaction.campaigns.salesforceContactStates,
     },
   });
   if (

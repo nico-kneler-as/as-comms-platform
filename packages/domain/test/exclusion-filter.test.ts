@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CampaignRunRecord } from "@as-comms/contracts";
 
@@ -89,6 +89,8 @@ function createFilter(input: {
   suppressedEmails?: readonly string[];
   newsletterSuppressedEmails?: readonly string[];
   optedOutScopes?: ReadonlySet<string>;
+  salesforceOptedOutEmails?: ReadonlySet<string>;
+  listSalesforceOptedOutEmails?: () => Promise<ReadonlySet<string>>;
 }): ExclusionFilter {
   const suppressed = new Set(input.suppressedEmails ?? []);
   const newsletterSuppressed = new Set(input.newsletterSuppressedEmails ?? []);
@@ -110,6 +112,10 @@ function createFilter(input: {
       },
       newsletterSuppressions: {
         isSuppressed: (email) => Promise.resolve(newsletterSuppressed.has(email)),
+      },
+      salesforceEmailOptOuts: {
+        listOptedOutEmails: input.listSalesforceOptedOutEmails ??
+          (() => Promise.resolve(input.salesforceOptedOutEmails ?? new Set())),
       },
     },
   });
@@ -235,6 +241,58 @@ describe("createExclusionFilter", () => {
     ).resolves.toMatchObject({
       excluded: [{ reason: "suppressed" }],
     });
+  });
+
+  it.each(["newsletter", "project"] as const)(
+    "excludes Salesforce email opt-outs from %s email runs",
+    async (kind) => {
+      const filter = createFilter({
+        run: buildRun(kind),
+        salesforceOptedOutEmails: new Set(["person@example.org"]),
+      });
+
+      await expect(
+        filter.applyExclusions(
+          [{ ...buildMember("contact-1"), frozenEmail: " Person@Example.org " }],
+          `run-${kind}`,
+          new Date("2026-05-15T12:00:00.000Z"),
+        ),
+      ).resolves.toMatchObject({
+        excluded: [{ reason: "opted_out_salesforce" }],
+      });
+    },
+  );
+
+  it("does not load or apply Salesforce email opt-outs to SMS runs", async () => {
+    const listOptedOutEmails = vi.fn(() => Promise.resolve(new Set(["contact-1@example.org"])));
+    const filter = createFilter({
+      run: buildRun("newsletter", { launchType: "sms" }),
+      listSalesforceOptedOutEmails: listOptedOutEmails,
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [buildMember("contact-1")],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ eligible: [{ contactId: "contact-1" }] });
+    expect(listOptedOutEmails).not.toHaveBeenCalled();
+  });
+
+  it("loads Salesforce email opt-outs once per exclusion call", async () => {
+    const listOptedOutEmails = vi.fn(() => Promise.resolve(new Set<string>()));
+    const filter = createFilter({
+      run: buildRun("project"),
+      listSalesforceOptedOutEmails: listOptedOutEmails,
+    });
+
+    await filter.applyExclusions(
+      [buildMember("contact-1"), buildMember("contact-2")],
+      "run-project",
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    expect(listOptedOutEmails).toHaveBeenCalledTimes(1);
   });
 
   it("applies project-scoped opt outs only to the matching project", async () => {

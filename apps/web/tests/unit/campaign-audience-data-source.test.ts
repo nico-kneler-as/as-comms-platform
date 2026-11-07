@@ -250,6 +250,7 @@ async function seedResidenceStates(
       normalizedEmail: state.email,
       stateCode: state.code,
       rawState: state.code ?? "",
+      hasOptedOutOfEmail: false,
       salesforceContactId: `salesforce-${String(index)}`,
       salesforceLastModifiedAt: new Date("2026-11-01T12:00:00.000Z"),
     })),
