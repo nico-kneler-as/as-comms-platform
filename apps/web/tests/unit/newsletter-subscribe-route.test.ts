@@ -589,14 +589,14 @@ describe("newsletter subscribe route handler", () => {
     [{ outcome: "invalid", errorCodes: [] }, "invalid"],
   ])(
     "rejects %s Turnstile verification in enforce mode",
-    async (verification) => {
+    async (verification, label) => {
       process.env.NEWSLETTER_SIGNUP_TURNSTILE_MODE = "enforce";
       if (verification !== undefined)
         verifyTurnstileMock.mockResolvedValueOnce(verification);
 
       const response = await POST(
         buildPostRequest({
-          email: `turnstile-enforce-${verification === undefined ? "missing" : "invalid"}@example.com`,
+          email: `turnstile-enforce-${label}@example.com`,
           website: "",
           ...(verification === undefined ? {} : { turnstileToken: "token" }),
         }),
