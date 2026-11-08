@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 const NEWSLETTER_SIGNUP_ROUTE = "/api/newsletter/subscribe";
 const NEWSLETTER_SIGNUP_RATE_LIMIT = 5;
 const NEWSLETTER_SIGNUP_RATE_LIMIT_WINDOW_MS = 60_000;
-export const NEWSLETTER_SIGNUP_DAILY_LIMIT_PER_IP = 3;
+const NEWSLETTER_SIGNUP_DAILY_LIMIT_PER_IP = 3;
 const NEWSLETTER_SIGNUP_DAILY_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 function newRequestId(): string {
