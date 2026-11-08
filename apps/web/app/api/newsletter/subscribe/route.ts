@@ -9,10 +9,15 @@ import { createPostmarkClient } from "@as-comms/integrations";
 
 import { createDirectNewsletterUnsubscribeToken } from "@/app/u/[token]/_lib/unsubscribe";
 import { readWebEnv } from "@/src/server/env";
+import { appendSecurityAudit } from "@/src/server/security/audit";
 import {
   getClientIp,
   enforceRateLimit,
 } from "@/src/server/security/rate-limit";
+import {
+  resolveTurnstileMode,
+  verifyTurnstile,
+} from "@/src/server/security/turnstile";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
@@ -23,6 +28,8 @@ export const dynamic = "force-dynamic";
 const NEWSLETTER_SIGNUP_ROUTE = "/api/newsletter/subscribe";
 const NEWSLETTER_SIGNUP_RATE_LIMIT = 5;
 const NEWSLETTER_SIGNUP_RATE_LIMIT_WINDOW_MS = 60_000;
+export const NEWSLETTER_SIGNUP_DAILY_LIMIT_PER_IP = 3;
+const NEWSLETTER_SIGNUP_DAILY_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 function newRequestId(): string {
   return randomUUID();
@@ -173,9 +180,17 @@ async function sendWelcomeEmail(input: {
   const unsubscribeToken = createDirectNewsletterUnsubscribeToken(
     input.subscriber.id,
   );
+  const publicAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
+  if (publicAppUrl.length === 0) {
+    console.error(
+      JSON.stringify({
+        event: "newsletter_signup.welcome.missing_public_url",
+      }),
+    );
+  }
   const unsubscribeUrl = new URL(
     `/u/${encodeURIComponent(unsubscribeToken)}`,
-    input.request.url,
+    publicAppUrl.length > 0 ? publicAppUrl : input.request.url,
   ).toString();
   const greeting =
     input.subscriber.firstName === null
@@ -262,10 +277,18 @@ export async function POST(request: Request): Promise<Response> {
   const requestId = newRequestId();
   const requestOrigin = request.headers.get("origin");
 
-  if (
-    requestOrigin !== null &&
-    requestOrigin !== env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN
-  ) {
+  if (requestOrigin === null) {
+    return errorResponse({
+      status: 403,
+      code: "origin_required",
+      message: "This origin is not allowed to subscribe.",
+      requestId,
+      requestOrigin,
+      allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+    });
+  }
+
+  if (requestOrigin !== env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN) {
     return errorResponse({
       status: 403,
       code: "origin_not_allowed",
@@ -348,6 +371,60 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
+  let runtime: Awaited<ReturnType<typeof getStage1WebRuntime>>;
+  try {
+    runtime = await getStage1WebRuntime();
+    const recentSignupCount =
+      await runtime.campaigns.newsletterSubscribers.countRecentWebsiteSignupsByIp(
+        {
+          optinIp: clientIp,
+          since: new Date(Date.now() - NEWSLETTER_SIGNUP_DAILY_LIMIT_WINDOW_MS),
+        },
+      );
+
+    if (recentSignupCount >= NEWSLETTER_SIGNUP_DAILY_LIMIT_PER_IP) {
+      try {
+        await appendSecurityAudit({
+          actorType: "system",
+          actorId: clientIp,
+          action: "newsletter_signup.request.daily_limited",
+          entityType: "route",
+          entityId: NEWSLETTER_SIGNUP_ROUTE,
+          result: "denied",
+          policyCode: "security.rate_limit",
+          metadataJson: {
+            reason: "daily_limit_exceeded",
+            limit: NEWSLETTER_SIGNUP_DAILY_LIMIT_PER_IP,
+            windowSeconds: NEWSLETTER_SIGNUP_DAILY_LIMIT_WINDOW_MS / 1_000,
+            requestId,
+          },
+        });
+      } catch {
+        console.error("Failed to append newsletter daily-limit audit.");
+      }
+
+      return errorResponse({
+        status: 429,
+        code: "daily_limit_exceeded",
+        message: "Too many signup attempts. Please try again tomorrow.",
+        requestId,
+        requestOrigin,
+        allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+        extraHeaders: { "Retry-After": "3600" },
+      });
+    }
+  } catch {
+    console.error("Newsletter signup daily limit check failed.", { requestId });
+    return errorResponse({
+      status: 500,
+      code: "internal_error",
+      message: "Unable to subscribe right now.",
+      requestId,
+      requestOrigin,
+      allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+    });
+  }
+
   const parsed = newsletterSignupRequestSchema.safeParse(rawBody);
   if (!parsed.success) {
     return errorResponse({
@@ -360,8 +437,63 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
+  const configuredTurnstileMode = env.NEWSLETTER_SIGNUP_TURNSTILE_MODE;
+  const turnstileMode = resolveTurnstileMode(env);
+  if (configuredTurnstileMode === "enforce" && turnstileMode === "log") {
+    console.error(
+      JSON.stringify({
+        event: "newsletter_signup.turnstile.misconfigured",
+      }),
+    );
+  }
+
+  if (turnstileMode !== "off") {
+    const verification =
+      parsed.data.turnstileToken === undefined ||
+      parsed.data.turnstileToken.trim().length === 0
+        ? { outcome: "missing" as const, errorCodes: [] as readonly string[] }
+        : await verifyTurnstile({
+            env,
+            token: parsed.data.turnstileToken,
+            remoteIp: clientIp,
+          });
+    console.info(
+      JSON.stringify({
+        event: "newsletter_signup.turnstile",
+        mode: turnstileMode,
+        outcome: verification.outcome,
+        errorCodes: verification.errorCodes,
+      }),
+    );
+
+    if (turnstileMode === "enforce") {
+      if (
+        verification.outcome === "missing" ||
+        verification.outcome === "invalid"
+      ) {
+        return errorResponse({
+          status: 400,
+          code: "verification_failed",
+          message: "Please try again.",
+          requestId,
+          requestOrigin,
+          allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+        });
+      }
+      if (verification.outcome === "error") {
+        return errorResponse({
+          status: 503,
+          code: "verification_unavailable",
+          message: "Unable to subscribe right now. Please try again shortly.",
+          requestId,
+          requestOrigin,
+          allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+        });
+      }
+    }
+  }
+
   try {
-    const runtime = await getStage1WebRuntime();
     const result = await runtime.campaigns.newsletterSubscribers.signUp({
       email: parsed.data.email,
       firstName: parsed.data.firstName ?? null,
@@ -381,12 +513,8 @@ export async function POST(request: Request): Promise<Response> {
             firstName: result.subscriber.firstName,
           },
         });
-      } catch (error) {
-        console.error("Newsletter welcome email failed.", {
-          requestId,
-          email: result.subscriber.email,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      } catch {
+        console.error("Newsletter welcome email failed.", { requestId });
       }
     }
 
@@ -395,11 +523,8 @@ export async function POST(request: Request): Promise<Response> {
       requestOrigin,
       allowedOrigin: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
     });
-  } catch (error) {
-    console.error("Newsletter signup failed.", {
-      requestId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+  } catch {
+    console.error("Newsletter signup failed.", { requestId });
 
     return errorResponse({
       status: 500,

@@ -55,6 +55,11 @@ export interface NewsletterSubscriberSignupResult {
   readonly disposition: "created" | "already_subscribed" | "resubscribed";
 }
 
+export interface CountRecentWebsiteSignupsByIpInput {
+  readonly optinIp: string;
+  readonly since: Date;
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -271,6 +276,24 @@ export async function signUpNewsletterSubscriber(
     subscriber,
     disposition: "resubscribed",
   };
+}
+
+export async function countRecentWebsiteSignupsByIp(
+  db: NewsletterSubscribersDatabase,
+  input: CountRecentWebsiteSignupsByIpInput,
+): Promise<number> {
+  const result = await db
+    .select({ value: count() })
+    .from(newsletterSubscribers)
+    .where(
+      and(
+        eq(newsletterSubscribers.source, "website_signup"),
+        eq(newsletterSubscribers.optinIp, input.optinIp),
+        gte(newsletterSubscribers.optinTime, input.since),
+      ),
+    );
+
+  return result[0]?.value ?? 0;
 }
 
 export async function listNewsletterSubscribers(

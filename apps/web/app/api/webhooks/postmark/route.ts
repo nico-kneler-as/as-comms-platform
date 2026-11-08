@@ -462,6 +462,22 @@ async function processEvent(
     return "processed";
   }
 
+  // Transactional welcome messages deliberately have no broadcast audience
+  // snapshot. They still need source evidence and bounce/complaint suppression,
+  // but no campaign metrics, click/open rows, or dead-letter retry workflow.
+  if (snapshot === null && event.Metadata.category === "newsletter_welcome") {
+    const bounceReason = toBounceReason(event);
+    if (bounceReason !== null) {
+      await runtime.campaigns.suppressionList.upsertFromBounce(
+        event.Recipient,
+        bounceReason,
+        buildProviderRecordId(event),
+        new Date(occurredAt),
+      );
+    }
+    return "processed";
+  }
+
   try {
     if (event.RecordType === "Click") {
       await recordClickEvent({

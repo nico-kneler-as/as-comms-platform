@@ -21,6 +21,32 @@ function parsePositiveNumberEnv(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function parseNewsletterSignupTurnstileMode(
+  value: unknown,
+): "off" | "log" | "enforce" {
+  if (typeof value !== "string") {
+    return "off";
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case "log":
+      return "log";
+    case "enforce":
+      return "enforce";
+    default:
+      return "off";
+  }
+}
+
+function parseOptionalTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
 export const webEnvSchema = z.object({
   SMS_ENABLED: z.preprocess(parseBooleanEnv, z.boolean()).default(false),
   TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT: z
@@ -41,6 +67,16 @@ export const webEnvSchema = z.object({
     .trim()
     .url()
     .default("https://adventurescientists.org"),
+  TURNSTILE_SECRET_KEY: z.preprocess(
+    parseOptionalTrimmedString,
+    z.string().min(1).optional(),
+  ),
+  NEWSLETTER_SIGNUP_TURNSTILE_MODE: z
+    .preprocess(
+      parseNewsletterSignupTurnstileMode,
+      z.enum(["off", "log", "enforce"]),
+    )
+    .default("off"),
   POSTMARK_BASE_URL: z
     .string()
     .trim()
@@ -62,6 +98,8 @@ export function readWebEnv(env: NodeJS.ProcessEnv = process.env): WebEnv {
     POSTMARK_TRANSACTIONAL_STREAM_ID: env.POSTMARK_TRANSACTIONAL_STREAM_ID,
     POSTMARK_BROADCAST_STREAM_ID: env.POSTMARK_BROADCAST_STREAM_ID,
     NEWSLETTER_SIGNUP_ALLOWED_ORIGIN: env.NEWSLETTER_SIGNUP_ALLOWED_ORIGIN,
+    TURNSTILE_SECRET_KEY: env.TURNSTILE_SECRET_KEY,
+    NEWSLETTER_SIGNUP_TURNSTILE_MODE: env.NEWSLETTER_SIGNUP_TURNSTILE_MODE,
     POSTMARK_BASE_URL: env.POSTMARK_BASE_URL,
   });
 }

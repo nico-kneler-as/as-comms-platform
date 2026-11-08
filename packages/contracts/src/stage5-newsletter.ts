@@ -88,6 +88,7 @@ export const newsletterSignupRequestSchema = z
     firstName: optionalSignupNameSchema,
     lastName: optionalSignupNameSchema,
     website: optionalWebsiteSchema,
+    turnstileToken: z.string().max(2048).optional(),
   })
   .strict();
 
