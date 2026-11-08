@@ -25,6 +25,7 @@ import {
   composerDrafts,
   contactInboxProjection,
   contactConsent,
+  contactConsentClears,
   contactTimelineProjection,
   databaseSchema,
   dependencyAuditSummary,
@@ -41,6 +42,8 @@ import {
   salesforceAudienceLists,
   salesforceContactStates,
   salesforceSubscriptionOutbox,
+  salesforceSubscriptionPreferences,
+  salesforceSubscriptionReadbackEvents,
   suppressionList,
   sourceEvidenceLog,
   sourceEvidenceQuarantine,
@@ -71,6 +74,7 @@ describe("Stage 1 DB schema", () => {
       "composerDrafts",
       "consentRecords",
       "contactConsent",
+      "contactConsentClears",
       "contactIdentities",
       "contactInboxProjection",
       "contactMemberships",
@@ -109,6 +113,8 @@ describe("Stage 1 DB schema", () => {
       "salesforceContactStates",
       "salesforceEventContext",
       "salesforceSubscriptionOutbox",
+      "salesforceSubscriptionPreferences",
+      "salesforceSubscriptionReadbackEvents",
       "sessions",
       "simpleTextingMessageDetails",
       "smsMessages",
@@ -160,6 +166,7 @@ describe("Stage 1 DB schema", () => {
     );
     expect(getTableName(broadcastWebVersions)).toBe("broadcast_web_versions");
     expect(getTableName(contactConsent)).toBe("contact_consent");
+    expect(getTableName(contactConsentClears)).toBe("contact_consent_clears");
     expect(getTableName(suppressionList)).toBe("suppression_list");
     expect(getTableName(orgSettings)).toBe("org_settings");
     expect(getTableName(canonicalEventLedger)).toBe("canonical_event_ledger");
@@ -185,6 +192,8 @@ describe("Stage 1 DB schema", () => {
     expect(getTableName(salesforceSubscriptionOutbox)).toBe(
       "salesforce_subscription_outbox"
     );
+    expect(getTableName(salesforceSubscriptionPreferences)).toBe("salesforce_subscription_preferences");
+    expect(getTableName(salesforceSubscriptionReadbackEvents)).toBe("salesforce_subscription_readback_events");
   });
 
   it("matches the Stage 1 enum surfaces from the shared contracts", () => {

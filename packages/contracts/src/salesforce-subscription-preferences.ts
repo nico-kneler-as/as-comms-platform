@@ -100,4 +100,46 @@ export const salesforceProjectBoxesSyncJobName =
   "salesforce-project-boxes-sync" as const;
 export const salesforceProjectBoxesSyncJobMaxAttempts = 3;
 
+export const salesforceSubscriptionReadbackModeValues = ["dry_run", "apply"] as const;
+export const salesforceSubscriptionReadbackModeSchema = z.enum(salesforceSubscriptionReadbackModeValues);
+export type SalesforceSubscriptionReadbackMode = z.infer<typeof salesforceSubscriptionReadbackModeSchema>;
+
+export const salesforceSubscriptionFormsUsernamesDefault = [
+  "admin+1@adventurescientists.org",
+] as const;
+
+export const capturedSubscriptionPreferenceSchema = z.object({
+  salesforceRecordId: z.string().min(1),
+  email: z.string().min(1),
+  salesforceContactId: z.string().min(1).nullable(),
+  generalNewsletter: z.boolean(),
+  oregonShoresNewsletter: z.boolean(),
+  projectBoxes: z.record(subscriptionBoxSchema, z.boolean()),
+  unsubscribedFromAll: z.boolean(),
+  unsubscribedAt: z.string().datetime().nullable(),
+  emailBounced: z.boolean(),
+  recordCreationSource: z.string().nullable(),
+  isDeleted: z.boolean(),
+  lastModifiedAt: z.string().datetime(),
+  lastModifiedById: z.string().nullable(),
+  lastModifiedByUsername: z.string().nullable(),
+});
+export type CapturedSubscriptionPreference = z.infer<typeof capturedSubscriptionPreferenceSchema>;
+
+export const salesforceSubscriptionPreferencesCaptureRequestSchema = z.object({
+  version: z.literal(1),
+  since: z.string().datetime().nullable(),
+});
+export type SalesforceSubscriptionPreferencesCaptureRequest = z.infer<typeof salesforceSubscriptionPreferencesCaptureRequestSchema>;
+
+export const salesforceSubscriptionPreferencesCaptureResponseSchema = z.object({
+  rows: z.array(capturedSubscriptionPreferenceSchema),
+  capturedAt: z.string().datetime(),
+  droppedRows: z.number().int().nonnegative(),
+});
+export type SalesforceSubscriptionPreferencesCaptureResponse = z.infer<typeof salesforceSubscriptionPreferencesCaptureResponseSchema>;
+
+export const salesforceSubscriptionReadbackJobName = "salesforce-subscription-readback" as const;
+export const salesforceSubscriptionReadbackJobMaxAttempts = 3;
+
 export { subscriptionBoxSchema };

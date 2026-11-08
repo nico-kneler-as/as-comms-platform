@@ -128,6 +128,12 @@ Optional env:
 - `SALESFORCE_SUBSCRIPTION_PUSH_ENABLED`
   - worker-only, defaults to disabled; only the exact value `true` registers
     the outbound subscription push task and its one-minute cron
+- `SALESFORCE_SUBSCRIPTION_READBACK_MODE`
+  - defaults to `off`; `dry_run` mirrors and audits readback without changing
+    consent, while `apply` enables consent changes from Salesforce.
+- `SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES`
+  - optional comma-separated replacement for the website-forms usernames;
+    form-originated false checkbox values are retained as audit-only changes.
 - `SALESFORCE_JWT_EXPIRATION_SECONDS`
   - defaults to `180`
 - `SALESFORCE_API_VERSION`
