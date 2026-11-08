@@ -147,14 +147,12 @@ export function resetSecurityRateLimiterForTests(): void {
  * Resolve the request's client IP for rate-limit bucketing.
  *
  * Trust order matters: an attacker can spoof headers they fully control.
- * Per Railway's edge-proxy documented behavior (verified 2026-05-02, see
- * `.STATE-2026-05-02-security-review-pass-2.md` H5 and the Railway
- * forum post on x-forwarded-for trust):
+ * Per Railway's edge-proxy documented behavior (verified 2026-11-08):
  *
  *   - `x-real-ip` is set by Railway's edge AND any client-supplied value
  *     is stripped before forwarding. Trustworthy.
- *   - `cf-connecting-ip` is set by Cloudflare's edge AND any client-supplied
- *     value is stripped. Trustworthy when Cloudflare fronts the deploy.
+ *   - This deployment is not behind Cloudflare. `cf-connecting-ip` is therefore
+ *     client-spoofable and must never be trusted for rate-limit identity.
  *   - `x-forwarded-for` is APPENDED to by Railway with the actual client IP,
  *     but client-supplied entries are preserved at the LEFTMOST positions.
  *     The rightmost value is Railway's view of the client; the leftmost is
@@ -169,11 +167,6 @@ export function resetSecurityRateLimiterForTests(): void {
  * In tests and local dev with no proxy headers, returns "127.0.0.1".
  */
 export function getClientIp(request: Request): string {
-  const cfConnectingIp = request.headers.get("cf-connecting-ip");
-  if (cfConnectingIp && cfConnectingIp.trim().length > 0) {
-    return cfConnectingIp.trim();
-  }
-
   const xRealIp = request.headers.get("x-real-ip");
   if (xRealIp && xRealIp.trim().length > 0) {
     return xRealIp.trim();

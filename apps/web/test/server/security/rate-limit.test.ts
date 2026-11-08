@@ -6,17 +6,17 @@ function makeRequest(headers: Record<string, string>): Request {
   return new Request("https://example.test/", { headers });
 }
 
-describe("getClientIp — Railway / Cloudflare trust order", () => {
-  it("prefers cf-connecting-ip over everything else", () => {
+describe("getClientIp — Railway trust order", () => {
+  it("ignores cf-connecting-ip when x-real-ip is present", () => {
     const request = makeRequest({
       "cf-connecting-ip": "1.1.1.1",
       "x-real-ip": "2.2.2.2",
       "x-forwarded-for": "3.3.3.3, 4.4.4.4",
     });
-    expect(getClientIp(request)).toBe("1.1.1.1");
+    expect(getClientIp(request)).toBe("2.2.2.2");
   });
 
-  it("prefers x-real-ip when cf-connecting-ip is absent", () => {
+  it("prefers x-real-ip", () => {
     // Railway's edge strips client-supplied X-Real-IP and sets its own
     // trusted value. Use this in preference to X-Forwarded-For chains.
     const request = makeRequest({
@@ -24,6 +24,14 @@ describe("getClientIp — Railway / Cloudflare trust order", () => {
       "x-forwarded-for": "spoofed.value, 4.4.4.4",
     });
     expect(getClientIp(request)).toBe("2.2.2.2");
+  });
+
+  it("ignores cf-connecting-ip when it is the only IP header", () => {
+    const request = makeRequest({
+      "cf-connecting-ip": "1.1.1.1",
+    });
+
+    expect(getClientIp(request)).toBe("127.0.0.1");
   });
 
   it("falls back to the rightmost x-forwarded-for value (trusted edge entry)", () => {

@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { count, eq } from "drizzle-orm";
 
-import {
-  newsletterSubscribers,
-  newsletterSuppressions,
-} from "../src/index.js";
+import { newsletterSubscribers, newsletterSuppressions } from "../src/index.js";
 import {
   clearMailchimpNewsletterSuppressionByEmail,
+  countRecentWebsiteSignupsByIp,
   countSendableNewsletterSubscribers,
   getNewsletterSubscriberByEmail,
   getNewsletterSuppressionByEmail,
@@ -390,6 +388,46 @@ describe("newsletter subscribers repository", () => {
     expect(second.subscriber.id).toBe(first.subscriber.id);
     expect(second.subscriber.firstName).toBe("Repeat");
     expect(rows[0]?.value ?? 0).toBe(1);
+  });
+
+  it("counts only website signups for the IP inside the opt-in window", async () => {
+    await signUpNewsletterSubscriber(context.db, {
+      email: "recent-one@example.com",
+      optinTime: "2026-07-09T12:00:00.000Z",
+      optinIp: "203.0.113.50",
+      source: "website_signup",
+    });
+    await signUpNewsletterSubscriber(context.db, {
+      email: "recent-two@example.com",
+      optinTime: "2026-07-09T13:00:00.000Z",
+      optinIp: "203.0.113.50",
+      source: "website_signup",
+    });
+    await signUpNewsletterSubscriber(context.db, {
+      email: "different-ip@example.com",
+      optinTime: "2026-07-09T13:00:00.000Z",
+      optinIp: "203.0.113.51",
+      source: "website_signup",
+    });
+    await signUpNewsletterSubscriber(context.db, {
+      email: "different-source@example.com",
+      optinTime: "2026-07-09T13:00:00.000Z",
+      optinIp: "203.0.113.50",
+      source: "mailchimp_import",
+    });
+    await signUpNewsletterSubscriber(context.db, {
+      email: "old@example.com",
+      optinTime: "2026-07-08T11:59:59.000Z",
+      optinIp: "203.0.113.50",
+      source: "website_signup",
+    });
+
+    await expect(
+      countRecentWebsiteSignupsByIp(context.db, {
+        optinIp: "203.0.113.50",
+        since: new Date("2026-07-09T12:00:00.000Z"),
+      }),
+    ).resolves.toBe(2);
   });
 
   it("re-subscribes a previously suppressed email and clears the suppression row", async () => {

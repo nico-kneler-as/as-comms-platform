@@ -92,6 +92,7 @@ import {
   upsertBroadcastUploadedExclusionsForRun,
 } from "./audience-composition-repository.js";
 import {
+  countRecentWebsiteSignupsByIp,
   getNewsletterSubscriberByEmail,
   getNewsletterSubscriberById,
   getNewsletterSuppressionByEmail,
@@ -484,6 +485,10 @@ export interface Stage5RepositoryBundle {
       readonly optinIp: string;
       readonly source: string;
     }): Promise<NewsletterSubscriberSignupResult>;
+    countRecentWebsiteSignupsByIp(input: {
+      readonly optinIp: string;
+      readonly since: Date;
+    }): Promise<number>;
   };
   readonly newsletterSuppressions: {
     upsert(
@@ -8883,6 +8888,9 @@ export function createStage5RepositoryBundle(
           }
           return result;
         });
+      },
+      async countRecentWebsiteSignupsByIp(input) {
+        return countRecentWebsiteSignupsByIp(db, input);
       },
     },
 

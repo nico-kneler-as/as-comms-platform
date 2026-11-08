@@ -39,15 +39,12 @@ function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function buildOpenIdempotencyKey(
-  event: { readonly MessageID: string | null; readonly ReceivedAt: string },
-): string {
+function buildOpenIdempotencyKey(event: {
+  readonly MessageID: string | null;
+  readonly ReceivedAt: string;
+}): string {
   return sha256(
-    JSON.stringify([
-      "postmark-open",
-      event.MessageID,
-      event.ReceivedAt,
-    ]),
+    JSON.stringify(["postmark-open", event.MessageID, event.ReceivedAt]),
   );
 }
 
@@ -76,6 +73,22 @@ function deliveryFromAudienceSnapshot(): string {
       campaignRunId: "run-project-postmark",
       audienceSnapshotId: "snapshot-postmark",
     },
+  });
+}
+
+function newsletterWelcomeEvent(
+  fixture:
+    | "bounce.json"
+    | "spam-complaint.json"
+    | "delivery.json"
+    | "open.json",
+  overrides: Record<string, unknown> = {},
+): string {
+  const event = loadFixturePayload(fixture) as Record<string, unknown>;
+  return JSON.stringify({
+    ...event,
+    ...overrides,
+    Metadata: { category: "newsletter_welcome" },
   });
 }
 
@@ -454,6 +467,70 @@ describe("Postmark webhook route handler", () => {
           row.id.startsWith("postmark-spam-complaint:"),
       ),
     ).toBe(true);
+  });
+
+  it("suppresses an inactive welcome-email hard bounce without a snapshot dead letter", async () => {
+    if (runtime === null) throw new Error("Runtime not initialized.");
+
+    const response = await POST(
+      signRequest(newsletterWelcomeEvent("bounce.json")),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(
+      requireCampaigns().suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2099-01-01T00:00:00Z"),
+      ),
+    ).resolves.toBe(true);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+  });
+
+  it("does not suppress a soft welcome-email bounce or dead-letter it", async () => {
+    if (runtime === null) throw new Error("Runtime not initialized.");
+
+    const response = await POST(
+      signRequest(newsletterWelcomeEvent("bounce.json", { Inactive: false })),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(
+      requireCampaigns().suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2099-01-01T00:00:00Z"),
+      ),
+    ).resolves.toBe(false);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+  });
+
+  it("suppresses a welcome-email spam complaint without a snapshot dead letter", async () => {
+    if (runtime === null) throw new Error("Runtime not initialized.");
+
+    const response = await POST(
+      signRequest(newsletterWelcomeEvent("spam-complaint.json")),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(
+      requireCampaigns().suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2099-01-01T00:00:00Z"),
+      ),
+    ).resolves.toBe(true);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
+  });
+
+  it("processes welcome-email delivery and open events without snapshot dead letters", async () => {
+    if (runtime === null) throw new Error("Runtime not initialized.");
+
+    const delivery = await POST(
+      signRequest(newsletterWelcomeEvent("delivery.json")),
+    );
+    const open = await POST(signRequest(newsletterWelcomeEvent("open.json")));
+
+    expect(delivery.status).toBe(200);
+    expect(open.status).toBe(200);
+    expect(await listDeadLetters(runtime)).toHaveLength(0);
   });
 
   it("records scanner clicks as bot activity via machine user-agent detection", async () => {
