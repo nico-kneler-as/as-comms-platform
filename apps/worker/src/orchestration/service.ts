@@ -366,6 +366,12 @@ function buildDefaultProjectionSeed(
         snippet: "",
         source: "fallback",
       };
+    case "lifecycle.withdrew_from_project":
+      return {
+        summary: "Withdrew from project",
+        snippet: "",
+        source: "fallback",
+      };
     case "campaign.email.sent":
       return {
         summary: "Campaign email sent",

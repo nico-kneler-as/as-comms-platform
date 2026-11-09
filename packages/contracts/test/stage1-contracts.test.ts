@@ -28,9 +28,10 @@ describe("Stage 1 contracts", () => {
     // (campaign.email.delivered / .bounced / .complained, written by the
     // Postmark webhook handler in Brief A2) + automated.email.sent (PRD #693
     // Brick D, SF-flow-triggered transactional sends)
-    expect(canonicalEventTypeValues).toHaveLength(19);
+    expect(canonicalEventTypeValues).toHaveLength(20);
     expect(resolveCanonicalChannel("communication.email.inbound")).toBe("email");
     expect(resolveCanonicalChannel("communication.sms.opt_out")).toBe("sms");
+    expect(resolveCanonicalChannel("lifecycle.withdrew_from_project")).toBe("lifecycle");
     expect(resolveCanonicalChannel("lifecycle.completed_training")).toBe(
       "lifecycle"
     );

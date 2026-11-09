@@ -401,6 +401,9 @@ export interface ContactMembershipRepository {
   listByContactIds(
     contactIds: readonly string[],
   ): Promise<readonly ContactMembershipRecord[]>;
+  findBySalesforceMembershipId(
+    salesforceMembershipId: string,
+  ): Promise<ContactMembershipRecord | null>;
   listSalesforceAnchoredIds(): Promise<readonly string[]>;
   markSalesforceDeleted(input: {
     readonly salesforceIds: readonly string[];

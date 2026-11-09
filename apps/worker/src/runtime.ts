@@ -70,6 +70,7 @@ import {
   createAutomatedEmailSendTaskDependencies,
   type AutomatedEmailSendTaskDependencies,
 } from "./jobs/send-automated-email/index.js";
+import { type SalesforceExpeditionMemberWithdrawTaskDependencies } from "./jobs/salesforce-expedition-member-withdraw.js";
 import { type SmsBroadcastSendTaskDependencies } from "./jobs/sms-broadcast-send/index.js";
 import { campaignEventsTailFinalizeJobName } from "./jobs/campaign-events-tail-finalize/index.js";
 import { readPollPostmarkSenderStatusConfig } from "./jobs/poll-postmark-sender-status/index.js";
@@ -118,6 +119,7 @@ export const defaultCampaignSendPacedBatchesPerExecution = 3;
 export const defaultCampaignSendPacedIntervalSeconds = 300;
 const mailchimpTransitionDiscoverySeedLookbackDays = 35;
 const defaultSynthesisRootPageId = "3278a912921180598688fce711ab0509";
+let hasLoggedAutomatedEmailWithdrawLinkDisabled = false;
 type ReconcileSalesforceStateMode =
   ReconcileSalesforceStateTaskDependencies["mode"];
 
@@ -586,6 +588,17 @@ function buildAutomatedEmailSendDependencies(input: {
             "unused",
           ...(postmarkBaseUrl === null ? {} : { baseUrl: postmarkBaseUrl }),
         });
+  const withdrawLinkSettings = readAutomatedEmailWithdrawLinkSettings(input.env);
+  const withdrawLink = withdrawLinkSettings.enabled
+    ? { secret: withdrawLinkSettings.secret, baseUrl: withdrawLinkSettings.baseUrl }
+    : null;
+  if (!withdrawLinkSettings.enabled && !hasLoggedAutomatedEmailWithdrawLinkDisabled) {
+    hasLoggedAutomatedEmailWithdrawLinkDisabled = true;
+    console.info(JSON.stringify({
+      event: "automated_email.withdraw_link.disabled",
+      reason: withdrawLinkSettings.reason,
+    }));
+  }
 
   return createAutomatedEmailSendTaskDependencies({
     db: input.connection.db,
@@ -594,6 +607,7 @@ function buildAutomatedEmailSendDependencies(input: {
     projects: input.settings.projects,
     salesforceClient,
     postmarkClient,
+    withdrawLink,
     opsAlert: createOpsAlertSender({
       env: input.env,
       stateRepository: input.settings.opsAlertState,
@@ -738,6 +752,73 @@ function buildSalesforceSubscriptionPushDependencies(input: {
     opsAlertSender: createOpsAlertSender({
       env: input.env,
       stateRepository: input.settings.opsAlertState,
+    }),
+  };
+}
+
+export type AutomatedEmailWithdrawLinkSettings =
+  | {
+      readonly enabled: false;
+      readonly reason: "missing_secret" | "invalid_secret" | "missing_web_base_url";
+    }
+  | { readonly enabled: true; readonly secret: string; readonly baseUrl: string };
+
+/** Pure: whether automated emails can carry a signed withdraw link. */
+export function readAutomatedEmailWithdrawLinkSettings(
+  env: NodeJS.ProcessEnv,
+): AutomatedEmailWithdrawLinkSettings {
+  const secret = readOptionalTrimmedEnv(env.EXPEDITION_WITHDRAW_LINK_SECRET);
+  const baseUrl = readOptionalTrimmedEnv(env.WEB_BASE_URL);
+  if (secret === null) return { enabled: false, reason: "missing_secret" };
+  if (secret.length < 32) return { enabled: false, reason: "invalid_secret" };
+  if (baseUrl === null) return { enabled: false, reason: "missing_web_base_url" };
+  return { enabled: true, secret, baseUrl };
+}
+
+export type SalesforceExpeditionWithdrawSettings =
+  | { readonly enabled: false; readonly reason: "disabled" | "missing_salesforce_jwt_config" }
+  | { readonly enabled: true };
+
+/** Pure: whether the Salesforce withdraw job may be registered. */
+export function readSalesforceExpeditionWithdrawSettings(
+  env: NodeJS.ProcessEnv,
+): SalesforceExpeditionWithdrawSettings {
+  const requiredKeys = [
+    "SALESFORCE_LOGIN_URL",
+    "SALESFORCE_CLIENT_ID",
+    "SALESFORCE_USERNAME",
+    "SALESFORCE_JWT_PRIVATE_KEY",
+  ] as const;
+  if (env.SALESFORCE_EXPEDITION_WITHDRAW_ENABLED?.trim() !== "true") {
+    return { enabled: false, reason: "disabled" };
+  }
+  if (!requiredKeys.every((key) => Boolean(env[key]?.trim()))) {
+    return { enabled: false, reason: "missing_salesforce_jwt_config" };
+  }
+  return { enabled: true };
+}
+
+function buildSalesforceExpeditionMemberWithdrawDependencies(input: {
+  readonly env: NodeJS.ProcessEnv;
+}): SalesforceExpeditionMemberWithdrawTaskDependencies | undefined {
+  const settings = readSalesforceExpeditionWithdrawSettings(input.env);
+  if (!settings.enabled) {
+    console.info(JSON.stringify({
+      event: "salesforce.expedition_withdraw.disabled",
+      reason: settings.reason,
+    }));
+    return undefined;
+  }
+  const config = readAutomatedEmailSalesforceConfig(input.env);
+  return {
+    salesforceClient: createSalesforceApiClient(config),
+    writeClient: createSalesforceWriteClient({
+      loginUrl: config.loginUrl,
+      clientId: config.clientId,
+      username: config.username,
+      jwtPrivateKey: config.jwtPrivateKey,
+      jwtExpirationSeconds: config.jwtExpirationSeconds,
+      apiVersion: config.apiVersion,
     }),
   };
 }
@@ -1280,6 +1361,10 @@ export async function createStage1WorkerRuntimeServices(
       repositories,
       settings,
     });
+  const salesforceExpeditionMemberWithdraw =
+    buildSalesforceExpeditionMemberWithdrawDependencies({
+      env: input?.env ?? process.env,
+    });
   const persistence = createStage1PersistenceService(repositories);
   const normalization = createStage1NormalizationService(persistence);
   const ingest = createStage1IngestService(normalization);
@@ -1391,6 +1476,9 @@ export async function createStage1WorkerRuntimeServices(
             campaignResend,
           }),
       automatedEmailSend,
+      ...(salesforceExpeditionMemberWithdraw === undefined
+        ? {}
+        : { salesforceExpeditionMemberWithdraw }),
       smsBroadcastSend,
       salesforceAudienceListsSync: {
         capture: capture.salesforce,

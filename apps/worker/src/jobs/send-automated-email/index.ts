@@ -4,6 +4,7 @@ import type { Task } from "graphile-worker";
 
 import {
   AUTOMATED_EMAIL_MERGE_FIELDS,
+  createExpeditionWithdrawToken,
   renderAutomatedEmail,
   type AutomatedEmailMergeFieldKey,
   collectAutomatedEmailMergeKeys,
@@ -71,6 +72,10 @@ export interface AutomatedEmailSendTaskDependencies {
   };
   readonly salesforceClient: AutomatedEmailSalesforceClient | null;
   readonly postmarkClient: Pick<PostmarkClient, "sendBatch"> | null;
+  readonly withdrawLink?: {
+    readonly baseUrl: string;
+    readonly secret: string;
+  } | null;
   readonly opsAlert: Pick<OpsAlertSender, "send">;
   readonly now?: () => Date;
 }
@@ -123,6 +128,44 @@ function toProjectSender(
     project?.emails.find((email) => email.isPrimary) ?? project?.emails[0];
   const address = primary?.address.trim().toLowerCase() ?? "";
   return address.length > 0 ? address : null;
+}
+
+function withdrawalLink(input: {
+  readonly kind: AutomatedEmailTemplateRecord["kind"];
+  readonly expeditionMemberId: string;
+  readonly projectId: string;
+  readonly now: Date;
+  readonly configuration: AutomatedEmailSendTaskDependencies["withdrawLink"];
+}): string | undefined {
+  const configuration = input.configuration;
+  if (
+    configuration === null ||
+    configuration === undefined ||
+    input.kind === "denied" ||
+    input.kind === "post_trip"
+  ) {
+    return undefined;
+  }
+  try {
+    const token = createExpeditionWithdrawToken({
+      expeditionMemberId: input.expeditionMemberId,
+      projectId: input.projectId,
+      expiresAt: new Date(input.now.getTime() + 400 * 24 * 60 * 60 * 1_000),
+      secret: configuration.secret,
+    });
+    return `${configuration.baseUrl.replace(/\/$/u, "")}/w/${encodeURIComponent(token)}`;
+  } catch {
+    // The footer is convenience only; an invalid deployment configuration must
+    // never block a transactional lifecycle message. Log it so a missing link
+    // is never silent (ids are Salesforce record ids, safe to log).
+    console.warn(
+      JSON.stringify({
+        event: "automated_email.withdraw_link.skipped",
+        reason: "token_input_invalid",
+      }),
+    );
+    return undefined;
+  }
 }
 
 async function alertTerminalOutcome(
@@ -380,6 +423,13 @@ export function createAutomatedEmailSendTask(
 
     let rendered;
     try {
+      const withdrawUrl = withdrawalLink({
+        kind: template.kind,
+        expeditionMemberId: send.expeditionMemberId,
+        projectId: template.projectId,
+        now: currentTime,
+        configuration: deps.withdrawLink,
+      });
       rendered = renderAutomatedEmail({
         subjectTemplate: template.publishedSubject,
         bodyDoc: template.publishedDoc,
@@ -387,6 +437,7 @@ export function createAutomatedEmailSendTask(
         frame: {
           projectName: project.projectName,
           reasonLine: `You're receiving this because you applied to ${project.projectName}.`,
+          ...(withdrawUrl === undefined ? {} : { withdrawUrl }),
         },
       });
     } catch (error) {
@@ -575,6 +626,7 @@ export function createAutomatedEmailSendTaskDependencies(input: {
   readonly projects: AutomatedEmailSendTaskDependencies["projects"];
   readonly salesforceClient: AutomatedEmailSalesforceClient | null;
   readonly postmarkClient: Pick<PostmarkClient, "sendBatch"> | null;
+  readonly withdrawLink?: AutomatedEmailSendTaskDependencies["withdrawLink"];
   readonly opsAlert: Pick<OpsAlertSender, "send">;
   readonly now?: () => Date;
 }): AutomatedEmailSendTaskDependencies {
@@ -595,6 +647,7 @@ export function createAutomatedEmailSendTaskDependencies(input: {
     projects: input.projects,
     salesforceClient: input.salesforceClient,
     postmarkClient: input.postmarkClient,
+    ...(input.withdrawLink === undefined ? {} : { withdrawLink: input.withdrawLink }),
     opsAlert: input.opsAlert,
     ...(input.now === undefined ? {} : { now: input.now }),
   };

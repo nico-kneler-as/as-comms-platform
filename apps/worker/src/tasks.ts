@@ -23,6 +23,11 @@ import {
   type AutomatedEmailSendTaskDependencies,
 } from "./jobs/send-automated-email/index.js";
 import {
+  createSalesforceExpeditionMemberWithdrawTask,
+  salesforceExpeditionMemberWithdrawJobName,
+  type SalesforceExpeditionMemberWithdrawTaskDependencies,
+} from "./jobs/salesforce-expedition-member-withdraw.js";
+import {
   createSmsBroadcastSendTask,
   smsBroadcastSendJobName,
   type SmsBroadcastSendTaskDependencies,
@@ -137,6 +142,7 @@ export function createTaskList(
     readonly campaignSend?: CampaignSendTaskDependencies;
     readonly campaignResend?: CampaignResendTaskDependencies;
     readonly automatedEmailSend?: AutomatedEmailSendTaskDependencies;
+    readonly salesforceExpeditionMemberWithdraw?: SalesforceExpeditionMemberWithdrawTaskDependencies;
     readonly smsBroadcastSend?: SmsBroadcastSendTaskDependencies;
     readonly salesforceAudienceListsSync?: SalesforceAudienceListsSyncTaskDependencies;
     readonly salesforceContactStatesSync?: SalesforceContactStatesSyncTaskDependencies;
@@ -181,6 +187,14 @@ export function createTaskList(
           [automatedEmailSendJobName]: createAutomatedEmailSendTask(
             input.automatedEmailSend,
           ),
+        }),
+    ...(input?.salesforceExpeditionMemberWithdraw === undefined
+      ? {}
+      : {
+          [salesforceExpeditionMemberWithdrawJobName]:
+            createSalesforceExpeditionMemberWithdrawTask(
+              input.salesforceExpeditionMemberWithdraw,
+            ),
         }),
     ...(input?.smsBroadcastSend === undefined
       ? {}

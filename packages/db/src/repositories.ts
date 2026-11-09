@@ -3635,6 +3635,20 @@ function createStage1RepositoriesInternal(
         return rows.map(mapContactMembershipRow);
       },
 
+      async findBySalesforceMembershipId(salesforceMembershipId) {
+        const [row] = await db
+          .select()
+          .from(contactMemberships)
+          .where(
+            and(
+              eq(contactMemberships.salesforceMembershipId, salesforceMembershipId),
+              isNull(contactMemberships.salesforceDeletedAt),
+            ),
+          )
+          .limit(1);
+        return row === undefined ? null : mapContactMembershipRow(row);
+      },
+
       async listByContactIds(contactIds) {
         if (contactIds.length === 0) {
           return [];

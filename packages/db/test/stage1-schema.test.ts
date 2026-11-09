@@ -211,6 +211,7 @@ describe("Stage 1 DB schema", () => {
     expect(canonicalEventTypeValues).toContain("campaign.email.complained");
     expect(canonicalEventTypeValues).toContain("campaign.email.unsubscribed");
     expect(canonicalEventTypeValues).toContain("note.internal.created");
+    expect(canonicalEventTypeValues).toContain("lifecycle.withdrew_from_project");
     expect(reviewStateValues).toEqual([
       "clear",
       "needs_identity_review",

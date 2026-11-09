@@ -822,6 +822,7 @@ function buildContext(input: {
       },
     },
     contactMemberships: {
+      findBySalesforceMembershipId: () => Promise.resolve(null),
       listByContactId: (contactId) =>
         Promise.resolve(
           contactMembershipRecords.filter(

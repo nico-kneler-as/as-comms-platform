@@ -10,6 +10,7 @@ export interface AutomatedEmailRenderInput {
   readonly frame: {
     readonly projectName: string;
     readonly reasonLine: string;
+    readonly withdrawUrl?: string;
   };
 }
 
@@ -359,13 +360,13 @@ function renderTransactionalFrame(input: {
     `<tr><td style="padding:28px 32px 18px;border-bottom:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;"><div style="font-size:13px;font-weight:600;letter-spacing:3px;color:#20211F;">ADVENTURE&nbsp;SCIENTISTS</div><div style="padding-top:4px;font-size:11px;letter-spacing:1.5px;color:#939393;">${projectDisplay}</div></td></tr>`,
     `<tr><td style="padding:26px 32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:16px;line-height:1.55;color:#20211F;">${input.bodyHtml}</td></tr>`,
     "<tr><td style=\"padding:18px 32px 32px;border-top:1px solid #DDE1DA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:12px;line-height:1.5;color:#939393;\">",
-    `<div>Adventure Scientists</div><div>${escapeHtml(input.frame.reasonLine)}</div>`,
+    `<div>Adventure Scientists</div><div>${escapeHtml(input.frame.reasonLine)}</div>${input.frame.withdrawUrl === undefined ? "" : `<div>Can't take part anymore? <a href="${escapeHtml(input.frame.withdrawUrl)}" style="color:#939393;text-decoration:underline;">Withdraw from ${escapeHtml(input.frame.projectName)}</a></div>`}`,
     "</td></tr></table></td></tr></table>",
   ].join("");
 
   return {
     html,
-    text: `${wordmark}\n\n${input.bodyText}\n\nAdventure Scientists\n${input.frame.reasonLine}`,
+    text: `${wordmark}\n\n${input.bodyText}\n\nAdventure Scientists\n${input.frame.reasonLine}${input.frame.withdrawUrl === undefined ? "" : `\nCan't take part anymore? Withdraw from ${input.frame.projectName}: ${input.frame.withdrawUrl}`}`,
   };
 }
 

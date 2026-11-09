@@ -296,6 +296,12 @@ async function loadOwnedTemplate(projectId: string, templateId: string) {
   return template?.projectId !== projectId ? null : { runtime, template };
 }
 
+/** Sample withdraw link for previews; it resolves to the "link isn't valid" page. */
+function previewWithdrawUrl(): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/u, "") ?? "";
+  return `${base.length > 0 ? base : "https://comms.adventurescientists.org"}/w/preview`;
+}
+
 async function renderDraft(input: {
   readonly projectId: string;
   readonly templateId: string;
@@ -352,6 +358,7 @@ async function renderDraft(input: {
       frame: {
         projectName: project.projectName,
         reasonLine: `You're receiving this because you applied to ${project.projectName}.`,
+        withdrawUrl: previewWithdrawUrl(),
       },
     });
 
@@ -425,7 +432,11 @@ function validateDraftForPublish(input: {
       values: buildAutomatedEmailSampleValues({
         projectName: input.projectName,
       }),
-      frame: { projectName: input.projectName, reasonLine: "" },
+      frame: {
+        projectName: input.projectName,
+        reasonLine: "",
+        withdrawUrl: previewWithdrawUrl(),
+      },
     });
   } catch (error) {
     return describeRenderFailure(error);

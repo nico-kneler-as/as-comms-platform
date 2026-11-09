@@ -51,6 +51,17 @@ export type AutomatedEmailSendPayload = z.infer<
   typeof automatedEmailSendPayloadSchema
 >;
 
+export const salesforceExpeditionMemberWithdrawJobName =
+  "salesforce-expedition-member-withdraw" as const;
+export const salesforceExpeditionMemberWithdrawJobMaxAttempts = 25 as const;
+export const salesforceExpeditionMemberWithdrawPayloadSchema = z.object({
+  expeditionMemberId: z.string().regex(/^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/u),
+  requestedAt: timestampSchema,
+});
+export type SalesforceExpeditionMemberWithdrawPayload = z.infer<
+  typeof salesforceExpeditionMemberWithdrawPayloadSchema
+>;
+
 export const automatedEmailDedupeWindowMs = 24 * 60 * 60 * 1_000;
 
 export const automatedEmailRenderedPreviewSchema = z.object({

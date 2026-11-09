@@ -1,6 +1,7 @@
 export * from "./audience-resolver.js";
 export * from "./automated-email-merge.js";
 export * from "./automated-email-render.js";
+export * from "./expedition-withdraw-token.js";
 export * from "./ai-tell-normalization.js";
 export * from "./broadcast-activity-classifier.js";
 export * from "./broadcast-email-render.js";
