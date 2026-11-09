@@ -12,6 +12,7 @@ import {
   salesforceExpeditionMemberWithdrawPayloadSchema,
 } from "@as-comms/contracts";
 
+import { redirectToAppPath } from "@/src/server/app-redirect";
 import {
   getStage1WebRuntime,
   withStage1WebTransaction,
@@ -22,11 +23,8 @@ import { hashWithdrawIp, resolveExpeditionWithdrawToken } from "../_lib/withdraw
 
 export const dynamic = "force-dynamic";
 
-function redirect(request: Request, token: string, done: boolean): NextResponse {
-  return NextResponse.redirect(
-    new URL(`/w/${encodeURIComponent(token)}${done ? "?done=1" : ""}`, request.url),
-    { status: 303 },
-  );
+function redirect(token: string, done: boolean): NextResponse {
+  return redirectToAppPath(`/w/${encodeURIComponent(token)}${done ? "?done=1" : ""}`);
 }
 
 function sha256(value: string): string {
@@ -60,7 +58,7 @@ export async function POST(
   }
 
   const target = resolveExpeditionWithdrawToken(decodedToken);
-  if (target === null) return redirect(request, decodedToken, false);
+  if (target === null) return redirect(decodedToken, false);
 
   const runtime = await getStage1WebRuntime();
   const membership =
@@ -156,5 +154,5 @@ export async function POST(
       )
     `;
   }
-  return redirect(request, decodedToken, true);
+  return redirect(decodedToken, true);
 }
