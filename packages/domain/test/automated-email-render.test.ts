@@ -41,6 +41,25 @@ function expectRenderError(
 }
 
 describe("renderAutomatedEmail", () => {
+  it("adds an escaped withdrawal footer only when given a withdrawal URL", () => {
+    const baseline = renderAutomatedEmail(baseInput);
+    const withWithdraw = renderAutomatedEmail({
+      ...baseInput,
+      frame: {
+        ...baseInput.frame,
+        projectName: "PNW <Bio>",
+        withdrawUrl: "https://example.org/w/a?x=<unsafe>&y=1",
+      },
+    });
+    expect(withWithdraw.html).toContain("Can't take part anymore?");
+    expect(withWithdraw.html).toContain("Withdraw from PNW &lt;Bio&gt;");
+    expect(withWithdraw.html).toContain("x=&lt;unsafe&gt;&amp;y=1");
+    expect(withWithdraw.text).toContain(
+      "Can't take part anymore? Withdraw from PNW <Bio>: https://example.org/w/a?x=<unsafe>&y=1",
+    );
+    expect(baseline.html).not.toContain("Can't take part anymore?");
+    expect(baseline.text).not.toContain("Can't take part anymore?");
+  });
   it("renders escaped paragraphs and inline styles for supported marks", () => {
     const result = renderAutomatedEmail({
       ...baseInput,

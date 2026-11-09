@@ -1567,6 +1567,10 @@ function timelineLifecycleBodyLabel(
       return context === null
         ? "Submitted first data"
         : `Submitted first data for ${context}`;
+    case "withdrew_from_project":
+      return context === null
+        ? "Withdrew from project"
+        : `Withdrew from ${context}`;
     default:
       return context === null
         ? "Project activity"
@@ -1598,6 +1602,10 @@ function lifecycleRailActivityLabel(
       return projectContext === null
         ? "Submitted first data"
         : `Submitted first data - ${projectContext}`;
+    case "withdrew_from_project":
+      return projectContext === null
+        ? "Withdrew from project"
+        : `Withdrew from ${projectContext}`;
     default:
       return projectContext === null
         ? "Project activity"
@@ -1627,6 +1635,8 @@ function fallbackLatestSubject(eventType: CanonicalEventType): string {
       return "Completed training";
     case "lifecycle.submitted_first_data":
       return "Submitted first data";
+    case "lifecycle.withdrew_from_project":
+      return "Withdrew from project";
     case "campaign.email.sent":
       return "Broadcast email sent";
     case "campaign.email.opened":
@@ -1803,6 +1813,8 @@ function lifecycleMilestoneOrdinal(
       return 3;
     case "submitted_first_data":
       return 4;
+    case "withdrew_from_project":
+      return 5;
   }
 }
 

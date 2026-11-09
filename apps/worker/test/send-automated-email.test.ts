@@ -8,6 +8,7 @@ import {
   setTemplateActive,
   updateSendStatus,
 } from "@as-comms/db";
+import { verifyExpeditionWithdrawToken } from "@as-comms/domain";
 
 import {
   createAutomatedEmailSendTask,
@@ -86,7 +87,7 @@ function createOpsAlert() {
 
 async function seedProject(context: Stage1Context, includeAlias = true) {
   await context.repositories.projectDimensions.upsert({
-    projectId: "project-automated-email",
+    projectId: "a0PAUTOMATEDEML",
     projectName: "Project Atlas",
     source: "manual",
   });
@@ -96,7 +97,7 @@ async function seedProject(context: Stage1Context, includeAlias = true) {
       id: "alias-automated-email",
       alias: "atlas@adventurescientists.org",
       signature: "",
-      projectId: "project-automated-email",
+      projectId: "a0PAUTOMATEDEML",
       createdAt: NOW,
       updatedAt: NOW,
       createdBy: null,
@@ -107,10 +108,15 @@ async function seedProject(context: Stage1Context, includeAlias = true) {
 
 async function seedTemplate(
   context: Stage1Context,
-  input: { readonly active: boolean; readonly published?: boolean },
+  input: {
+    readonly active: boolean;
+    readonly published?: boolean;
+    readonly kind?: "custom" | "training_reminder" | "denied" | "post_trip";
+  },
 ) {
   const template = await createTemplate(context.db, {
-    projectId: "project-automated-email",
+    projectId: "a0PAUTOMATEDEML",
+    ...(input.kind === undefined ? {} : { kind: input.kind }),
     name: "Application received",
     draftSubject: "Welcome {{firstName}}",
     draftDoc: documentBody(),
@@ -127,7 +133,7 @@ async function seedTemplate(
 async function seedSend(context: Stage1Context, templateId: string) {
   return createSendLogRow(context.db, {
     templateId,
-    projectId: "project-automated-email",
+    projectId: "a0PAUTOMATEDEML",
     expeditionMemberId: EXPEDITION_MEMBER_ID,
     contactId: null,
     payload: {
@@ -155,6 +161,7 @@ function createTask(
     readonly salesforceClient: ReturnType<typeof createSalesforceClient> | null;
     readonly postmarkClient?: ReturnType<typeof createPostmarkClient> | null;
     readonly opsAlert?: ReturnType<typeof createOpsAlert>;
+    readonly withdrawLink?: { readonly baseUrl: string; readonly secret: string } | null;
   },
 ) {
   const opsAlert = input.opsAlert ?? createOpsAlert();
@@ -166,12 +173,20 @@ function createTask(
       projects: context.settings.projects,
       salesforceClient: input.salesforceClient,
       postmarkClient: input.postmarkClient ?? createPostmarkClient(),
+      ...(input.withdrawLink === undefined ? {} : { withdrawLink: input.withdrawLink }),
       opsAlert,
       now: () => NOW,
     }),
   );
 
   return { task, opsAlert };
+}
+
+function firstSentMessage(postmarkClient: ReturnType<typeof createPostmarkClient>) {
+  const call = postmarkClient.sendBatch.mock.calls[0]?.[0] as
+    | { readonly messages: readonly [{ readonly HtmlBody: string; readonly TextBody: string }] }
+    | undefined;
+  return call?.messages[0];
 }
 
 describe("send-automated-email task", () => {
@@ -351,6 +366,87 @@ describe("send-automated-email task", () => {
 
     await task({ sendId: send.id }, {} as never);
     expect(postmarkClient.sendBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["custom", "training_reminder"] as const)(
+    "adds a signed withdraw link to %s transactional emails",
+    async (kind) => {
+      if (context === null) throw new Error("Expected test context.");
+
+      const template = await seedTemplate(context, { active: true, kind });
+      const send = await seedSend(context, template.id);
+      const postmarkClient = createPostmarkClient();
+      const { task } = createTask(context, {
+        salesforceClient: createSalesforceClient(),
+        postmarkClient,
+        withdrawLink: {
+          baseUrl: "https://comms.example.test/",
+          secret: "a-very-long-test-secret-that-is-at-least-32-characters",
+        },
+      });
+
+      await task({ sendId: send.id }, {} as never);
+
+      const message = firstSentMessage(postmarkClient);
+      expect(message?.HtmlBody).toContain("https://comms.example.test/w/w1.");
+      expect(message?.TextBody).toContain("https://comms.example.test/w/w1.");
+      const token = message?.TextBody.match(/https:\/\/comms\.example\.test\/w\/(w1\.[^\s]+)/u)?.[1];
+      expect(token).toBeDefined();
+      expect(
+        verifyExpeditionWithdrawToken(token ?? "", {
+          secret: "a-very-long-test-secret-that-is-at-least-32-characters",
+          now: NOW,
+        }),
+      ).toEqual({
+        expeditionMemberId: EXPEDITION_MEMBER_ID,
+        projectId: "a0PAUTOMATEDEML",
+      });
+    },
+  );
+
+  it.each(["denied", "post_trip"] as const)(
+    "does not add a withdraw link to %s messages",
+    async (kind) => {
+      if (context === null) throw new Error("Expected test context.");
+
+      const template = await seedTemplate(context, { active: true, kind });
+      const send = await seedSend(context, template.id);
+      const postmarkClient = createPostmarkClient();
+      const { task } = createTask(context, {
+        salesforceClient: createSalesforceClient(),
+        postmarkClient,
+        withdrawLink: {
+          baseUrl: "https://comms.example.test",
+          secret: "a-very-long-test-secret-that-is-at-least-32-characters",
+        },
+      });
+
+      await task({ sendId: send.id }, {} as never);
+
+      const message = firstSentMessage(postmarkClient);
+      expect(message?.HtmlBody).not.toContain("/w/w1.");
+      expect(message?.TextBody).not.toContain("/w/w1.");
+    },
+  );
+
+  it("sends normally without a withdraw link when link configuration is null", async () => {
+    if (context === null) throw new Error("Expected test context.");
+
+    const template = await seedTemplate(context, { active: true });
+    const send = await seedSend(context, template.id);
+    const postmarkClient = createPostmarkClient();
+    const { task } = createTask(context, {
+      salesforceClient: createSalesforceClient(),
+      postmarkClient,
+      withdrawLink: null,
+    });
+
+    await task({ sendId: send.id }, {} as never);
+
+    await expect(getSendLogRow(context.db, send.id)).resolves.toMatchObject({
+      status: "sent",
+    });
+    expect(firstSentMessage(postmarkClient)?.TextBody).not.toContain("/w/w1.");
   });
 
   it("sends without a ledger event when Salesforce contact has no local match", async () => {

@@ -12,7 +12,9 @@ import {
 
 import {
   buildWorkerCrontab,
+  readAutomatedEmailWithdrawLinkSettings,
   readCampaignSendPacingConfig,
+  readSalesforceExpeditionWithdrawSettings,
   readSalesforceSubscriptionReadbackSettings,
   readWorkerConfig,
 } from "../src/runtime.js";
@@ -32,6 +34,7 @@ import { reconcileStrandedCampaignRunsJobName } from "../src/jobs/reconcile-stra
 import { sweepPendingOutboundsJobName } from "../src/jobs/sweep-pending-outbounds.js";
 import { campaignEventsTailFinalizeJobName } from "../src/jobs/campaign-events-tail-finalize/index.js";
 import { createTaskList } from "../src/tasks.js";
+import { salesforceExpeditionMemberWithdrawJobName } from "../src/jobs/salesforce-expedition-member-withdraw.js";
 import {
   buildCapturedBatch,
   createEmptyCapturePorts,
@@ -149,6 +152,72 @@ describe("Stage 1 worker runtime task registration", () => {
       SALESFORCE_SUBSCRIPTION_FORMS_USERNAMES: value,
     });
     expect(settings.enabled && settings.formsUsernames).toEqual(expected);
+  });
+  const withdrawJwtEnv = {
+    SALESFORCE_LOGIN_URL: "https://login.example.test",
+    SALESFORCE_CLIENT_ID: "client",
+    SALESFORCE_USERNAME: "volunteers@example.org",
+    SALESFORCE_JWT_PRIVATE_KEY: "key",
+  };
+  it.each([
+    ["the flag is unset", { ...withdrawJwtEnv }, "disabled"],
+    ["the flag is false", { ...withdrawJwtEnv, SALESFORCE_EXPEDITION_WITHDRAW_ENABLED: "false" }, "disabled"],
+    [
+      "a JWT variable is missing",
+      { ...withdrawJwtEnv, SALESFORCE_JWT_PRIVATE_KEY: " ", SALESFORCE_EXPEDITION_WITHDRAW_ENABLED: "true" },
+      "missing_salesforce_jwt_config",
+    ],
+  ] as const)("keeps the Salesforce withdraw job off when %s", (_name, env, reason) => {
+    expect(readSalesforceExpeditionWithdrawSettings(env)).toEqual({ enabled: false, reason });
+  });
+  it("enables the Salesforce withdraw job with the flag and full JWT config", () => {
+    expect(
+      readSalesforceExpeditionWithdrawSettings({
+        ...withdrawJwtEnv,
+        SALESFORCE_EXPEDITION_WITHDRAW_ENABLED: "true",
+      }),
+    ).toEqual({ enabled: true });
+  });
+  it("registers the withdraw task only when its dependencies are wired", () => {
+    const withdrawDeps = {
+      salesforceClient: { queryAll: () => Promise.resolve([]) },
+      writeClient: { setExpeditionMemberStatus: () => Promise.resolve() },
+    };
+    expect(Object.keys(createTaskList(undefined, {}))).not.toContain(
+      salesforceExpeditionMemberWithdrawJobName,
+    );
+    expect(
+      Object.keys(
+        createTaskList(undefined, { salesforceExpeditionMemberWithdraw: withdrawDeps }),
+      ),
+    ).toContain(salesforceExpeditionMemberWithdrawJobName);
+  });
+  it.each([
+    ["the secret is missing", { WEB_BASE_URL: "https://comms.example.test" }, "missing_secret"],
+    [
+      "the secret is too short",
+      { WEB_BASE_URL: "https://comms.example.test", EXPEDITION_WITHDRAW_LINK_SECRET: "short" },
+      "invalid_secret",
+    ],
+    [
+      "the base URL is missing",
+      { EXPEDITION_WITHDRAW_LINK_SECRET: "x".repeat(32) },
+      "missing_web_base_url",
+    ],
+  ] as const)("disables the automated-email withdraw link when %s", (_name, env, reason) => {
+    expect(readAutomatedEmailWithdrawLinkSettings(env)).toEqual({ enabled: false, reason });
+  });
+  it("enables the automated-email withdraw link with a secret and base URL", () => {
+    expect(
+      readAutomatedEmailWithdrawLinkSettings({
+        EXPEDITION_WITHDRAW_LINK_SECRET: ` ${"s".repeat(40)} `,
+        WEB_BASE_URL: "https://comms.example.test",
+      }),
+    ).toEqual({
+      enabled: true,
+      secret: "s".repeat(40),
+      baseUrl: "https://comms.example.test",
+    });
   });
   it("registers the subscription readback cron only when explicitly wired", () => {
     const config = readWorkerConfig(launchScopeEnv);

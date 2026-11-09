@@ -462,6 +462,65 @@ describe("Stage 1 persistence service", () => {
     }
   });
 
+  it("persists a lifecycle.withdrew_from_project canonical event after migrations", async () => {
+    const { persistence } = await createTestStage1Context();
+    const occurredAt = "2026-11-09T12:00:00.000Z";
+
+    await persistence.upsertCanonicalContact({
+      id: "contact:withdraw:canonical-event",
+      salesforceContactId: "003000000000001",
+      displayName: "Withdraw Event Contact",
+      primaryEmail: "withdraw@example.org",
+      primaryPhone: null,
+      createdAt: occurredAt,
+      updatedAt: occurredAt,
+    });
+    const source = await persistence.recordSourceEvidence({
+      id: "source:withdraw:canonical-event",
+      provider: "manual",
+      providerRecordType: "platform_withdraw_link",
+      providerRecordId: "a0B000000000001",
+      receivedAt: occurredAt,
+      occurredAt,
+      payloadRef: "platform://withdraw/a0B000000000001",
+      idempotencyKey: "withdraw:a0B000000000001",
+      checksum: "withdraw-checksum",
+    });
+    if (source.outcome === "conflict") {
+      throw new Error("Expected withdraw source evidence to insert.");
+    }
+
+    const event = await persistence.persistCanonicalEvent({
+      id: "canonical:withdraw:a0B000000000001",
+      contactId: "contact:withdraw:canonical-event",
+      eventType: "lifecycle.withdrew_from_project",
+      channel: "lifecycle",
+      occurredAt,
+      contentFingerprint: null,
+      sourceEvidenceId: source.record.id,
+      idempotencyKey: "withdraw:a0B000000000001",
+      provenance: {
+        primaryProvider: "manual",
+        primarySourceEvidenceId: source.record.id,
+        supportingSourceEvidenceIds: [],
+        winnerReason: "single_source",
+        sourceRecordType: "platform_withdraw_link",
+        sourceRecordId: "a0B000000000001",
+        messageKind: null,
+        campaignRef: null,
+        threadRef: null,
+        direction: null,
+      },
+      reviewState: "clear",
+    });
+
+    expect(event.outcome).toBe("inserted");
+    if (event.outcome !== "inserted") {
+      throw new Error("Expected withdraw canonical event to insert.");
+    }
+    expect(event.record.eventType).toBe("lifecycle.withdrew_from_project");
+  });
+
   it("uses the Salesforce contact anchor when upserting canonical contact state", async () => {
     const { persistence, repositories } = await createTestStage1Context();
 

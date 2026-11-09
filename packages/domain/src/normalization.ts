@@ -540,6 +540,7 @@ function tierRankForEventType(
     case "lifecycle.received_training":
     case "lifecycle.completed_training":
     case "lifecycle.submitted_first_data":
+    case "lifecycle.withdrew_from_project":
     case "communication.sms.opt_in":
     case "communication.sms.opt_out":
     case "campaign.email.unsubscribed":
@@ -567,6 +568,8 @@ function ingestSnippetFallbackForEventType(
       return "Completed training";
     case "lifecycle.submitted_first_data":
       return "Submitted first data";
+    case "lifecycle.withdrew_from_project":
+      return "Withdrew from project";
     case "communication.sms.opt_in":
       return "SMS opted in";
     case "communication.sms.opt_out":
@@ -1699,6 +1702,8 @@ function resolveInboxSnippet(
       return "Completed training";
     case "lifecycle.submitted_first_data":
       return "Submitted first data";
+    case "lifecycle.withdrew_from_project":
+      return "Withdrew from project";
     case "communication.sms.opt_in":
       return "SMS opted in";
     case "communication.sms.opt_out":

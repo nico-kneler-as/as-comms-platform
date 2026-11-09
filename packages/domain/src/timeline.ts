@@ -94,7 +94,8 @@ function getLifecycleMilestone(
   | "signed_up"
   | "received_training"
   | "completed_training"
-  | "submitted_first_data" {
+  | "submitted_first_data"
+  | "withdrew_from_project" {
   switch (eventType) {
     case "lifecycle.signed_up":
       return "signed_up";
@@ -104,6 +105,8 @@ function getLifecycleMilestone(
       return "completed_training";
     case "lifecycle.submitted_first_data":
       return "submitted_first_data";
+    case "lifecycle.withdrew_from_project":
+      return "withdrew_from_project";
     default:
       throw new Error(`Unsupported lifecycle event type ${eventType}.`);
   }

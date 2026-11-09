@@ -59,6 +59,54 @@ type Stage1TestRepositories = Awaited<
   ReturnType<typeof createTestStage1Context>
 >["repositories"];
 
+describe("contactMemberships.findBySalesforceMembershipId", () => {
+  it("returns active memberships and excludes unknown or Salesforce-deleted rows", async () => {
+    const { repositories } = await createTestStage1Context();
+    const salesforceMembershipId = "a0B000000000001";
+
+    await repositories.contacts.upsert({
+      id: "contact:withdraw:membership",
+      salesforceContactId: "003000000000001",
+      displayName: "Withdraw Membership Contact",
+      primaryEmail: "withdraw@example.org",
+      primaryPhone: null,
+      createdAt: "2026-11-09T12:00:00.000Z",
+      updatedAt: "2026-11-09T12:00:00.000Z",
+    });
+    await repositories.projectDimensions.upsert({
+      projectId: "a0P000000000001",
+      projectName: "Withdraw Lookup Project",
+      source: "salesforce",
+    });
+    const membership = await repositories.contactMemberships.upsert({
+      id: "membership:withdraw:lookup",
+      contactId: "contact:withdraw:membership",
+      salesforceMembershipId,
+      projectId: "a0P000000000001",
+      expeditionId: null,
+      role: "volunteer",
+      status: "active",
+      source: "salesforce",
+      createdAt: "2026-11-09T12:00:00.000Z",
+    });
+
+    await expect(
+      repositories.contactMemberships.findBySalesforceMembershipId(salesforceMembershipId),
+    ).resolves.toEqual(membership);
+    await expect(
+      repositories.contactMemberships.findBySalesforceMembershipId("a0B000000000002"),
+    ).resolves.toBeNull();
+
+    await repositories.contactMemberships.markSalesforceDeleted({
+      salesforceIds: [salesforceMembershipId],
+      deletedAt: "2026-11-09T12:01:00.000Z",
+    });
+    await expect(
+      repositories.contactMemberships.findBySalesforceMembershipId(salesforceMembershipId),
+    ).resolves.toBeNull();
+  });
+});
+
 async function seedTimelineFanoutContact(
   repositories: Stage1TestRepositories,
   contactId: string,

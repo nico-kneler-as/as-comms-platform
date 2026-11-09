@@ -115,6 +115,7 @@ function buildRepositoryBundle(input: {
       upsert: (record) => Promise.resolve(record),
     },
     contactMemberships: {
+      findBySalesforceMembershipId: () => Promise.resolve(null),
       listByContactId: () => Promise.resolve([]),
       listByContactIds: () => Promise.resolve([]),
       listSalesforceAnchoredIds: () => Promise.resolve([]),
