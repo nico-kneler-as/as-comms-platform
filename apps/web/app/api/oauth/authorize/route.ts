@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { redirectToAppPath } from "../../../../src/server/app-redirect";
 import { getCurrentUser } from "../../../../src/server/auth/session";
 import {
   canAccessWorkspace,
@@ -49,12 +50,11 @@ export async function GET(request: Request) {
     canAccessWorkspace(await loadWorkspaceAccess(currentUser), "volunteers");
 
   if (!isActiveOperator) {
-    const signInUrl = new URL("/auth/sign-in", requestUrl.origin);
-    signInUrl.searchParams.set(
-      "callbackUrl",
-      `${requestUrl.pathname}${requestUrl.search}`,
-    );
-    return NextResponse.redirect(signInUrl);
+    // Relative: requestUrl.origin is the container address behind the proxy.
+    const signInParams = new URLSearchParams({
+      callbackUrl: `${requestUrl.pathname}${requestUrl.search}`,
+    });
+    return redirectToAppPath(`/auth/sign-in?${signInParams.toString()}`, 307);
   }
 
   const metadata = getMcpOAuthMetadataConfigFromEnv();

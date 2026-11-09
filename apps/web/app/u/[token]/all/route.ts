@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-
 import { createConsentLedger } from "@as-comms/domain";
 
+import { redirectToAppPath } from "@/src/server/app-redirect";
 import { getStage1WebRuntime } from "@/src/server/stage1-runtime";
 
 import { resolveUnsubscribeTarget } from "../_lib/unsubscribe";
@@ -9,7 +8,7 @@ import { resolveUnsubscribeTarget } from "../_lib/unsubscribe";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  request: Request,
+  _request: Request,
   context: { readonly params: Promise<{ readonly token: string }> },
 ) {
   const { token } = await context.params;
@@ -55,8 +54,5 @@ export async function POST(
     );
   }
 
-  return NextResponse.redirect(
-    new URL(`/u/${encodeURIComponent(decodedToken)}?all=1`, request.url),
-    { status: 303 },
-  );
+  return redirectToAppPath(`/u/${encodeURIComponent(decodedToken)}?all=1`);
 }

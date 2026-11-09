@@ -259,7 +259,7 @@ describe("public unsubscribe page", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "http://localhost/u/token-project?confirmed=1",
+      "/u/token-project?confirmed=1",
     );
     if (!runtime) {
       throw new Error("runtime not initialized");
@@ -562,7 +562,7 @@ describe("public unsubscribe page", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "http://localhost/u/token-project?all=1",
+      "/u/token-project?all=1",
     );
     if (!runtime) {
       throw new Error("runtime not initialized");

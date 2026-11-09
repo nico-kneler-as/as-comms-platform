@@ -26,7 +26,7 @@ function createToken(expiresAt = new Date("2100-01-01T00:00:00.000Z")): string {
 }
 
 function request(token: string, ip = "203.0.113.17"): Request {
-  return new Request(`https://app.example.test/w/${encodeURIComponent(token)}/confirm`, {
+  return new Request(`https://localhost:8080/w/${encodeURIComponent(token)}/confirm`, {
     method: "POST",
     headers: { "x-forwarded-for": ip },
   });
@@ -103,7 +103,7 @@ describe("expedition withdraw confirmation route", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      `https://app.example.test/w/${encodeURIComponent(token)}?done=1`,
+      `/w/${encodeURIComponent(token)}?done=1`,
     );
     await expect(
       runtime.runtime.campaigns.contactConsent.listForContact(contactId),
@@ -166,7 +166,7 @@ describe("expedition withdraw confirmation route", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      `https://app.example.test/w/${encodeURIComponent(token)}`,
+      `/w/${encodeURIComponent(token)}`,
     );
     await expect(runtime.runtime.repositories.canonicalEvents.countAll()).resolves.toBe(0);
     expect(jobSql).not.toHaveBeenCalled();
@@ -182,7 +182,7 @@ describe("expedition withdraw confirmation route", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      `https://app.example.test/w/${encodeURIComponent(token)}`,
+      `/w/${encodeURIComponent(token)}`,
     );
     expect(jobSql).not.toHaveBeenCalled();
   });
@@ -196,7 +196,7 @@ describe("expedition withdraw confirmation route", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      `https://app.example.test/w/${encodeURIComponent(token)}?done=1`,
+      `/w/${encodeURIComponent(token)}?done=1`,
     );
     await expect(runtime.runtime.repositories.canonicalEvents.countAll()).resolves.toBe(0);
     expect(jobSql).toHaveBeenCalledTimes(1);
