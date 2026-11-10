@@ -40,8 +40,10 @@ import {
   resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   summarizeResidenceStates,
+  toStandingListAudienceMembers,
   type AudienceMember,
   type BoxAudiencePlan,
+  type StandingListAudienceMember,
   type SmsBroadcastAudienceMember,
   type SmsBroadcastDropReason,
 } from "@as-comms/domain";
@@ -119,7 +121,15 @@ export interface AudienceBuilderBootstrap {
   readonly statuses: readonly ExpeditionMemberStatus[];
   readonly senderOptions: readonly CampaignSenderOption[];
   readonly activeSmsSender: ActiveSmsSender | null;
+  readonly commonAudiences?: readonly CommonAudienceOption[];
+  readonly commonAudiencesLastSyncedAt?: string | null;
   readonly projectAudienceSource?: "membership" | "subscription_box";
+}
+
+export interface CommonAudienceOption {
+  readonly id: string;
+  readonly title: string;
+  readonly memberCount: number;
 }
 
 export interface AudiencePreviewRow {
@@ -1126,6 +1136,17 @@ async function loadNewsletterSubscriberAudience(): Promise<
   }));
 }
 
+async function loadStandingListAudience(
+  listIds: readonly string[],
+): Promise<readonly StandingListAudienceMember[] | null> {
+  const runtime = await getStage1WebRuntime();
+  const members =
+    (await runtime.campaigns.salesforceAudienceLists.resolveStandingListAudience?.(
+      listIds,
+    )) ?? null;
+  return members;
+}
+
 async function loadSpecificNewsletterSubscribersAudience(
   criteria: AudienceCriteria,
   at: Date,
@@ -1323,10 +1344,16 @@ export async function resolveStoredCampaignAudience(input: {
     }
     // all_approved must freeze the same audience the wizard previews
     // (approved contacts), not the subscriber list.
+    const standingListMembers =
+      mode === "salesforce_lists"
+        ? await loadStandingListAudience(input.criteria.salesforceListIds ?? [])
+        : null;
     const base =
-      mode === "all_approved"
-        ? await loadApprovedContactsAudience(input.at)
-        : await loadNewsletterSubscriberAudience();
+      standingListMembers === null
+        ? mode === "all_approved"
+          ? await loadApprovedContactsAudience(input.at)
+          : await loadNewsletterSubscriberAudience()
+        : toStandingListAudienceMembers(standingListMembers);
     return (await applyResidenceStateFilter(base, input.criteria)).members;
   }
 
@@ -1613,6 +1640,20 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
           phoneE164: sender.phoneE164,
         }) satisfies ActiveSmsSender,
     )[0] ?? null;
+  const [allAudienceLists, commonAudiencesLastSyncedAt] = await Promise.all([
+    runtime.campaigns.salesforceAudienceLists.listAll(),
+    runtime.campaigns.salesforceAudienceLists.lastSyncedAt(),
+  ]);
+  const commonAudiences = allAudienceLists
+    .filter((list) => list.kind === "insiders")
+    .map(
+      (list) =>
+        ({
+          id: list.id,
+          title: list.name,
+          memberCount: list.memberCount,
+        }) satisfies CommonAudienceOption,
+    );
 
   if (runtime.connection === null) {
     return {
@@ -1621,6 +1662,8 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       statuses: expeditionMemberStatusValues,
       senderOptions,
       activeSmsSender,
+      commonAudiences,
+      commonAudiencesLastSyncedAt,
       projectAudienceSource,
     };
   }
@@ -1656,6 +1699,8 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     statuses: expeditionMemberStatusValues,
     senderOptions,
     activeSmsSender,
+    commonAudiences,
+    commonAudiencesLastSyncedAt,
     projectAudienceSource,
   };
 }
@@ -1763,6 +1808,7 @@ export async function loadAudienceStateCountsAction(input: {
         "project_subscribed",
         "all_approved",
         "all_available",
+        "salesforce_lists",
       ].includes(mode) ||
       ((mode === "project_status" || mode === "project_subscribed") &&
         (criteria.projectId ?? criteria.projectIds[0] ?? null) === null)

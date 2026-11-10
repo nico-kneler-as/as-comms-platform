@@ -33,6 +33,7 @@ import type {
   AudienceStatusCounts,
   AudienceVolunteerSearchRow,
   CampaignSenderType,
+  CommonAudienceOption,
   CampaignProjectOption,
   CsvUploadSummary,
   SmsCsvAudienceSummary,
@@ -50,12 +51,15 @@ export type AudienceInitialFilter =
   | "specific"
   | "all_approved"
   | "all_available"
-  | "csv_upload";
+  | "csv_upload"
+  | "salesforce_lists";
+
+type AudienceModeCard = Exclude<AudienceInitialFilter, "salesforce_lists">;
 
 export type CampaignAudienceCriteria = AudienceCriteria;
 
 const MODE_META: Record<
-  AudienceInitialFilter,
+  AudienceModeCard,
   {
     readonly title: string;
     readonly hint: string;
@@ -96,10 +100,12 @@ const MODE_META: Record<
 
 interface AudienceBuilderStepProps {
   readonly launchType: LaunchType;
-  readonly availableModes: readonly AudienceInitialFilter[];
+  readonly availableModes: readonly AudienceModeCard[];
   readonly hasPickedMode: boolean;
   readonly criteria: CampaignAudienceCriteria;
   readonly selectedSenderType: CampaignSenderType | null;
+  readonly commonAudiences?: readonly CommonAudienceOption[];
+  readonly commonAudiencesLastSyncedAt?: string | null;
   readonly countState: AudienceCountData;
   readonly previewRows: readonly AudiencePreviewRow[];
   readonly countLoading: boolean;
@@ -129,6 +135,7 @@ interface AudienceBuilderStepProps {
   readonly stateCountsLoading: boolean;
   readonly stateCountsErrorMessage: string | null;
   readonly onInitialFilterChange: (value: AudienceInitialFilter) => void;
+  readonly onCommonAudienceSelect?: (listId: string) => void;
   readonly onProjectChange: (projectId: string) => void;
   readonly onToggleAllStatuses: (selectAll: boolean) => void;
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
@@ -147,6 +154,8 @@ export function AudienceBuilderStep({
   hasPickedMode,
   criteria,
   selectedSenderType,
+  commonAudiences = [],
+  commonAudiencesLastSyncedAt = null,
   countState,
   previewRows,
   countLoading,
@@ -173,6 +182,7 @@ export function AudienceBuilderStep({
   stateCountsLoading,
   stateCountsErrorMessage,
   onInitialFilterChange,
+  onCommonAudienceSelect = () => undefined,
   onProjectChange,
   onToggleAllStatuses,
   onStatusToggle,
@@ -227,8 +237,17 @@ export function AudienceBuilderStep({
           <>
             <ModeSegmentedControl
               modes={availableModes}
-              value={initialFilter === "salesforce_lists" ? "all_available" : initialFilter}
+              value={initialFilter}
               onChange={onInitialFilterChange}
+            />
+
+            <CommonAudienceCards
+              show={launchType !== "sms" && selectedSenderType === "org"}
+              audiences={commonAudiences}
+              lastSyncedAt={commonAudiencesLastSyncedAt}
+              selectedListIds={criteria.salesforceListIds ?? []}
+              selected={initialFilter === "salesforce_lists"}
+              onSelect={onCommonAudienceSelect}
             />
 
             {initialFilter === "project_status" ? (
@@ -405,6 +424,40 @@ export function AudienceBuilderStep({
               </>
             ) : null}
 
+            {initialFilter === "salesforce_lists" ? (
+              <>
+                <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                  <p className="text-[13px] leading-relaxed text-slate-600">
+                    This broadcast goes to the selected common audience, minus
+                    opt-outs and suppressions.
+                  </p>
+                </section>
+                <AudienceFilterPanel
+                  criteria={criteria}
+                  projectOptions={[]}
+                  statusOptions={statusOptions}
+                  statusCounts={statusCounts}
+                  statusCountsLoading={statusCountsLoading}
+                  statusCountsErrorMessage={statusCountsErrorMessage}
+                  stateCounts={stateCounts}
+                  stateCountsLoading={stateCountsLoading}
+                  stateCountsErrorMessage={stateCountsErrorMessage}
+                  showProjectSection={false}
+                  showStatusSection={false}
+                  onProjectChange={onProjectChange}
+                  onToggleAllStatuses={onToggleAllStatuses}
+                  onStatusToggle={onStatusToggle}
+                  onStateToggle={onStateToggle}
+                  onClearStates={onClearStates}
+                />
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
+
             {initialFilter === "csv_upload" ? (
               <>
                 <CsvUploadPanel
@@ -427,11 +480,21 @@ export function AudienceBuilderStep({
             ) : null}
           </>
         ) : (
-          <InitialFilterSelector
-            modes={availableModes}
-            value={undefined}
-            onChange={onInitialFilterChange}
-          />
+          <>
+            <InitialFilterSelector
+              modes={availableModes}
+              value={undefined}
+              onChange={onInitialFilterChange}
+            />
+            <CommonAudienceCards
+              show={launchType !== "sms" && selectedSenderType === "org"}
+              audiences={commonAudiences}
+              lastSyncedAt={commonAudiencesLastSyncedAt}
+              selectedListIds={criteria.salesforceListIds ?? []}
+              selected={false}
+              onSelect={onCommonAudienceSelect}
+            />
+          </>
         )}
       </div>
 
@@ -441,6 +504,67 @@ export function AudienceBuilderStep({
         primaryAction={onContinue}
         primaryDisabled={!canContinue}
       />
+    </section>
+  );
+}
+
+function CommonAudienceCards({
+  show,
+  audiences,
+  lastSyncedAt,
+  selectedListIds,
+  selected,
+  onSelect,
+}: {
+  readonly show: boolean;
+  readonly audiences: readonly CommonAudienceOption[];
+  readonly lastSyncedAt: string | null;
+  readonly selectedListIds: readonly string[];
+  readonly selected: boolean;
+  readonly onSelect: (listId: string) => void;
+}) {
+  if (!show || audiences.length === 0) return null;
+  const syncLabel =
+    lastSyncedAt === null
+      ? "not yet synced"
+      : `synced ${String(Math.max(0, Math.round((Date.now() - new Date(lastSyncedAt).getTime()) / 60_000)))} min ago`;
+  return (
+    <section className="space-y-2">
+      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+        Common audiences
+      </p>
+      {audiences.map((audience) => {
+        const isSelected = selected && selectedListIds.includes(audience.id);
+        return (
+          <button
+            key={audience.id}
+            type="button"
+            aria-pressed={isSelected}
+            onClick={() => {
+              onSelect(audience.id);
+            }}
+            className={cn(
+              "w-full rounded-lg border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+              isSelected
+                ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
+                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-medium text-slate-900">{audience.title}</p>
+                <p className="mt-0.5 text-[12px] text-slate-600">
+                  Salesforce contacts marked VIP?
+                </p>
+              </div>
+              <p className="shrink-0 text-[12px] text-slate-600">
+                {audience.memberCount.toLocaleString()} members
+              </p>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-500">{syncLabel}</p>
+          </button>
+        );
+      })}
     </section>
   );
 }
@@ -686,9 +810,9 @@ function InitialFilterSelector({
   value,
   onChange,
 }: {
-  readonly modes: readonly AudienceInitialFilter[];
+  readonly modes: readonly AudienceModeCard[];
   readonly value: AudienceInitialFilter | undefined;
-  readonly onChange: (value: AudienceInitialFilter) => void;
+  readonly onChange: (value: AudienceModeCard) => void;
 }) {
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -754,9 +878,9 @@ function ModeSegmentedControl({
   value,
   onChange,
 }: {
-  readonly modes: readonly AudienceInitialFilter[];
+  readonly modes: readonly AudienceModeCard[];
   readonly value: AudienceInitialFilter | undefined;
-  readonly onChange: (value: AudienceInitialFilter) => void;
+  readonly onChange: (value: AudienceModeCard) => void;
 }) {
   return (
     <div

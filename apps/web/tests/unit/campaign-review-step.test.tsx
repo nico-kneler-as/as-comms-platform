@@ -54,6 +54,7 @@ const baseProps: React.ComponentProps<typeof ReviewStep> = {
   projectChipLabel: "Forests",
   runName: "May forests volunteer update",
   fromEmail: "forests@adventurescientists.org",
+  replyToEmail: null,
   subject: "Gear pickup for Sam",
   selectedSenderVerified: true,
   audienceSize: 1247,
@@ -106,6 +107,19 @@ describe("ReviewStep sender gating", () => {
     );
 
     expect(markup).toMatch(/<button[^>]*disabled[^>]*>[^<]*Send now[^<]*<\/button>/);
+  });
+
+  it("shows an org sender reply-to address in the final check", () => {
+    const markup = renderToStaticMarkup(
+      <ReviewStep
+        {...baseProps}
+        fromEmail="info@adventurescientists.org"
+        replyToEmail="gregg@adventurescientists.org"
+      />,
+    );
+
+    expect(markup).toContain("Reply-to");
+    expect(markup).toContain("gregg@adventurescientists.org");
   });
 
   it("keeps launch disabled when no sender has been selected", () => {

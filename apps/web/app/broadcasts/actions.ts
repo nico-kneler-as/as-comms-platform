@@ -305,6 +305,13 @@ function createCampaignSendOrchestratorForRepositories(input: {
         frozenAliasEmail: null,
       }));
     },
+    resolveStandingListAudience: async (listIds) => {
+      const members =
+        (await input.campaigns.salesforceAudienceLists.resolveStandingListAudience?.(
+          listIds,
+        )) ?? null;
+      return members;
+    },
     loadAudienceSets: (run) => input.campaigns.audienceComposition.loadSets(run),
     residenceStates: input.campaigns.salesforceContactStates,
     exclusionFilter: createExclusionFilter({

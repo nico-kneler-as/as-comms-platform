@@ -619,6 +619,96 @@ describe("campaign audience data source", () => {
     ]);
   });
 
+  it("counts and previews Insiders from the standing-list base instead of approved contacts or newsletter subscribers", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedContact(runtime, {
+      contactId: "approved-contact",
+      displayName: "Approved Contact",
+      email: "approved@example.org",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "11111111-1111-1111-1111-111111111199",
+      email: "newsletter@example.org",
+      firstName: "Newsletter",
+      status: "subscribed",
+    });
+    await runtime.runtime.campaigns.salesforceAudienceLists.replaceSnapshot({
+      campaigns: [],
+      members: [],
+      insiders: [
+        { id: "003-insider", email: "insider@example.org" },
+        { id: "003-subscriber", email: "subscriber-insider@example.org" },
+      ],
+      capturedAt: "2026-11-10T12:00:00.000Z",
+    });
+    await seedNewsletterSubscriber(runtime, {
+      id: "11111111-1111-1111-1111-111111111200",
+      email: "subscriber-insider@example.org",
+      firstName: "Subscriber Insider",
+      status: "subscribed",
+    });
+    const criteria = {
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time" as const,
+      hasReplied: "either" as const,
+      hasClicked: "either" as const,
+      initialFilter: "salesforce_lists" as const,
+      salesforceListIds: ["insiders"],
+    };
+
+    const [audience, count, preview] = await Promise.all([
+      resolveStoredCampaignAudience({
+        kind: "newsletter",
+        criteria,
+        at: new Date("2026-11-10T12:00:00.000Z"),
+      }),
+      resolveAudienceCountAction({
+        runId: "run-insiders",
+        kind: "newsletter",
+        criteria,
+      }),
+      previewAudienceAction({
+        runId: "run-insiders",
+        kind: "newsletter",
+        criteria,
+      }),
+    ]);
+
+    expect(audience.map((member) => member.frozenEmail)).toEqual([
+      "insider@example.org",
+      "subscriber-insider@example.org",
+    ]);
+    expect(audience).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          frozenEmail: "insider@example.org",
+          newsletterSubscriberId: null,
+        }),
+        expect.objectContaining({
+          frozenEmail: "subscriber-insider@example.org",
+          newsletterSubscriberId: "11111111-1111-1111-1111-111111111200",
+          frozenFirstName: "Subscriber Insider",
+        }),
+      ]),
+    );
+    expect(count).toMatchObject({ ok: true, data: { count: 2 } });
+    expect(preview).toMatchObject({
+      ok: true,
+      data: [
+        expect.objectContaining({ email: "insider@example.org" }),
+        expect.objectContaining({ email: "subscriber-insider@example.org" }),
+      ],
+    });
+  });
+
   it("resolves specific newsletter subscriber picks as non-contact audience members and excludes suppressed picks", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");

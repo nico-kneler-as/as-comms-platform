@@ -89,6 +89,8 @@ import {
   emailsForPreviousRunAudience,
   listBroadcastUploadedExclusionsForRun,
   loadAudienceSetsForRun,
+  resolveStandingListAudience,
+  type StandingListAudienceMember,
   upsertBroadcastUploadedExclusionsForRun,
 } from "./audience-composition-repository.js";
 import {
@@ -573,6 +575,9 @@ export interface SalesforceAudienceListsRepository {
   replaceSnapshot(snapshot: SalesforceAudienceListsSnapshot): Promise<void>;
   listAll(): Promise<readonly SalesforceAudienceListRecord[]>;
   emailsForLists(listIds: readonly string[]): Promise<readonly string[]>;
+  resolveStandingListAudience?(
+    listIds: readonly string[],
+  ): Promise<readonly StandingListAudienceMember[] | null>;
   lastSyncedAt(): Promise<string | null>;
 }
 
@@ -8052,6 +8057,9 @@ function createSalesforceAudienceListsRepository(
         .where(inArray(salesforceAudienceListMembers.listId, ids));
       return [...new Set(rows.map((row) => row.normalizedEmail.trim().toLowerCase()))].sort();
     },
+
+    resolveStandingListAudience: (listIds) =>
+      resolveStandingListAudience(db, listIds),
 
     async lastSyncedAt() {
       const [row] = await db

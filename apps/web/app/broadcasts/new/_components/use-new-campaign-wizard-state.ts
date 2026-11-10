@@ -79,7 +79,7 @@ export function readAllowedAudienceModesForSenderType(
   projectAudienceSource: NonNullable<
     AudienceBuilderBootstrap["projectAudienceSource"]
   > = "membership",
-): readonly AudienceInitialFilter[] {
+): readonly Exclude<AudienceInitialFilter, "salesforce_lists">[] {
   if (launchType === "sms") {
     return ["project_status", "specific", "csv_upload"];
   }
@@ -119,9 +119,7 @@ function deriveInitialFilter(
   draft: CampaignWizardDraftData,
 ): AudienceInitialFilter | undefined {
   if (draft.audienceCriteria.initialFilter !== undefined) {
-    return draft.audienceCriteria.initialFilter === "salesforce_lists"
-      ? "all_available"
-      : draft.audienceCriteria.initialFilter;
+    return draft.audienceCriteria.initialFilter;
   }
 
   if (
@@ -678,7 +676,7 @@ export function useNewCampaignWizardState({
   const [launchType, setLaunchType] = useState<LaunchType>(draft.launchType);
   const [name, setName] = useState(draft.name ?? "");
   const [fromEmail, setFromEmail] = useState(draft.fromEmail);
-  const [replyToEmail, setReplyToEmail] = useState(draft.replyToEmail);
+  const [replyToEmail, setReplyToEmailState] = useState(draft.replyToEmail);
   const [subject, setSubject] = useState(draft.subjectTemplate ?? "");
   const [subjectB, setSubjectB] = useState(draft.subjectTemplateB ?? "");
   const [abTestEnabled, setAbTestEnabled] = useState(
@@ -797,6 +795,8 @@ export function useNewCampaignWizardState({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousLaunchTypeRef = useRef(draft.launchType);
   const previousFromEmailRef = useRef(draft.fromEmail);
+  const previousReplySenderRef = useRef(draft.fromEmail);
+  const replyToEditedRef = useRef(false);
   const autosavePersistDraftRef = useRef<AutosavePersistDraft | null>(null);
 
   const frozen = runState !== "draft";
@@ -922,7 +922,7 @@ export function useNewCampaignWizardState({
       suggestedSenderEmail !== null
     ) {
       setFromEmail(suggestedSenderEmail);
-      setReplyToEmail(suggestedSenderEmail);
+      setReplyToEmailState(suggestedSenderEmail);
     }
   }, [fromEmail, launchType, suggestedSenderEmail]);
 
@@ -1036,7 +1036,7 @@ export function useNewCampaignWizardState({
         : defaultAudienceModeForSenderType(selectedSenderType);
 
       return buildCriteriaForMode({
-        current,
+        current: { ...current, salesforceListIds: [] },
         mode: nextMode,
         projectOptions: effectiveProjectOptions,
         projectSelectionMode,
@@ -1056,8 +1056,20 @@ export function useNewCampaignWizardState({
   ]);
 
   useEffect(() => {
-    setReplyToEmail(fromEmail);
+    const previousSender = previousReplySenderRef.current;
+    previousReplySenderRef.current = fromEmail;
+    if (
+      !replyToEditedRef.current &&
+      (replyToEmail === previousSender || replyToEmail === null)
+    ) {
+      setReplyToEmailState(fromEmail);
+    }
   }, [fromEmail]);
+
+  function setReplyToEmail(value: string | null) {
+    replyToEditedRef.current = true;
+    setReplyToEmailState(value);
+  }
 
   useEffect(() => {
     const requestId = ++signatureRequestRef.current;
@@ -1142,7 +1154,8 @@ export function useNewCampaignWizardState({
       mode === "project_status" ||
       mode === "project_subscribed" ||
       mode === "all_approved" ||
-      mode === "all_available";
+      mode === "all_available" ||
+      mode === "salesforce_lists";
     const needsProject =
       mode === "project_status" || mode === "project_subscribed";
 
@@ -1551,6 +1564,7 @@ export function useNewCampaignWizardState({
     fromEmail,
     setFromEmail,
     replyToEmail,
+    setReplyToEmail,
     subject,
     setSubject,
     subjectB,

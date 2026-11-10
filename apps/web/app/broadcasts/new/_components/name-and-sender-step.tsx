@@ -23,11 +23,13 @@ interface NameAndSenderStepProps {
   readonly launchType: LaunchType;
   readonly name: string;
   readonly fromEmail: string | null;
+  readonly replyToEmail?: string | null;
   readonly senderOptions: readonly CampaignSenderOption[];
   readonly activeSmsSender: ActiveSmsSender | null;
   readonly frozen: boolean;
   readonly onNameChange: (value: string) => void;
   readonly onFromEmailChange: (value: string | null) => void;
+  readonly onReplyToEmailChange?: (value: string | null) => void;
   readonly onBack: () => void;
   readonly onContinue: () => void;
 }
@@ -79,20 +81,30 @@ export function NameAndSenderStep({
   launchType,
   name,
   fromEmail,
+  replyToEmail = null,
   senderOptions,
   activeSmsSender,
   frozen,
   onNameChange,
   onFromEmailChange,
+  onReplyToEmailChange = () => undefined,
   onBack,
   onContinue,
 }: NameAndSenderStepProps) {
   const isSmsLaunch = launchType === "sms";
+  const senderType =
+    senderOptions.find((option) => option.email === fromEmail)?.senderType ??
+    null;
+  const showsReplyTo = !isSmsLaunch && senderType === "org";
+  const replyToValid =
+    !showsReplyTo ||
+    ((replyToEmail?.trim().length ?? 0) > 0 &&
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(replyToEmail?.trim() ?? ""));
   const canContinue =
     name.trim().length > 0 &&
     (isSmsLaunch
       ? activeSmsSender !== null
-      : (fromEmail?.trim().length ?? 0) > 0);
+      : (fromEmail?.trim().length ?? 0) > 0 && replyToValid);
   const groupedSenderOptions = [
     {
       id: "project",
@@ -230,6 +242,34 @@ export function NameAndSenderStep({
           </p>
         </SectionPanel>
 
+        {showsReplyTo ? (
+          <SectionPanel label="Reply-to" bodyClassName="px-4 py-4">
+            <label htmlFor="campaign-reply-to" className="sr-only">
+              Reply-to email
+            </label>
+            <Input
+              id="campaign-reply-to"
+              type="email"
+              value={replyToEmail ?? ""}
+              disabled={frozen}
+              aria-invalid={!replyToValid}
+              onChange={(event) => {
+                onReplyToEmailChange(event.currentTarget.value);
+              }}
+              placeholder={fromEmail ?? "reply@example.org"}
+            />
+            {!replyToValid ? (
+              <p className="mt-2 text-[12px] text-rose-700">
+                Enter a valid reply-to email address.
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Replies to this broadcast will go here.
+              </p>
+            )}
+          </SectionPanel>
+        ) : null}
+
         <SectionPanel
           label={isSmsLaunch ? "SMS sender" : "Sending account"}
           bodyClassName="p-4"
@@ -277,7 +317,9 @@ export function NameAndSenderStep({
           <span>
             {isSmsLaunch
               ? "SMS replies route through the same active sender. Change the configured number in Settings."
-              : "Replies route to the same address. To add a new verified sender, ask an admin in Settings."}
+              : showsReplyTo
+                ? "Replies route to the reply-to address above."
+                : "Replies route to the project’s primary address."}
           </span>
         </p>
       </div>

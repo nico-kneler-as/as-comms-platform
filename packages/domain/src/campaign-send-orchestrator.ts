@@ -14,6 +14,10 @@ import type {
   MergeContext,
 } from "./campaign-types.js";
 import {
+  toStandingListAudienceMembers,
+  type StandingListAudienceMember,
+} from "./standing-list-audience.js";
+import {
   buildBroadcastUnsubscribeUrls,
   formatOrgAddress,
   normalizeAliasEmail,
@@ -426,6 +430,10 @@ export function createCampaignSendOrchestrator(deps: {
     at: Date,
   ) => Promise<readonly AudienceMember[]>;
   resolveNewsletterAudience?: () => Promise<readonly AudienceMember[]>;
+  /** Returns a base only for standing lists; campaign lists return null. */
+  resolveStandingListAudience?: (
+    listIds: readonly string[],
+  ) => Promise<readonly StandingListAudienceMember[] | null>;
   loadAudienceSets?: (
     run: CampaignRunRecord,
     at: Date,
@@ -490,15 +498,23 @@ export function createCampaignSendOrchestrator(deps: {
     if (criteria.initialFilter === "csv_upload") {
       return await deps.resolveUploadedAudience?.(run, at) ?? [];
     }
+    const standingListMembers =
+      criteria.initialFilter === "salesforce_lists"
+        ? (await deps.resolveStandingListAudience?.(
+            criteria.salesforceListIds ?? [],
+          )) ?? null
+        : null;
     const members =
-      run.kind === "newsletter" &&
-      (criteria.initialFilter === "all_available" ||
-        criteria.initialFilter === "salesforce_lists")
-        ? await deps.resolveNewsletterAudience?.() ?? []
-        : filterAudienceMembersBySelectedContacts(
-            await deps.audienceResolver.resolveAudience(criteria, at),
-            run,
-          );
+      standingListMembers === null
+        ? run.kind === "newsletter" &&
+            (criteria.initialFilter === "all_available" ||
+              criteria.initialFilter === "salesforce_lists")
+          ? await deps.resolveNewsletterAudience?.() ?? []
+          : filterAudienceMembersBySelectedContacts(
+              await deps.audienceResolver.resolveAudience(criteria, at),
+              run,
+            )
+        : toStandingListAudienceMembers(standingListMembers);
     return (
       await applyResidenceStateCriteria({
         members,

@@ -201,6 +201,37 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(markup).not.toContain("All approved contacts");
   });
 
+  it("shows Common audiences only for org email senders and marks Insiders selected", () => {
+    const props = {
+      ...baseProps,
+      hasPickedMode: true,
+      selectedSenderType: "org" as const,
+      commonAudiences: [
+        { id: "insiders", title: "Insiders", memberCount: 206 },
+      ],
+      commonAudiencesLastSyncedAt: "2026-11-10T12:00:00.000Z",
+      criteria: {
+        ...baseProps.criteria,
+        initialFilter: "salesforce_lists" as const,
+        salesforceListIds: ["insiders"],
+      },
+    };
+
+    const orgMarkup = renderToStaticMarkup(<AudienceBuilderStep {...props} />);
+    const projectMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep {...props} selectedSenderType="project" />,
+    );
+    const smsMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep {...props} launchType="sms" />,
+    );
+
+    expect(orgMarkup).toContain("Common audiences");
+    expect(orgMarkup).toContain("Insiders");
+    expect(orgMarkup).toContain('aria-pressed="true"');
+    expect(projectMarkup).not.toContain("Common audiences");
+    expect(smsMarkup).not.toContain("Common audiences");
+  });
+
   it("renders the newsletter all-available surface without project filters", () => {
     const markup = renderToStaticMarkup(
       <AudienceBuilderStep
