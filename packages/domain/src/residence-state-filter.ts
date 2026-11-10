@@ -23,6 +23,7 @@ export function readEffectiveResidenceStates(
 ): readonly ResidenceStateCode[] {
   switch (criteria.initialFilter ?? "project_status") {
     case "project_status":
+    case "project_subscribed":
     case "all_approved":
     case "all_available":
       return criteria.states ?? [];

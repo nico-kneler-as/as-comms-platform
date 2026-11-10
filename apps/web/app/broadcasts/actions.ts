@@ -25,6 +25,7 @@ import {
   buildBroadcastUnsubscribeUrls,
   isBroadcastWebVersionEligible,
   createAudienceResolver,
+  createSubscriptionBoxAudienceResolver,
   createCampaignSendOrchestrator,
   createExclusionFilter,
   createMergeRenderer,
@@ -246,6 +247,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
   readonly campaigns: Stage1WebRuntime["campaigns"];
   readonly repositories: Stage1WebRuntime["repositories"];
   readonly settings: Stage1WebRuntime["settings"];
+  readonly subscriptionBoxAudienceSource: Stage1WebRuntime["subscriptionBoxAudienceSource"];
 }) {
   const env = readWebEnv();
   // Web-side orchestrator only handles freeze/cancel/etc.; the worker
@@ -268,14 +270,11 @@ function createCampaignSendOrchestratorForRepositories(input: {
       },
       auditEvidence: input.repositories.auditEvidence,
     },
-    audienceResolver: createAudienceResolver({
-      repositories: {
-        contacts: input.repositories.contacts,
-        contactMemberships: input.repositories.contactMemberships,
-        canonicalEvents: input.repositories.canonicalEvents,
-        projectDimensions: input.repositories.projectDimensions,
-        settingsProjects: input.settings.projects,
-      },
+    audienceResolver: createProjectAudienceResolver({
+      projectAudienceSource: env.PROJECT_AUDIENCE_SOURCE,
+      subscriptionBoxAudienceSource: input.subscriptionBoxAudienceSource,
+      repositories: input.repositories,
+      settings: input.settings,
     }),
     resolveUploadedAudience: (run, at) => {
       void at;
@@ -326,6 +325,36 @@ function createCampaignSendOrchestratorForRepositories(input: {
     appUrl,
     broadcastMessageStream: env.POSTMARK_BROADCAST_STREAM_ID,
   });
+}
+
+function createProjectAudienceResolver(input: {
+  readonly projectAudienceSource: "membership" | "subscription_box";
+  readonly subscriptionBoxAudienceSource: Stage1WebRuntime["subscriptionBoxAudienceSource"];
+  readonly repositories: Stage1WebRuntime["repositories"];
+  readonly settings: Stage1WebRuntime["settings"];
+}) {
+  const membershipResolver = createAudienceResolver({
+      repositories: {
+        contacts: input.repositories.contacts,
+        contactMemberships: input.repositories.contactMemberships,
+        canonicalEvents: input.repositories.canonicalEvents,
+        projectDimensions: input.repositories.projectDimensions,
+        settingsProjects: input.settings.projects,
+      },
+  });
+  return input.projectAudienceSource === "subscription_box"
+    ? createSubscriptionBoxAudienceResolver({
+        repositories: {
+          contacts: input.repositories.contacts,
+          contactMemberships: input.repositories.contactMemberships,
+          canonicalEvents: input.repositories.canonicalEvents,
+          projectDimensions: input.repositories.projectDimensions,
+          settingsProjects: input.settings.projects,
+        },
+        source: input.subscriptionBoxAudienceSource,
+        membershipResolver,
+      })
+    : membershipResolver;
 }
 
 async function createCampaignOrchestrator() {
@@ -812,6 +841,7 @@ async function resolveSmsBroadcastAudienceForRun(input: {
         criteria: input.criteria,
         at: input.at,
         runId: input.runId,
+        launchType: "sms",
       }),
     ),
     additionalUnreachable: {},

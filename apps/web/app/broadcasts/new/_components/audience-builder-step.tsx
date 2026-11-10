@@ -46,6 +46,7 @@ import { StepHeader, WizardFooter } from "./wizard-shell";
 
 export type AudienceInitialFilter =
   | "project_status"
+  | "project_subscribed"
   | "specific"
   | "all_approved"
   | "all_available"
@@ -65,6 +66,11 @@ const MODE_META: Record<
     title: "Project / status / state",
     hint: "Start with one or more projects, then narrow by member status and state.",
     Icon: Filter,
+  },
+  project_subscribed: {
+    title: "Everyone subscribed to this project",
+    hint: "Everyone whose Salesforce subscription box is ticked, minus project opt-outs.",
+    Icon: Users,
   },
   specific: {
     title: "Individual volunteers",
@@ -114,6 +120,7 @@ interface AudienceBuilderStepProps {
   readonly smsCsvAudienceSummaryErrorMessage: string | null;
   readonly projectOptions: readonly CampaignProjectOption[];
   readonly singleSelectProjects?: boolean;
+  readonly subscriptionBoxMode?: boolean;
   readonly statusOptions: readonly ExpeditionMemberStatus[];
   readonly statusCounts: AudienceStatusCounts;
   readonly statusCountsLoading: boolean;
@@ -157,6 +164,7 @@ export function AudienceBuilderStep({
   smsCsvAudienceSummaryErrorMessage,
   projectOptions,
   singleSelectProjects = false,
+  subscriptionBoxMode = false,
   statusOptions,
   statusCounts,
   statusCountsLoading,
@@ -198,6 +206,8 @@ export function AudienceBuilderStep({
       ? selectedProjectIds.length > 0 &&
         criteria.statuses.length > 0 &&
         countState.count > 0
+      : initialFilter === "project_subscribed"
+        ? selectedProjectIds.length > 0 && countState.count > 0
       : initialFilter === "specific"
         ? specificSelectionCount > 0 && countState.count > 0
         : initialFilter === "csv_upload"
@@ -235,6 +245,7 @@ export function AudienceBuilderStep({
                   stateCountsLoading={stateCountsLoading}
                   stateCountsErrorMessage={stateCountsErrorMessage}
                   showStateSection={launchType !== "sms"}
+                  subscriptionBoxMode={subscriptionBoxMode}
                   onProjectChange={onProjectChange}
                   onToggleAllStatuses={onToggleAllStatuses}
                   onStatusToggle={onStatusToggle}
@@ -242,6 +253,36 @@ export function AudienceBuilderStep({
                   onClearStates={onClearStates}
                 />
 
+                <AudiencePreviewList
+                  rows={previewRows}
+                  loading={previewLoading}
+                  errorMessage={previewErrorMessage}
+                />
+              </>
+            ) : null}
+
+            {initialFilter === "project_subscribed" ? (
+              <>
+                <AudienceFilterPanel
+                  criteria={criteria}
+                  projectOptions={projectOptions}
+                  singleSelectProjects={singleSelectProjects}
+                  statusOptions={statusOptions}
+                  statusCounts={statusCounts}
+                  statusCountsLoading={statusCountsLoading}
+                  statusCountsErrorMessage={statusCountsErrorMessage}
+                  stateCounts={stateCounts}
+                  stateCountsLoading={stateCountsLoading}
+                  stateCountsErrorMessage={stateCountsErrorMessage}
+                  showStatusSection={false}
+                  showStateSection
+                  subscriptionBoxMode={subscriptionBoxMode}
+                  onProjectChange={onProjectChange}
+                  onToggleAllStatuses={onToggleAllStatuses}
+                  onStatusToggle={onStatusToggle}
+                  onStateToggle={onStateToggle}
+                  onClearStates={onClearStates}
+                />
                 <AudiencePreviewList
                   rows={previewRows}
                   loading={previewLoading}

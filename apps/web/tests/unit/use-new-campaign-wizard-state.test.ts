@@ -41,6 +41,25 @@ describe("use-new-campaign-wizard-state audience mode gating", () => {
       "specific",
       "csv_upload",
     ]);
+    expect(
+      readAllowedAudienceModesForSenderType(
+        "project",
+        "normal_email",
+        "subscription_box",
+      ),
+    ).toEqual([
+      "project_status",
+      "project_subscribed",
+      "specific",
+      "csv_upload",
+    ]);
+    expect(
+      readAllowedAudienceModesForSenderType(
+        "project",
+        "sms",
+        "subscription_box",
+      ),
+    ).not.toContain("project_subscribed");
   });
 });
 

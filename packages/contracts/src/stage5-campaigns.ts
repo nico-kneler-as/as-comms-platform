@@ -313,6 +313,7 @@ export const audienceCriteriaSchema = z
     initialFilter: z
       .enum([
         "project_status",
+        "project_subscribed",
         "specific",
         "all_approved",
         "all_available",

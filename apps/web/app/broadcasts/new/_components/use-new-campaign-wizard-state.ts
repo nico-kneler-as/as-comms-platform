@@ -76,6 +76,9 @@ function defaultAudienceModeForSenderType(
 export function readAllowedAudienceModesForSenderType(
   senderType: CampaignSenderType | null,
   launchType: LaunchType,
+  projectAudienceSource: NonNullable<
+    AudienceBuilderBootstrap["projectAudienceSource"]
+  > = "membership",
 ): readonly AudienceInitialFilter[] {
   if (launchType === "sms") {
     return ["project_status", "specific", "csv_upload"];
@@ -83,7 +86,14 @@ export function readAllowedAudienceModesForSenderType(
 
   return senderType === "org"
     ? ["specific", "all_available", "csv_upload"]
-    : ["project_status", "specific", "csv_upload"];
+    : [
+        "project_status",
+        ...(projectAudienceSource === "subscription_box"
+          ? (["project_subscribed"] as const)
+          : []),
+        "specific",
+        "csv_upload",
+      ];
 }
 
 function hasAppliedAudienceFilters(
@@ -99,6 +109,7 @@ function hasAppliedAudienceFilters(
     case "csv_upload":
     case "salesforce_lists":
     case "project_status":
+    case "project_subscribed":
     case "specific":
       return true;
   }
@@ -434,6 +445,18 @@ function buildCriteriaForMode(input: {
     };
   }
 
+  if (input.mode === "project_subscribed") {
+    return {
+      ...input.current,
+      states: [],
+      initialFilter: "project_subscribed",
+      ...projectSelection,
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    };
+  }
+
   if (input.mode === "csv_upload") {
     return {
       ...input.current,
@@ -563,6 +586,8 @@ function hasCompletedAudienceStep(
   switch (criteria.initialFilter) {
     case "project_status":
       return selectedProjectIds.length > 0 && criteria.statuses.length > 0;
+    case "project_subscribed":
+      return selectedProjectIds.length > 0;
     case "specific":
       return (
         (criteria.contactIds?.length ?? 0) > 0 ||
@@ -825,8 +850,13 @@ export function useNewCampaignWizardState({
     [effectiveProjectOptions],
   );
   const availableAudienceModes = useMemo(
-    () => readAllowedAudienceModesForSenderType(selectedSenderType, launchType),
-    [launchType, selectedSenderType],
+    () =>
+      readAllowedAudienceModesForSenderType(
+        selectedSenderType,
+        launchType,
+        bootstrap.projectAudienceSource ?? "membership",
+      ),
+    [bootstrap.projectAudienceSource, launchType, selectedSenderType],
   );
   const kind =
     launchType === "sms"
@@ -1110,9 +1140,11 @@ export function useNewCampaignWizardState({
     const mode = criteria.initialFilter;
     const supportsStateCounts =
       mode === "project_status" ||
+      mode === "project_subscribed" ||
       mode === "all_approved" ||
       mode === "all_available";
-    const needsProject = mode === "project_status";
+    const needsProject =
+      mode === "project_status" || mode === "project_subscribed";
 
     if (
       !hasPickedAudienceMode ||
@@ -1140,6 +1172,7 @@ export function useNewCampaignWizardState({
         runId: draft.runId,
         kind,
         criteria: toActionCriteria({ ...criteria, states: [] }),
+        launchType,
       });
       if (requestId !== stateCountsRequestRef.current) {
         return;
@@ -1198,6 +1231,7 @@ export function useNewCampaignWizardState({
         runId: draft.runId,
         kind,
         criteria: toActionCriteria(criteria),
+        launchType,
       });
       if (requestId !== countRequestRef.current) {
         return;
@@ -1229,6 +1263,7 @@ export function useNewCampaignWizardState({
         runId: draft.runId,
         kind,
         criteria: toActionCriteria(criteria),
+        launchType,
       });
       if (requestId !== audiencePreviewRequestRef.current) {
         return;

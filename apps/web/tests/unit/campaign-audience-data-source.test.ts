@@ -313,6 +313,7 @@ describe("campaign audience data source", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await runtime?.dispose();
     runtime = null;
   });
@@ -795,6 +796,228 @@ describe("campaign audience data source", () => {
       "montana@example.org",
     ]);
     expect(count).toMatchObject({ ok: true, data: { count: 1 } });
+  });
+
+  it("uses boxes only for project email when the audience-source switch is enabled", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await seedProject(runtime, {
+      projectId: "project-boxed",
+      projectName: "Beech",
+      email: "beech@example.org",
+    });
+    await runtime.context.db.execute(sql`
+      update project_dimensions
+      set subscription_box = 'Beech and Butternut'
+      where project_id = 'project-boxed'
+    `);
+    await Promise.all([
+      seedContact(runtime, {
+        contactId: "ticked-contact",
+        displayName: "Ticked Contact",
+        email: "ticked@example.org",
+      }),
+      seedContact(runtime, {
+        contactId: "unticked-contact",
+        displayName: "Unticked Contact",
+        email: "unticked@example.org",
+      }),
+      seedContact(runtime, {
+        contactId: "lead-contact",
+        displayName: "Lead Contact",
+        email: "lead@example.org",
+      }),
+    ]);
+    await Promise.all([
+      seedMembership(runtime, {
+        id: "ticked-membership",
+        contactId: "ticked-contact",
+        projectId: "project-boxed",
+        status: "Accepted",
+      }),
+      seedMembership(runtime, {
+        id: "unticked-membership",
+        contactId: "unticked-contact",
+        projectId: "project-boxed",
+        status: "Accepted",
+      }),
+    ]);
+    await runtime.context.db.execute(sql`
+      insert into salesforce_subscription_preferences (
+        salesforce_record_id,
+        email,
+        salesforce_contact_id,
+        general_newsletter,
+        oregon_shores_newsletter,
+        pnw_forest_monitoring,
+        beech_and_butternut,
+        tracking_whitebark_pine,
+        coral_reef_expansion,
+        monitoring_killer_whales_project,
+        unsubscribed_from_all,
+        unsubscribed_at,
+        email_bounced,
+        record_creation_source,
+        is_deleted,
+        sf_last_modified_at,
+        sf_last_modified_by_id,
+        captured_at
+      ) values (
+        'preference-ticked',
+        'ticked@example.org',
+        null,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        null,
+        false,
+        null,
+        false,
+        now(),
+        null,
+        now()
+      )
+    `);
+    await runtime.context.db.execute(sql`
+      insert into salesforce_subscription_preferences (
+        salesforce_record_id,
+        email,
+        salesforce_contact_id,
+        general_newsletter,
+        oregon_shores_newsletter,
+        pnw_forest_monitoring,
+        beech_and_butternut,
+        tracking_whitebark_pine,
+        coral_reef_expansion,
+        monitoring_killer_whales_project,
+        unsubscribed_from_all,
+        unsubscribed_at,
+        email_bounced,
+        record_creation_source,
+        is_deleted,
+        sf_last_modified_at,
+        sf_last_modified_by_id,
+        captured_at
+      ) values (
+        'preference-lead',
+        'lead@example.org',
+        null,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        null,
+        false,
+        null,
+        false,
+        now(),
+        null,
+        now()
+      )
+    `);
+    await runtime.context.db.execute(sql`
+      insert into integration_health (
+        id,
+        service_name,
+        category,
+        status,
+        last_checked_at,
+        degraded_since_at,
+        last_alert_sent_at,
+        detail,
+        metadata_json
+      ) values (
+        'salesforce_subscription_readback',
+        'salesforce_subscription_readback',
+        'crm',
+        'healthy',
+        now(),
+        null,
+        null,
+        null,
+        '{}'::jsonb
+      )
+    `);
+    const criteria = {
+      projectId: "project-boxed",
+      projectIds: ["project-boxed"],
+      statuses: ["Accepted" as const],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+      expeditionIds: [],
+      lastActivityWindow: "all_time" as const,
+      hasReplied: "either" as const,
+      hasClicked: "either" as const,
+      initialFilter: "project_status" as const,
+    };
+
+    vi.stubEnv("PROJECT_AUDIENCE_SOURCE", "subscription_box");
+    await expect(
+      resolveAudienceCountAction({
+        runId: "box-source-count",
+        kind: "project",
+        criteria,
+        launchType: "normal_email",
+      }),
+    ).resolves.toMatchObject({ ok: true, data: { count: 1 } });
+    // Pills: Accepted counts only the ticked member; Lead is the synthetic
+    // lead (box ticked, no Expedition Member).
+    await expect(
+      loadMemberStatusCountsForProjects(["project-boxed"]),
+    ).resolves.toMatchObject({ ok: true, data: { Accepted: 1, Lead: 1 } });
+    await expect(
+      resolveAudienceCountAction({
+        runId: "box-source-lead-count",
+        kind: "project",
+        criteria: { ...criteria, statuses: ["Lead" as const] },
+        launchType: "normal_email",
+      }),
+    ).resolves.toMatchObject({ ok: true, data: { count: 1 } });
+    await expect(
+      resolveStoredCampaignAudience({
+        kind: "project",
+        criteria,
+        at: new Date(),
+        launchType: "sms",
+      }),
+    ).resolves.toHaveLength(2);
+
+    await expect(
+      loadAudienceStateCountsAction({
+        runId: "box-source-states",
+        kind: "project",
+        criteria: {
+          ...criteria,
+          statuses: [],
+          initialFilter: "project_subscribed",
+        },
+        launchType: "normal_email",
+      }),
+    ).resolves.toMatchObject({ ok: true, data: { total: 2 } });
+
+    vi.stubEnv("PROJECT_AUDIENCE_SOURCE", "membership");
+    await expect(
+      resolveAudienceCountAction({
+        runId: "membership-source-count",
+        kind: "project",
+        criteria,
+        launchType: "normal_email",
+      }),
+    ).resolves.toMatchObject({ ok: true, data: { count: 2 } });
+    const membershipPills = await loadMemberStatusCountsForProjects(["project-boxed"]);
+    expect(membershipPills).toMatchObject({ ok: true, data: { Accepted: 2 } });
+    expect(membershipPills.ok && "Lead" in membershipPills.data).toBe(false);
   });
 
   it("filters all-approved newsletter audiences at freeze instead of falling back to subscribers", async () => {

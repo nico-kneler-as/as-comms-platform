@@ -109,6 +109,9 @@ export function createSalesforceSubscriptionReadbackTask(
           ),
         });
       }
+      // The audience gate uses a successful readback heartbeat rather than a
+      // mirror row timestamp: an empty but healthy poll is still fresh data.
+      await dependencies.repository.recordSuccessfulRefresh(new Date());
       const outcomes = Object.fromEntries(
         plan.events.reduce(
           (counts, event) =>

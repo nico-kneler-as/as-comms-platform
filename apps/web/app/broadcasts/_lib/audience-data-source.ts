@@ -25,7 +25,10 @@ import {
   isBroadcastWebVersionEligible,
   applyResidenceStateCriteria,
   createAudienceResolver,
+  createSubscriptionBoxAudienceResolver,
   composeAudience,
+  listSyntheticLeadContactIds,
+  loadSubscriptionBoxPlans,
   createExclusionFilter,
   createMergeRenderer,
   formatOrgAddress,
@@ -38,6 +41,7 @@ import {
   renderBroadcastEmail,
   summarizeResidenceStates,
   type AudienceMember,
+  type BoxAudiencePlan,
   type SmsBroadcastAudienceMember,
   type SmsBroadcastDropReason,
 } from "@as-comms/domain";
@@ -46,6 +50,7 @@ import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin } from "@/src/server/auth/session";
 import { requireVolunteerSession, requireWorkspace } from "@/src/server/auth/workspace-access";
+import { readWebEnv } from "@/src/server/env";
 import {
   countBroadcastUploadedRecipients,
   getStage1WebRuntime,
@@ -94,6 +99,8 @@ export interface CampaignProjectOption {
   readonly aliasHint: string | null;
   readonly connectedToProjectId: string | null;
   readonly isSubProject: boolean;
+  /** Only read in subscription-box mode; false falls back to memberships. */
+  readonly hasSubscriptionBox?: boolean;
 }
 
 export interface CampaignProjectGroup {
@@ -112,6 +119,7 @@ export interface AudienceBuilderBootstrap {
   readonly statuses: readonly ExpeditionMemberStatus[];
   readonly senderOptions: readonly CampaignSenderOption[];
   readonly activeSmsSender: ActiveSmsSender | null;
+  readonly projectAudienceSource?: "membership" | "subscription_box";
 }
 
 export interface AudiencePreviewRow {
@@ -490,6 +498,7 @@ function hasAppliedAudienceFilters(
     case "csv_upload":
     case "salesforce_lists":
     case "project_status":
+    case "project_subscribed":
     case "specific":
       return true;
   }
@@ -499,6 +508,7 @@ function readAudienceMode(
   criteria: AudienceCriteria,
 ) :
   | "project_status"
+  | "project_subscribed"
   | "specific"
   | "all_approved"
   | "all_available"
@@ -668,10 +678,9 @@ function mapDraftRecord(
   };
 }
 
-async function createResolver() {
+async function createResolver(input?: { readonly forceMembership?: boolean }) {
   const runtime = await getStage1WebRuntime();
-
-  return createAudienceResolver({
+  const membershipResolver = createAudienceResolver({
     repositories: {
       contacts: runtime.repositories.contacts,
       contactMemberships: runtime.repositories.contactMemberships,
@@ -680,6 +689,20 @@ async function createResolver() {
       settingsProjects: runtime.settings.projects,
     },
   });
+  return !input?.forceMembership &&
+    readWebEnv().PROJECT_AUDIENCE_SOURCE === "subscription_box"
+    ? createSubscriptionBoxAudienceResolver({
+        repositories: {
+          contacts: runtime.repositories.contacts,
+          contactMemberships: runtime.repositories.contactMemberships,
+          canonicalEvents: runtime.repositories.canonicalEvents,
+          projectDimensions: runtime.repositories.projectDimensions,
+          settingsProjects: runtime.settings.projects,
+        },
+        source: runtime.subscriptionBoxAudienceSource,
+        membershipResolver,
+      })
+    : membershipResolver;
 }
 
 async function loadUploadedAudience(
@@ -1270,6 +1293,8 @@ export async function resolveStoredCampaignAudience(input: {
   readonly runId?: string;
   readonly fromEmail?: string | null;
   readonly projectId?: string | null;
+  /** SMS shares this helper but must never use the subscription-box source. */
+  readonly launchType?: LaunchType;
 }): Promise<readonly AudienceMember[]> {
   const mode = readAudienceMode(input.criteria);
   if (mode === "csv_upload") {
@@ -1305,7 +1330,9 @@ export async function resolveStoredCampaignAudience(input: {
     return (await applyResidenceStateFilter(base, input.criteria)).members;
   }
 
-  const resolver = await createResolver();
+  const resolver = await createResolver({
+    forceMembership: input.launchType === "sms",
+  });
   const members = filterAudienceMembersBySelection(
     await resolver.resolveAudience(input.criteria, input.at),
     input.criteria,
@@ -1391,6 +1418,7 @@ async function resolveWizardAudience(
     readonly runId?: string;
     readonly fromEmail?: string | null;
     readonly projectId?: string | null;
+    readonly launchType?: LaunchType;
   },
 ): Promise<readonly AudienceMember[]> {
   const parsedCriteria = audienceCriteriaSchema.parse(input.criteria);
@@ -1427,6 +1455,7 @@ async function resolveWizardAudience(
     ...(input.runId === undefined ? {} : { runId: input.runId }),
     ...(input.fromEmail === undefined ? {} : { fromEmail: input.fromEmail }),
     ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    ...(input.launchType === undefined ? {} : { launchType: input.launchType }),
   });
 }
 
@@ -1485,6 +1514,11 @@ export async function getCampaignWizardDraft(
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
   await requireVolunteerSession();
   const runtime = await getStage1WebRuntime();
+  const projectAudienceSource = readWebEnv().PROJECT_AUDIENCE_SOURCE;
+  const projectBoxes =
+    projectAudienceSource === "subscription_box"
+      ? await runtime.subscriptionBoxAudienceSource.loadProjectBoxes()
+      : new Map();
   const allConnectedProjects = (
     await runtime.settings.projects.listAll()
   ).filter(
@@ -1521,6 +1555,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
         ),
         connectedToProjectId: project.connectedToProjectId,
         isSubProject: project.connectedToProjectId !== null,
+        hasSubscriptionBox: projectBoxes.has(project.projectId),
       } satisfies CampaignProjectOption;
     })
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -1586,6 +1621,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       statuses: expeditionMemberStatusValues,
       senderOptions,
       activeSmsSender,
+      projectAudienceSource,
     };
   }
 
@@ -1620,6 +1656,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     statuses: expeditionMemberStatusValues,
     senderOptions,
     activeSmsSender,
+    projectAudienceSource,
   };
 }
 
@@ -1642,6 +1679,7 @@ export async function resolveAudienceCountAction(input: {
   readonly runId: string;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
+  readonly launchType?: LaunchType;
 }): Promise<UiResult<AudienceCountData>> {
   await requireVolunteerSession();
 
@@ -1668,6 +1706,9 @@ export async function resolveAudienceCountAction(input: {
               kind: input.kind,
               criteria: input.criteria,
               at: new Date(),
+              ...(input.launchType === undefined
+                ? {}
+                : { launchType: input.launchType }),
             })
           ).length;
 
@@ -1695,6 +1736,7 @@ export async function loadAudienceStateCountsAction(input: {
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
   readonly runId?: string;
+  readonly launchType?: LaunchType;
 }): Promise<UiResult<{
   readonly byState: readonly {
     readonly code: ResidenceStateCode;
@@ -1716,8 +1758,13 @@ export async function loadAudienceStateCountsAction(input: {
       lastSyncedAt: null,
     } as const;
     if (
-      !["project_status", "all_approved", "all_available"].includes(mode) ||
-      (mode === "project_status" &&
+      ![
+        "project_status",
+        "project_subscribed",
+        "all_approved",
+        "all_available",
+      ].includes(mode) ||
+      ((mode === "project_status" || mode === "project_subscribed") &&
         (criteria.projectId ?? criteria.projectIds[0] ?? null) === null)
     ) {
       return successResult(empty);
@@ -1728,6 +1775,9 @@ export async function loadAudienceStateCountsAction(input: {
       criteria: { ...criteria, states: [] },
       at: new Date(),
       ...(input.runId === undefined ? {} : { runId: input.runId }),
+      ...(input.launchType === undefined
+        ? {}
+        : { launchType: input.launchType }),
     });
     const normalizedEmails = [
       ...new Set(
@@ -1761,6 +1811,7 @@ export async function previewAudienceAction(input: {
   readonly runId: string;
   readonly kind: CampaignKind;
   readonly criteria: AudienceCriteria;
+  readonly launchType?: LaunchType;
 }): Promise<UiResult<readonly AudiencePreviewRow[]>> {
   await requireVolunteerSession();
 
@@ -1791,6 +1842,9 @@ export async function previewAudienceAction(input: {
       kind: input.kind,
       criteria,
       at: new Date(),
+      ...(input.launchType === undefined
+        ? {}
+        : { launchType: input.launchType }),
     });
 
     return successResult(
@@ -1853,6 +1907,7 @@ export async function loadComposePreviewAction(input: {
       kind: input.kind,
       criteria: input.criteria,
       at: new Date(),
+      launchType: input.launchType,
       fromEmail: input.fromEmail,
     });
     const orgSettings = await runtime.campaigns.orgSettings.read();
@@ -2270,6 +2325,15 @@ export async function loadMemberStatusCountsForProjects(
       );
     }
 
+    // In subscription-box mode a pill counts only people whose box is ticked
+    // (the same rule the audience uses), and Lead adds synthetic leads.
+    const boxPlans =
+      readWebEnv().PROJECT_AUDIENCE_SOURCE === "subscription_box"
+        ? await loadSubscriptionBoxPlans(
+            runtime.subscriptionBoxAudienceSource,
+            normalizedProjectIds,
+          )
+        : new Map<string, BoxAudiencePlan>();
     const counts = new Map<ExpeditionMemberStatus, Set<string>>();
 
     for (const membership of memberships) {
@@ -2277,6 +2341,10 @@ export async function loadMemberStatusCountsForProjects(
         membership.projectId === null ||
         !selectedProjectIds.has(membership.projectId)
       ) {
+        continue;
+      }
+      const plan = boxPlans.get(membership.projectId);
+      if (plan !== undefined && !plan.tickedContactIds.has(membership.contactId)) {
         continue;
       }
 
@@ -2290,6 +2358,25 @@ export async function loadMemberStatusCountsForProjects(
       const existing = counts.get(normalizedStatus) ?? new Set<string>();
       existing.add(membership.contactId);
       counts.set(normalizedStatus, existing);
+    }
+
+    if (boxPlans.size > 0) {
+      const contactsWithEmail = new Set(
+        contacts.flatMap((contact) =>
+          (contact.primaryEmail?.trim() ?? "").length > 0 ? [contact.id] : [],
+        ),
+      );
+      const leads = counts.get("Lead") ?? new Set<string>();
+      for (const plan of boxPlans.values()) {
+        for (const contactId of listSyntheticLeadContactIds({ plan, memberships })) {
+          if (contactsWithEmail.has(contactId)) {
+            leads.add(contactId);
+          }
+        }
+      }
+      if (leads.size > 0) {
+        counts.set("Lead", leads);
+      }
     }
 
     return successResult(

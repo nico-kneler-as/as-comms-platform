@@ -32,6 +32,7 @@ export * from "./salesforce-contact-states.js";
 export * from "./salesforce-subscription-push.js";
 export * from "./salesforce-subscription-readback.js";
 export * from "./salesforce-subscription-backfill.js";
+export * from "./subscription-box-audience.js";
 export * from "./persistence.js";
 export * from "./records.js";
 export * from "./repositories.js";
