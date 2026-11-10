@@ -22,7 +22,9 @@ import { createTestStage1Context } from "./helpers.js";
 
 type Stage1Context = Awaited<ReturnType<typeof createTestStage1Context>>;
 
-function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
+function buildAudienceCriteria(
+  overrides: Readonly<Record<string, unknown>> = {},
+): CreateDraftInput["audienceCriteria"] {
   return {
     projectId: "project-1",
     projectIds: ["project-1"],
@@ -33,6 +35,7 @@ function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
     lastActivityWindow: "all_time",
     hasReplied: "either",
     hasClicked: "either",
+    ...overrides,
   };
 }
 
@@ -241,9 +244,11 @@ function createOrchestrator(
     readonly scheduleResend?: (childRunId: string, runAt: Date) => Promise<void>;
     readonly now?: () => Date;
     readonly withComposition?: boolean;
+    readonly withoutResidenceStates?: boolean;
   } = {},
 ) {
   const campaigns = createStage5RepositoryBundle(context.db);
+  const { withComposition, withoutResidenceStates, ...orchestratorOptions } = options;
 
   return {
     campaigns,
@@ -290,6 +295,9 @@ function createOrchestrator(
           },
         );
       },
+      ...(withoutResidenceStates === true
+        ? {}
+        : { residenceStates: campaigns.salesforceContactStates }),
       exclusionFilter: createExclusionFilter({
         repositories: {
           campaignRuns: campaigns.campaignRuns,
@@ -307,11 +315,11 @@ function createOrchestrator(
       postmarkClient,
       appUrl: "https://test.example",
       batchSize,
-      ...options,
+      ...orchestratorOptions,
       ...(broadcastMessageStream === undefined
         ? {}
         : { broadcastMessageStream }),
-      ...(options.withComposition === true
+      ...(withComposition === true
         ? {
             resolveNewsletterAudience: async () =>
               (await listSendableNewsletterSubscribers(context.db)).map(
@@ -1668,6 +1676,122 @@ describe("Campaign send orchestrator", () => {
       await expect(
         runtime.orchestrator.freeze(run.id, new Date("2026-10-14T13:00:00.000Z")),
       ).rejects.toThrow("none are selected");
+    });
+  });
+  describe("audience narrowing matches the wizard", () => {
+    async function seedStates(
+      campaigns: ReturnType<typeof createStage5RepositoryBundle>,
+      states: Readonly<Record<string, "OR" | "WA" | null>>,
+    ) {
+      await campaigns.salesforceContactStates.replaceAll(
+        Object.entries(states).map(([normalizedEmail, stateCode], index) => ({
+          normalizedEmail,
+          stateCode,
+          rawState: stateCode,
+          hasOptedOutOfEmail: false,
+          salesforceContactId: `003state${String(index)}`,
+          salesforceLastModifiedAt: new Date("2026-11-01T00:00:00.000Z"),
+        })),
+        new Date("2026-11-10T00:00:00.000Z"),
+      );
+    }
+
+    it("freezes a state-filtered project run to the chosen states only", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedProject(context);
+      await seedAudience(context, 4);
+      const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+      await seedStates(runtime.campaigns, {
+        "contact-01@example.org": "OR",
+        "contact-02@example.org": "WA",
+        "contact-03@example.org": null,
+        "contact-04@example.org": "OR",
+      });
+      const run = await runtime.campaigns.campaignRuns.create(
+        buildDraftInput({
+          id: "run-states",
+          audienceCriteria: buildAudienceCriteria({ states: ["OR"] }),
+        }),
+      );
+
+      await expect(
+        runtime.orchestrator.preview(run.id, new Date("2026-11-10T13:00:00.000Z")),
+      ).resolves.toMatchObject({ total: 2 });
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-11-10T13:00:00.000Z")),
+      ).resolves.toMatchObject({ audienceSize: 2 });
+      const snapshots = await runtime.campaigns.audienceSnapshots.listForRun(run.id);
+      expect(snapshots.map((snapshot) => snapshot.frozenEmail).sort()).toEqual([
+        "contact-01@example.org",
+        "contact-04@example.org",
+      ]);
+    });
+
+    it("refuses to freeze a state-filtered run without the state lookup", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedProject(context);
+      await seedAudience(context, 2);
+      const runtime = createOrchestrator(context, createMockPostmarkClient({}), 500, undefined, {
+        withoutResidenceStates: true,
+      });
+      const run = await runtime.campaigns.campaignRuns.create(
+        buildDraftInput({
+          id: "run-states-no-lookup",
+          audienceCriteria: buildAudienceCriteria({ states: ["OR"] }),
+        }),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-11-10T13:00:00.000Z")),
+      ).rejects.toThrow("filtered by state");
+      await expect(
+        runtime.campaigns.audienceSnapshots.listForRun(run.id),
+      ).resolves.toEqual([]);
+    });
+
+    it("freezes nobody for a specific-people run with nobody picked", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedProject(context);
+      await seedAudience(context, 3);
+      const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+      const run = await runtime.campaigns.campaignRuns.create(
+        buildDraftInput({
+          id: "run-specific-empty",
+          audienceCriteria: buildAudienceCriteria({ initialFilter: "specific", states: ["OR"] }),
+        }),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-11-10T13:00:00.000Z")),
+      ).resolves.toMatchObject({ audienceSize: 0 });
+      await expect(
+        runtime.campaigns.audienceSnapshots.listForRun(run.id),
+      ).resolves.toEqual([]);
+    });
+
+    it("ignores the state filter for hand-picked people", async () => {
+      const context = await createTestStage1Context();
+      contexts.push(context);
+      await seedProject(context);
+      const contactIds = await seedAudience(context, 3);
+      const runtime = createOrchestrator(context, createMockPostmarkClient({}));
+      const run = await runtime.campaigns.campaignRuns.create(
+        buildDraftInput({
+          id: "run-specific-picked",
+          audienceCriteria: buildAudienceCriteria({
+            initialFilter: "specific",
+            contactIds: [contactIds[1] ?? ""],
+            states: ["OR"],
+          }),
+        }),
+      );
+
+      await expect(
+        runtime.orchestrator.freeze(run.id, new Date("2026-11-10T13:00:00.000Z")),
+      ).resolves.toMatchObject({ audienceSize: 1 });
     });
   });
 });

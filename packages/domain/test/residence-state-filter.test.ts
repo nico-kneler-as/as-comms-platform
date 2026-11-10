@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyResidenceStateCriteria,
   filterAudienceByResidenceState,
+  readEffectiveResidenceStates,
   summarizeResidenceStates,
 } from "../src/residence-state-filter.js";
 
@@ -93,5 +95,46 @@ describe("residence-state audience filtering", () => {
       noStateOnFile: 1,
       total: 6,
     });
+  });
+});
+
+describe("run state criteria", () => {
+  it("uses states only for whole-group modes", () => {
+    expect(readEffectiveResidenceStates({ states: ["OR"] })).toEqual(["OR"]);
+    for (const initialFilter of ["project_status", "all_approved", "all_available"] as const) {
+      expect(readEffectiveResidenceStates({ initialFilter, states: ["OR"] })).toEqual(["OR"]);
+    }
+    for (const initialFilter of ["specific", "csv_upload", "salesforce_lists"] as const) {
+      expect(readEffectiveResidenceStates({ initialFilter, states: ["OR"] })).toEqual([]);
+    }
+    expect(readEffectiveResidenceStates({ initialFilter: "project_status" })).toEqual([]);
+  });
+
+  it("narrows by the looked-up states and skips the lookup when there are none", async () => {
+    const members = [member("OR@example.org"), member("wa@example.org"), member("none@example.org")];
+    const requested: string[][] = [];
+    const source = {
+      findByEmails: (emails: readonly string[]) => {
+        requested.push([...emails]);
+        return Promise.resolve(new Map([["or@example.org", "OR" as const], ["wa@example.org", "WA" as const]]));
+      },
+    };
+
+    const narrowed = await applyResidenceStateCriteria({ members, criteria: { states: ["OR"] }, source });
+    expect(narrowed).toEqual({ members: [members[0]], excludedNoStateOnFile: 1, excludedOtherState: 1 });
+    expect(requested).toEqual([["or@example.org", "wa@example.org", "none@example.org"]]);
+
+    const untouched = await applyResidenceStateCriteria({ members, criteria: { initialFilter: "specific", states: ["OR"] }, source });
+    expect(untouched.members).toBe(members);
+    expect(requested).toHaveLength(1);
+  });
+
+  it("refuses to run a state filter without a lookup", async () => {
+    await expect(
+      applyResidenceStateCriteria({ members: [member("a@example.org")], criteria: { states: ["OR"] }, source: undefined }),
+    ).rejects.toThrow("filtered by state");
+    await expect(
+      applyResidenceStateCriteria({ members: [member("a@example.org")], criteria: {}, source: undefined }),
+    ).resolves.toMatchObject({ excludedNoStateOnFile: 0 });
   });
 });

@@ -1,10 +1,78 @@
-import type { ResidenceStateCode } from "@as-comms/contracts";
+import type { AudienceCriteria, ResidenceStateCode } from "@as-comms/contracts";
 
 import { normalizeEmailAddress } from "./normalization.js";
 
 /** An email-keyed state snapshot. `ReadonlyMap` satisfies this interface. */
 export interface ResidenceStateLookup {
   get(normalizedEmail: string): ResidenceStateCode | null | undefined;
+}
+
+/** Loads the state snapshot for a set of normalized emails. */
+export interface ResidenceStateSource {
+  findByEmails(normalizedEmails: readonly string[]): Promise<ResidenceStateLookup>;
+}
+
+/**
+ * The states a run's audience is narrowed to. Only the modes that pick a whole
+ * group take a state filter; hand-picked people, uploaded lists and Salesforce
+ * lists ignore it. The wizard count and the send freeze must both use this, so
+ * the people counted are the people sent to.
+ */
+export function readEffectiveResidenceStates(
+  criteria: Pick<AudienceCriteria, "initialFilter" | "states">,
+): readonly ResidenceStateCode[] {
+  switch (criteria.initialFilter ?? "project_status") {
+    case "project_status":
+    case "all_approved":
+    case "all_available":
+      return criteria.states ?? [];
+    case "specific":
+    case "csv_upload":
+    case "salesforce_lists":
+      return [];
+  }
+}
+
+/**
+ * Applies the run's state filter to a resolved audience. With no states it
+ * returns the audience untouched and never calls the source. With states but
+ * no source it throws: sending without the narrowing would reach everyone.
+ */
+export async function applyResidenceStateCriteria<
+  T extends { readonly frozenEmail: string },
+>(input: {
+  readonly members: readonly T[];
+  readonly criteria: Pick<AudienceCriteria, "initialFilter" | "states">;
+  readonly source: ResidenceStateSource | undefined;
+}): Promise<ResidenceStateFilterResult<T>> {
+  const states = readEffectiveResidenceStates(input.criteria);
+  if (states.length === 0) {
+    return filterAudienceByResidenceState({
+      members: input.members,
+      states,
+      lookup: new Map(),
+    });
+  }
+  if (input.source === undefined) {
+    throw new Error(
+      "This audience is filtered by state but no state lookup is configured.",
+    );
+  }
+
+  const normalizedEmails = [
+    ...new Set(
+      input.members.flatMap((member) => {
+        const normalizedEmail = normalizeEmailAddress(member.frozenEmail);
+        return normalizedEmail === null ? [] : [normalizedEmail];
+      }),
+    ),
+  ];
+  const lookup = await input.source.findByEmails(normalizedEmails);
+  return filterAudienceByResidenceState({
+    members: input.members,
+    states,
+    lookup,
+  });
 }
 
 export interface ResidenceStateFilterResult<T> {
