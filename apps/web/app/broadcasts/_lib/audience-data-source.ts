@@ -23,11 +23,11 @@ import {
   buildBroadcastWebVersionUrl,
   buildBroadcastUnsubscribeUrls,
   isBroadcastWebVersionEligible,
+  applyResidenceStateCriteria,
   createAudienceResolver,
   composeAudience,
   createExclusionFilter,
   createMergeRenderer,
-  filterAudienceByResidenceState,
   formatOrgAddress,
   intersectSmsAudience,
   normalizeAliasEmail,
@@ -507,50 +507,24 @@ function readAudienceMode(
   return criteria.initialFilter ?? "project_status";
 }
 
-function readEffectiveResidenceStates(
-  criteria: AudienceCriteria,
-): readonly ResidenceStateCode[] {
-  switch (readAudienceMode(criteria)) {
-    case "project_status":
-    case "all_approved":
-    case "all_available":
-      return criteria.states ?? [];
-    case "specific":
-    case "csv_upload":
-    case "salesforce_lists":
-      return [];
-  }
-}
-
 async function applyResidenceStateFilter<
   T extends { readonly frozenEmail: string },
 >(
   members: readonly T[],
   criteria: AudienceCriteria,
 ) {
-  const states = readEffectiveResidenceStates(criteria);
-  if (states.length === 0) {
-    return filterAudienceByResidenceState({
-      members,
-      states,
-      lookup: new Map(),
-    });
-  }
-
-  const normalizedEmails = [
-    ...new Set(
-      members.flatMap((member) => {
-        const normalizedEmail = normalizeEmailAddress(member.frozenEmail);
-        return normalizedEmail === null ? [] : [normalizedEmail];
-      }),
-    ),
-  ];
-  const runtime = await getStage1WebRuntime();
-  const lookup = await runtime.campaigns.salesforceContactStates.findByEmails(
-    normalizedEmails,
-  );
-
-  return filterAudienceByResidenceState({ members, states, lookup });
+  // Same rule as the send freeze (domain applyResidenceStateCriteria), so the
+  // count matches who is sent to.
+  return applyResidenceStateCriteria({
+    members,
+    criteria,
+    source: {
+      findByEmails: async (normalizedEmails) =>
+        (await getStage1WebRuntime()).campaigns.salesforceContactStates.findByEmails(
+          normalizedEmails,
+        ),
+    },
+  });
 }
 
 function readAudienceRecipientKey(member: AudienceMember): string {

@@ -28,6 +28,11 @@ import type { AudienceResolver } from "./audience-resolver.js";
 import { composeAudience, type AudienceCompositionExclusion } from "./compose-audience.js";
 import type { ExclusionFilter } from "./exclusion-filter.js";
 import type { MergeRenderer } from "./merge-renderer.js";
+import {
+  applyResidenceStateCriteria,
+  readEffectiveResidenceStates,
+  type ResidenceStateSource,
+} from "./residence-state-filter.js";
 import type {
   ProjectAliasesRepository,
   SettingsProjectsRepository,
@@ -272,7 +277,8 @@ function filterAudienceMembersBySelectedContacts(
   run: CampaignRunRecord,
 ): readonly AudienceMember[] {
   if ((run.audienceCriteria.contactIds?.length ?? 0) === 0) {
-    return rows;
+    // "specific" with nobody picked means nobody, never the whole project.
+    return run.audienceCriteria.initialFilter === "specific" ? [] : rows;
   }
 
   const selectedContactIds = new Set(run.audienceCriteria.contactIds ?? []);
@@ -343,9 +349,15 @@ function assertAudienceDependencies(
   deps: {
     readonly hasLoadAudienceSets: boolean;
     readonly hasResolveNewsletterAudience: boolean;
+    readonly hasResidenceStates: boolean;
   },
 ): void {
   const criteria = run.audienceCriteria;
+  if (readEffectiveResidenceStates(criteria).length > 0 && !deps.hasResidenceStates) {
+    throw new Error(
+      `Campaign run ${run.id} is filtered by state but no state lookup is configured.`,
+    );
+  }
   if (criteria.initialFilter === "salesforce_lists") {
     if ((criteria.salesforceListIds ?? []).length === 0) {
       throw new Error(
@@ -421,6 +433,8 @@ export function createCampaignSendOrchestrator(deps: {
     readonly includeEmails: ReadonlySet<string> | null;
     readonly exclusions: readonly AudienceCompositionExclusion[];
   }>;
+  /** State snapshot for runs filtered by state (criteria.states). */
+  residenceStates?: ResidenceStateSource;
   exclusionFilter: ExclusionFilter;
   mergeRenderer: MergeRenderer;
   postmarkClient: PostmarkClientLike;
@@ -458,6 +472,42 @@ export function createCampaignSendOrchestrator(deps: {
   const pacingDependencies = readPacingDependencies(deps);
   const resendScheduling = readResendSchedulingDependencies(deps);
 
+  /**
+   * The audience before composition and consent. It must match what the
+   * wizard counted (resolveStoredCampaignAudience in the web app): the same
+   * selection rule and the same state filter.
+   */
+  async function resolveBaseAudience(
+    run: CampaignRunRecord,
+    at: Date,
+  ): Promise<readonly AudienceMember[]> {
+    assertAudienceDependencies(run, {
+      hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
+      hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
+      hasResidenceStates: deps.residenceStates !== undefined,
+    });
+    const criteria = run.audienceCriteria;
+    if (criteria.initialFilter === "csv_upload") {
+      return await deps.resolveUploadedAudience?.(run, at) ?? [];
+    }
+    const members =
+      run.kind === "newsletter" &&
+      (criteria.initialFilter === "all_available" ||
+        criteria.initialFilter === "salesforce_lists")
+        ? await deps.resolveNewsletterAudience?.() ?? []
+        : filterAudienceMembersBySelectedContacts(
+            await deps.audienceResolver.resolveAudience(criteria, at),
+            run,
+          );
+    return (
+      await applyResidenceStateCriteria({
+        members,
+        criteria,
+        source: deps.residenceStates,
+      })
+    ).members;
+  }
+
   return {
     async freeze(runId, at) {
       const run = await deps.repositories.campaignRuns.findById(runId);
@@ -490,21 +540,7 @@ export function createCampaignSendOrchestrator(deps: {
         throw new Error(`Campaign run ${runId} cannot be frozen from ${run.state}.`);
       }
 
-      assertAudienceDependencies(run, {
-        hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
-        hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
-      });
-      const members =
-        run.audienceCriteria.initialFilter === "csv_upload"
-          ? await deps.resolveUploadedAudience?.(run, at) ?? []
-          : run.kind === "newsletter" &&
-              (run.audienceCriteria.initialFilter === "all_available" ||
-                run.audienceCriteria.initialFilter === "salesforce_lists")
-            ? await deps.resolveNewsletterAudience?.() ?? []
-          : filterAudienceMembersBySelectedContacts(
-              await deps.audienceResolver.resolveAudience(run.audienceCriteria, at),
-              run,
-            );
+      const members = await resolveBaseAudience(run, at);
       const sets = await deps.loadAudienceSets?.(run, at) ?? {
         includeEmails: null,
         exclusions: [],
@@ -606,18 +642,7 @@ export function createCampaignSendOrchestrator(deps: {
     async preview(runId, at) {
       const run = await deps.repositories.campaignRuns.findById(runId);
       if (run === null) throw new Error(`Campaign run ${runId} was not found.`);
-      assertAudienceDependencies(run, {
-        hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
-        hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
-      });
-      const base = run.audienceCriteria.initialFilter === "csv_upload"
-        ? await deps.resolveUploadedAudience?.(run, at) ?? []
-        : run.kind === "newsletter" &&
-            (run.audienceCriteria.initialFilter === "all_available" || run.audienceCriteria.initialFilter === "salesforce_lists")
-          ? await deps.resolveNewsletterAudience?.() ?? []
-          : filterAudienceMembersBySelectedContacts(
-              await deps.audienceResolver.resolveAudience(run.audienceCriteria, at), run,
-            );
+      const base = await resolveBaseAudience(run, at);
       const sets = await deps.loadAudienceSets?.(run, at) ?? { includeEmails: null, exclusions: [] };
       const composed = composeAudience({ base, includeEmails: sets.includeEmails, exclusions: sets.exclusions });
       const consent = await deps.exclusionFilter.applyExclusions(composed.members, runId, at);

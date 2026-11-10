@@ -511,6 +511,7 @@ function buildCampaignSendDependencies(input: {
           frozenAliasEmail: null,
         })),
       loadAudienceSets: (run) => input.campaigns.audienceComposition.loadSets(run),
+      residenceStates: input.campaigns.salesforceContactStates,
       exclusionFilter,
       mergeRenderer,
       postmarkClient,

@@ -307,6 +307,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
       }));
     },
     loadAudienceSets: (run) => input.campaigns.audienceComposition.loadSets(run),
+    residenceStates: input.campaigns.salesforceContactStates,
     exclusionFilter: createExclusionFilter({
       repositories: {
         campaignRuns: input.campaigns.campaignRuns,
