@@ -134,6 +134,7 @@ export function hasAppliedAudienceFilters(
     case "csv_upload":
     case "salesforce_lists":
     case "project_status":
+    case "project_subscribed":
     case "specific":
       return true;
   }
@@ -369,6 +370,17 @@ function buildCriteriaForMode(input: {
     return {
       ...input.current,
       initialFilter: "specific",
+      ...projectSelection,
+      statuses: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    };
+  }
+
+  if (input.mode === "project_subscribed") {
+    return {
+      ...input.current,
+      initialFilter: "project_subscribed",
       ...projectSelection,
       statuses: [],
       contactIds: [],
@@ -1166,6 +1178,10 @@ export function NewCampaignWizard({
                   }
                   projectOptions={effectiveProjectOptions}
                   singleSelectProjects={singleSelectProjects}
+                  subscriptionBoxMode={
+                    bootstrap.projectAudienceSource === "subscription_box" &&
+                    launchType !== "sms"
+                  }
                   statusOptions={bootstrap.statuses}
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}

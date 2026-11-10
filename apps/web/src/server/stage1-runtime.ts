@@ -29,6 +29,7 @@ import {
   listOrgSenders,
   listSendsByTemplate,
   createStage1RepositoryBundle,
+  createSubscriptionBoxAudienceSource,
   createStage1RepositoryBundleFromConnection,
   createStage2RepositoryBundle,
   createStage5RepositoryBundle,
@@ -60,6 +61,7 @@ import {
   type Stage1RepositoryBundle,
   type Stage1TimelinePresentationService,
   type Stage2RepositoryBundle,
+  type SubscriptionBoxAudienceSource,
 } from "@as-comms/domain";
 
 // Re-export the Auth.js adapter tables so `apps/web/src/server/auth/index.ts`
@@ -97,6 +99,7 @@ export interface Stage1WebRuntime {
   readonly campaigns: Stage5RepositoryBundle;
   readonly oauth: McpOAuthRepository;
   readonly settings: Stage2RepositoryBundle;
+  readonly subscriptionBoxAudienceSource: SubscriptionBoxAudienceSource;
   readonly normalization: Stage1NormalizationService;
   readonly timelinePresentation: Stage1TimelinePresentationService;
   readonly internalNotes: Stage1InternalNoteService;
@@ -111,6 +114,7 @@ export interface Stage1WebTransaction {
   readonly campaigns: Stage5RepositoryBundle;
   readonly oauth: McpOAuthRepository;
   readonly settings: Stage2RepositoryBundle;
+  readonly subscriptionBoxAudienceSource: SubscriptionBoxAudienceSource;
 }
 
 let runtimeOverride: Stage1WebRuntime | null = null;
@@ -154,6 +158,9 @@ function createRuntime(): Stage1WebRuntime {
     campaigns,
     oauth,
     settings,
+    subscriptionBoxAudienceSource: createSubscriptionBoxAudienceSource(
+      connection.db,
+    ),
     normalization,
     timelinePresentation: createStage1TimelinePresentationService(repositories),
     internalNotes,
@@ -223,6 +230,7 @@ export async function withStage1WebTransaction<T>(
       campaigns: createStage5RepositoryBundle(tx),
       oauth: createMcpOAuthRepositoryFromConnection({ db: tx }),
       settings: createStage2RepositoryBundle(tx),
+      subscriptionBoxAudienceSource: createSubscriptionBoxAudienceSource(tx),
     }),
   );
 }

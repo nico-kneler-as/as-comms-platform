@@ -1,11 +1,16 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 
-import type { SalesforceSubscriptionReadbackMode } from "@as-comms/contracts";
+import {
+  salesforceSubscriptionBoxValues,
+  type SalesforceSubscriptionBox,
+  type SalesforceSubscriptionReadbackMode,
+} from "@as-comms/contracts";
 import type {
   ConsentState,
   MirrorRow,
   PlannedReadbackEvent,
   PlatformConsentState,
+  SubscriptionBoxAudienceSource,
 } from "@as-comms/domain";
 
 import type { Stage1Database } from "./repositories.js";
@@ -14,6 +19,7 @@ import {
   contactConsentClears,
   contactIdentities,
   contacts,
+  integrationHealth,
   newsletterSubscribers,
   newsletterSuppressions,
   projectDimensions,
@@ -106,6 +112,7 @@ export interface SalesforceSubscriptionReadbackRepository {
     readonly events: readonly PlannedReadbackEvent[];
     readonly mode: SalesforceSubscriptionReadbackMode;
   }): Promise<void>;
+  recordSuccessfulRefresh(refreshedAt: Date): Promise<void>;
 }
 
 export function createSalesforceSubscriptionReadbackRepository(
@@ -455,6 +462,207 @@ export function createSalesforceSubscriptionReadbackRepository(
             .where(eq(salesforceSubscriptionReadbackEvents.id, event.id));
         }
       });
+    },
+    async recordSuccessfulRefresh(refreshedAt) {
+      await db
+        .insert(integrationHealth)
+        .values({
+          id: "salesforce_subscription_readback",
+          serviceName: "salesforce_subscription_readback",
+          category: "crm",
+          status: "healthy",
+          lastCheckedAt: refreshedAt,
+          degradedSinceAt: null,
+          lastAlertSentAt: null,
+          detail: null,
+          metadataJson: {},
+        })
+        .onConflictDoUpdate({
+          target: integrationHealth.id,
+          set: {
+            serviceName: "salesforce_subscription_readback",
+            category: "crm",
+            status: "healthy",
+            lastCheckedAt: refreshedAt,
+            degradedSinceAt: null,
+            lastAlertSentAt: null,
+            detail: null,
+            metadataJson: {},
+            updatedAt: new Date(),
+          },
+        });
+    },
+  };
+}
+
+function isSalesforceSubscriptionBox(
+  value: string | null,
+): value is SalesforceSubscriptionBox {
+  return (
+    value !== null &&
+    salesforceSubscriptionBoxValues.includes(value as SalesforceSubscriptionBox)
+  );
+}
+
+function resolveProjectSubscriptionBoxes(
+  rows: readonly {
+    readonly projectId: string;
+    readonly subscriptionBox: string | null;
+    readonly connectedToProjectId: string | null;
+  }[],
+): ReadonlyMap<string, SalesforceSubscriptionBox> {
+  const rowsById = new Map(rows.map((row) => [row.projectId, row] as const));
+  const resolved = new Map<string, SalesforceSubscriptionBox | null>();
+
+  const findBox = (
+    projectId: string,
+    seen: ReadonlySet<string> = new Set(),
+  ): SalesforceSubscriptionBox | null => {
+    const cached = resolved.get(projectId);
+    if (cached !== undefined) {
+      return cached;
+    }
+    if (seen.has(projectId)) {
+      return null;
+    }
+    const project = rowsById.get(projectId);
+    if (project === undefined) {
+      return null;
+    }
+    if (isSalesforceSubscriptionBox(project.subscriptionBox)) {
+      resolved.set(projectId, project.subscriptionBox);
+      return project.subscriptionBox;
+    }
+    const inherited =
+      project.connectedToProjectId === null
+        ? null
+        : findBox(
+            project.connectedToProjectId,
+            new Set([...seen, projectId]),
+          );
+    resolved.set(projectId, inherited);
+    return inherited;
+  };
+
+  return new Map(
+    rows.flatMap((row) => {
+      const box = findBox(row.projectId);
+      return box === null ? [] : [[row.projectId, box] as const];
+    }),
+  );
+}
+
+function subscriptionBoxColumn(
+  box: SalesforceSubscriptionBox,
+) {
+  switch (box) {
+    case "PNW Forest Monitoring":
+      return salesforceSubscriptionPreferences.pnwForestMonitoring;
+    case "Beech and Butternut":
+      return salesforceSubscriptionPreferences.beechAndButternut;
+    case "Tracking Whitebark Pine":
+      return salesforceSubscriptionPreferences.trackingWhitebarkPine;
+    case "Coral Reef Expansion":
+      return salesforceSubscriptionPreferences.coralReefExpansion;
+    case "Monitoring Killer Whales Project":
+      return salesforceSubscriptionPreferences.monitoringKillerWhalesProject;
+  }
+}
+
+/**
+ * Query adapter for the project-email subscription-box resolver. Matching is
+ * deliberately delegated to the readback repository so Salesforce id, email
+ * identity, and primary-email matching cannot drift between readback and send.
+ */
+export function createSubscriptionBoxAudienceSource(
+  db: Stage1Database,
+  input?: { readonly logger?: Pick<Console, "info"> },
+): SubscriptionBoxAudienceSource {
+  const readbackRepository = createSalesforceSubscriptionReadbackRepository(db);
+  const logger = input?.logger ?? console;
+
+  return {
+    async loadProjectBoxes() {
+      const rows = await db
+        .select({
+          projectId: projectDimensions.projectId,
+          subscriptionBox: projectDimensions.subscriptionBox,
+          connectedToProjectId: projectDimensions.connectedToProjectId,
+        })
+        .from(projectDimensions);
+      return resolveProjectSubscriptionBoxes(rows);
+    },
+
+    async listTickedContactIds(box) {
+      const rows = await db
+        .select({
+          salesforceRecordId:
+            salesforceSubscriptionPreferences.salesforceRecordId,
+          salesforceContactId:
+            salesforceSubscriptionPreferences.salesforceContactId,
+          email: salesforceSubscriptionPreferences.email,
+        })
+        .from(salesforceSubscriptionPreferences)
+        .where(
+          and(
+            eq(subscriptionBoxColumn(box), true),
+            eq(salesforceSubscriptionPreferences.isDeleted, false),
+            eq(salesforceSubscriptionPreferences.unsubscribedFromAll, false),
+          ),
+        );
+      if (rows.length === 0) {
+        return new Set();
+      }
+
+      const contactsByRecord = await readbackRepository.loadContacts(rows);
+      const contactIds = new Set<string>();
+      let unmatchedMirrorRows = 0;
+      for (const row of rows) {
+        const matches = contactsByRecord.get(row.salesforceRecordId) ?? [];
+        if (matches.length === 0) {
+          unmatchedMirrorRows += 1;
+          continue;
+        }
+        for (const contactId of matches) {
+          contactIds.add(contactId);
+        }
+      }
+      if (unmatchedMirrorRows > 0) {
+        logger.info(
+          JSON.stringify({
+            event: "subscription_box_audience.unmatched_mirror_rows",
+            box,
+            count: unmatchedMirrorRows,
+          }),
+        );
+      }
+      return contactIds;
+    },
+
+    async listProjectOptOutContactIds(projectIds) {
+      const normalizedProjectIds = [...new Set(projectIds)];
+      if (normalizedProjectIds.length === 0) {
+        return new Set();
+      }
+      const rows = await db
+        .select({ contactId: contactConsent.contactId })
+        .from(contactConsent)
+        .where(
+          and(
+            eq(contactConsent.scopeType, "project"),
+            inArray(contactConsent.scopeId, normalizedProjectIds),
+          ),
+        );
+      return new Set(rows.map((row) => row.contactId));
+    },
+
+    async lastRefreshedAt() {
+      const [row] = await db
+        .select({ lastCheckedAt: integrationHealth.lastCheckedAt })
+        .from(integrationHealth)
+        .where(eq(integrationHealth.id, "salesforce_subscription_readback"))
+        .limit(1);
+      return row?.lastCheckedAt ?? null;
     },
   };
 }

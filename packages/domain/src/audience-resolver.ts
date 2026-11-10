@@ -17,7 +17,7 @@ import { normalizeAliasEmail } from "./broadcast-email-render.js";
 import type { SettingsProjectsRepository } from "./settings/repositories.js";
 import type { AudienceMember } from "./campaign-types.js";
 
-interface AudienceResolverRepositories {
+export interface AudienceResolverRepositories {
   readonly contacts: Pick<ContactRepository, "listAll">;
   readonly contactMemberships: Pick<ContactMembershipRepository, "listByContactIds">;
   readonly canonicalEvents: Pick<CanonicalEventRepository, "listByContactIds">;
@@ -117,7 +117,7 @@ function sortMemberships(
   return left.id.localeCompare(right.id);
 }
 
-async function resolvePrimaryAliasEmail(
+export async function resolvePrimaryAliasEmail(
   repositories: AudienceResolverRepositories,
   projectId: string | null,
   cache: Map<string, Promise<string | null>>,
@@ -187,6 +187,25 @@ function filterMemberships(
   });
 }
 
+/**
+ * Applies the contact-level audience filters shared by membership-backed and
+ * subscription-box-backed project audiences. Keeping this here means a
+ * synthetic subscription-box Lead is narrowed by exactly the same event
+ * history rules as an Expedition Member.
+ */
+export function matchesAudienceActivityCriteria(
+  events: readonly CanonicalEventRecord[],
+  criteria: AudienceCriteria,
+  at: Date,
+): boolean {
+  const windowStart = buildWindowStart(criteria.lastActivityWindow, at);
+  return (
+    passesActivityWindow(events, windowStart) &&
+    passesHasReplied(events, criteria.hasReplied) &&
+    passesHasClicked(events, criteria.hasClicked)
+  );
+}
+
 async function resolveAudienceMembers(
   repositories: AudienceResolverRepositories,
   criteria: AudienceCriteria,
@@ -244,7 +263,6 @@ async function resolveAudienceMembers(
     projects.map((project) => [project.projectId, project]),
   );
   const aliasCache = new Map<string, Promise<string | null>>();
-  const windowStart = buildWindowStart(criteria.lastActivityWindow, at);
   const audience: AudienceMember[] = [];
 
   for (const contactId of candidateIds) {
@@ -254,13 +272,7 @@ async function resolveAudienceMembers(
     }
 
     const contactEvents = eventsByContact.get(contactId) ?? [];
-    if (!passesActivityWindow(contactEvents, windowStart)) {
-      continue;
-    }
-    if (!passesHasReplied(contactEvents, criteria.hasReplied)) {
-      continue;
-    }
-    if (!passesHasClicked(contactEvents, criteria.hasClicked)) {
+    if (!matchesAudienceActivityCriteria(contactEvents, criteria, at)) {
       continue;
     }
 

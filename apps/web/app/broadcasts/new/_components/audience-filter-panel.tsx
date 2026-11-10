@@ -29,11 +29,14 @@ import type {
 import type { CampaignAudienceCriteria } from "./audience-builder-step";
 
 const STAGE_GROUPS = {
+  lead: {
+    color: "amber",
+    statuses: ["Lead"],
+  },
   top: {
     color: "emerald",
     statuses: [
       "Waitlist",
-      "Lead",
       "Applied",
       "Pending Acceptance",
       "Accepted",
@@ -75,6 +78,7 @@ interface AudienceFilterPanelProps {
   readonly showProjectSection?: boolean;
   readonly showStatusSection?: boolean;
   readonly showStateSection?: boolean;
+  readonly subscriptionBoxMode?: boolean;
   readonly onProjectChange: (projectId: string) => void;
   readonly onToggleAllStatuses: (selectAll: boolean) => void;
   readonly onStatusToggle: (status: ExpeditionMemberStatus) => void;
@@ -113,6 +117,7 @@ export function AudienceFilterPanel({
   showProjectSection = true,
   showStatusSection = true,
   showStateSection = true,
+  subscriptionBoxMode = false,
   onProjectChange,
   onToggleAllStatuses,
   onStatusToggle,
@@ -136,6 +141,13 @@ export function AudienceFilterPanel({
     !singleSelectProjects && projectOptions.length === 1;
   const shouldRenderStatusShell =
     selectedProjectIds.length > 0 && statusCountsLoading;
+  const hasProjectWithoutSubscriptionBox =
+    subscriptionBoxMode &&
+    selectedProjectIds.some(
+      (projectId) =>
+        projectOptions.find((project) => project.id === projectId)
+          ?.hasSubscriptionBox === false,
+    );
 
   const stageSections = Object.values(STAGE_GROUPS)
     .map((group) => {
@@ -184,6 +196,12 @@ export function AudienceFilterPanel({
                 ),
               )}
             </div>
+            {hasProjectWithoutSubscriptionBox ? (
+              <p className="mt-3 text-[12px] text-slate-500">
+                This project has no subscription box in Salesforce, so this
+                audience comes from Expedition Members.
+              </p>
+            ) : null}
           </FilterSection>
         ) : null}
 

@@ -27,6 +27,7 @@ import {
   createMcpOAuthRepository,
   createOrgSender,
   createStage5RepositoryBundle,
+  createSubscriptionBoxAudienceSource,
   insertBroadcastLinkClick,
   insertBroadcastOpen,
   setOrgSenderEnabled,
@@ -59,6 +60,9 @@ export async function createStage1WebTestRuntime(): Promise<Stage1WebTestRuntime
       context.db as unknown as Parameters<typeof createMcpOAuthRepository>[0],
     ),
     settings: context.settings,
+    subscriptionBoxAudienceSource: createSubscriptionBoxAudienceSource(
+      context.db as unknown as NonNullable<Stage1WebRuntime["connection"]>["db"],
+    ),
     normalization: context.normalization,
     timelinePresentation: createStage1TimelinePresentationService(
       context.repositories,

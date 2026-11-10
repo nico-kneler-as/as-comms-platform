@@ -52,6 +52,7 @@ function dependencies(mode: "dry_run" | "apply") {
         suppressionEmails: new Set(),
       }),
       persistBatch: vi.fn().mockResolvedValue(undefined),
+      recordSuccessfulRefresh: vi.fn().mockResolvedValue(undefined),
     },
     logger: { info: vi.fn(), error: vi.fn() },
   };
@@ -68,6 +69,9 @@ describe("salesforce-subscription-readback", () => {
     expect(input.repository.loadContacts).not.toHaveBeenCalled();
     expect(input.repository.loadProjectsByBox).not.toHaveBeenCalled();
     expect(input.repository.loadPlatformState).not.toHaveBeenCalled();
+    expect(input.repository.recordSuccessfulRefresh).toHaveBeenCalledWith(
+      expect.any(Date),
+    );
   });
 
   it("uses the five minute overlap after a baseline", async () => {
@@ -146,5 +150,16 @@ describe("salesforce-subscription-readback", () => {
       input.logger.error.mock.calls,
     ])
       for (const [line] of calls) expect(line).not.toContain("@");
+  });
+
+  it("does not refresh the heartbeat after a failed run", async () => {
+    const input = dependencies("apply");
+    input.repository.persistBatch.mockRejectedValue(new Error("database"));
+
+    await expect(
+      createSalesforceSubscriptionReadbackTask(input)({}, {} as never),
+    ).rejects.toThrow("database");
+
+    expect(input.repository.recordSuccessfulRefresh).not.toHaveBeenCalled();
   });
 });

@@ -1,13 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import type { PlannedReadbackEvent } from "@as-comms/domain";
 
 import {
+  createSubscriptionBoxAudienceSource,
   createSalesforceSubscriptionReadbackRepository,
   createStage5RepositoryBundle,
   contactConsent,
   contactConsentClears,
   contactIdentities,
+  integrationHealth,
   contacts,
   newsletterSubscribers,
   newsletterSuppressions,
@@ -224,7 +226,7 @@ describe("salesforce subscription readback repository", () => {
       {
         projectId: "host",
         projectName: "Host",
-        projectAlias: null,
+        projectAlias: "Host",
         isActive: false,
         connectedToProjectId: null,
         subscriptionBox: "PNW Forest Monitoring",
@@ -242,7 +244,7 @@ describe("salesforce subscription readback repository", () => {
       {
         projectId: "child",
         projectName: "Child",
-        projectAlias: null,
+        projectAlias: "Child",
         isActive: false,
         connectedToProjectId: "host",
         subscriptionBox: null,
@@ -291,6 +293,138 @@ describe("salesforce subscription readback repository", () => {
     await expect(repository.maxMirrorModifiedAt()).resolves.toBeInstanceOf(
       Date,
     );
+  });
+
+  it("provides box-audience contact matching, host resolution, and heartbeat freshness", async () => {
+    context = await createTestStage1Context();
+    await seedContact(context, {
+      id: "by-salesforce-id",
+      salesforceContactId: "salesforce-contact",
+    });
+    await seedContact(context, { id: "by-email" });
+    await context.db.insert(contactIdentities).values({
+      id: "identity-by-email",
+      contactId: "by-email",
+      kind: "email",
+      normalizedValue: "email-match@example.org",
+      isPrimary: true,
+      source: "manual",
+      verifiedAt: null,
+    });
+    await context.db.insert(projectDimensions).values([
+      {
+        projectId: "host",
+        projectName: "Host",
+        projectAlias: "Host",
+        isActive: true,
+        connectedToProjectId: null,
+        subscriptionBox: "Beech and Butternut",
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+        source: "manual",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        projectId: "child",
+        projectName: "Child",
+        projectAlias: "Child",
+        isActive: true,
+        connectedToProjectId: "host",
+        subscriptionBox: null,
+        aiKnowledgeUrl: null,
+        aiKnowledgeSyncedAt: null,
+        aiKnowledgeSources: [],
+        aiOperatingContext: "",
+        aiAutoSyncSchedule: "never",
+        aiOptimizedSynthesizedAt: null,
+        aiOptimizedInputHash: null,
+        source: "manual",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+    const repository = createSalesforceSubscriptionReadbackRepository(context.db);
+    const withBeechTicked = (input: {
+      readonly salesforceRecordId: string;
+      readonly salesforceContactId: string | null;
+      readonly email: string;
+      readonly isDeleted?: boolean;
+      readonly unsubscribedFromAll?: boolean;
+    }) => ({
+      ...mirror,
+      ...input,
+      projectBoxes: {
+        ...mirror.projectBoxes,
+        "Beech and Butternut": true,
+      },
+      isDeleted: input.isDeleted ?? false,
+      unsubscribedFromAll: input.unsubscribedFromAll ?? false,
+    });
+    await repository.persistBatch({
+      mode: "dry_run",
+      mirrorUpserts: [
+        withBeechTicked({
+          salesforceRecordId: "match-by-id",
+          salesforceContactId: "salesforce-contact",
+          email: "different@example.org",
+        }),
+        withBeechTicked({
+          salesforceRecordId: "match-by-email",
+          salesforceContactId: null,
+          email: "email-match@example.org",
+        }),
+        withBeechTicked({
+          salesforceRecordId: "deleted",
+          salesforceContactId: "salesforce-contact",
+          email: "deleted@example.org",
+          isDeleted: true,
+        }),
+        withBeechTicked({
+          salesforceRecordId: "all-unsubscribed",
+          salesforceContactId: "salesforce-contact",
+          email: "unsubscribed@example.org",
+          unsubscribedFromAll: true,
+        }),
+      ],
+      events: [],
+    });
+    const logger = { info: vi.fn() };
+    const audienceSource = createSubscriptionBoxAudienceSource(context.db, {
+      logger,
+    });
+
+    await expect(
+      audienceSource.listTickedContactIds("Beech and Butternut"),
+    ).resolves.toEqual(new Set(["by-salesforce-id", "by-email"]));
+    await expect(audienceSource.loadProjectBoxes()).resolves.toEqual(
+      new Map([
+        ["host", "Beech and Butternut"],
+        ["child", "Beech and Butternut"],
+      ]),
+    );
+    await expect(audienceSource.lastRefreshedAt()).resolves.toBeNull();
+
+    const refreshedAt = new Date("2026-11-10T12:00:00.000Z");
+    await repository.recordSuccessfulRefresh(refreshedAt);
+    await expect(audienceSource.lastRefreshedAt()).resolves.toEqual(refreshedAt);
+    expect(
+      await context.db
+        .select()
+        .from(integrationHealth)
+        .where(eq(integrationHealth.id, "salesforce_subscription_readback")),
+    ).toMatchObject([
+      {
+        serviceName: "salesforce_subscription_readback",
+        category: "crm",
+        status: "healthy",
+      },
+    ]);
   });
 
   it("applies each action safely and leaves the outbox empty", async () => {

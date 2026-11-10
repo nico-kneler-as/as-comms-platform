@@ -47,7 +47,19 @@ function parseOptionalTrimmedString(value: unknown): string | undefined {
   return trimmed.length === 0 ? undefined : trimmed;
 }
 
+function parseProjectAudienceSource(
+  value: unknown,
+): "membership" | "subscription_box" {
+  return value === "subscription_box" ? "subscription_box" : "membership";
+}
+
 export const webEnvSchema = z.object({
+  PROJECT_AUDIENCE_SOURCE: z
+    .preprocess(
+      parseProjectAudienceSource,
+      z.enum(["membership", "subscription_box"]),
+    )
+    .default("membership"),
   SMS_ENABLED: z.preprocess(parseBooleanEnv, z.boolean()).default(false),
   TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT: z
     .preprocess(parsePositiveNumberEnv, z.number().positive())
@@ -88,6 +100,7 @@ export type WebEnv = z.infer<typeof webEnvSchema>;
 
 export function readWebEnv(env: NodeJS.ProcessEnv = process.env): WebEnv {
   return webEnvSchema.parse({
+    PROJECT_AUDIENCE_SOURCE: env.PROJECT_AUDIENCE_SOURCE,
     SMS_ENABLED: env.SMS_ENABLED,
     TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT:
       env.TWILIO_OUTBOUND_RATE_USD_PER_SEGMENT,
