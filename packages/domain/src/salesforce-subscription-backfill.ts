@@ -131,9 +131,15 @@ function earliest(values: readonly string[]): string | null {
 }
 
 // Salesforce returns "2026-01-01T00:00:00.000+0000" while the platform
-// returns "…Z", so compare instants, never raw strings.
+// returns "…Z", and Salesforce keeps whole seconds only (the platform keeps
+// milliseconds). Compare and write instants truncated to the second.
+function toSalesforceSecond(value: string): string {
+  const time = new Date(value).getTime();
+  return new Date(time - (((time % 1000) + 1000) % 1000)).toISOString();
+}
+
 function sameInstant(left: string | null, right: string): boolean {
-  return left !== null && new Date(left).getTime() === new Date(right).getTime();
+  return left !== null && toSalesforceSecond(left) === toSalesforceSecond(right);
 }
 
 function pushReason(reasons: string[], reason: string): void {
@@ -330,7 +336,7 @@ export function planSubscriptionBackfill(
     ) {
       set(
         "unsubscribedAt",
-        new Date(earliestAllConsent).toISOString(),
+        toSalesforceSecond(earliestAllConsent),
         existing?.unsubscribedAt ?? null,
       );
     }

@@ -100,6 +100,14 @@ describe("planSubscriptionBackfill", () => {
     expect(different.writes[0]?.change).toMatchObject({ unsubscribedAt: "2026-01-01T00:00:00.000Z" });
   });
 
+  it("treats Salesforce's whole-second time as equal to the platform's milliseconds", () => {
+    const consent = { salesforceContactId: "003contact", email: null, scopeType: "all" as const, scopeId: null, optedOutAt: "2026-09-16T22:15:42.849Z" };
+    const fresh = plan({ ...base(), contacts: [contact()], consents: [consent] });
+    expect(fresh.writes[0]?.change).toMatchObject({ unsubscribedAt: "2026-09-16T22:15:42.000Z" });
+    const written = plan({ ...base(), contacts: [contact()], existing: [existing({ unsubscribedFromAll: true, unsubscribedAt: "2026-09-16T22:15:42.000+0000" })], consents: [consent] });
+    expect(written.writes).toEqual([]);
+  });
+
   it("normalizes mixed-case inputs and is idempotent after applying its writes", () => {
     const initial = { ...base(), contacts: [contact({ email: " Person@Example.ORG " })], newsletterSubscribers: [{ email: "PERSON@example.org", status: "subscribed" }] };
     const first = plan(initial);
