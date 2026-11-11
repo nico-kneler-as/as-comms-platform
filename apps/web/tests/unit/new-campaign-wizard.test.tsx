@@ -103,18 +103,22 @@ vi.mock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
   NameAndSenderStep: ({
     fromEmail,
     name,
+    replyToEmail,
     onBack,
     onContinue,
     onFromEmailChange,
     onNameChange,
+    onReplyToEmailChange,
     senderOptions,
   }: {
     readonly fromEmail: string | null;
     readonly name: string;
+    readonly replyToEmail: string | null;
     readonly onBack: () => void;
     readonly onContinue: () => void;
     readonly onFromEmailChange: (value: string | null) => void;
     readonly onNameChange: (value: string) => void;
+    readonly onReplyToEmailChange: (value: string | null) => void;
     readonly senderOptions: readonly {
       readonly email: string;
     }[];
@@ -122,6 +126,22 @@ vi.mock("../../app/broadcasts/new/_components/name-and-sender-step", () => ({
     <section data-testid="name-sender-step">
       <div>NameAndSenderStep</div>
       <div data-testid="current-from-email">{fromEmail ?? "none"}</div>
+      <input
+        aria-label="campaign-reply-to"
+        value={replyToEmail ?? ""}
+        onChange={(event) => {
+          onReplyToEmailChange(event.currentTarget.value);
+        }}
+      />
+      <button
+        type="button"
+        aria-label="set-custom-reply-to"
+        onClick={() => {
+          onReplyToEmailChange("gregg@example.org");
+        }}
+      >
+        Set custom reply-to
+      </button>
       <input
         aria-label="campaign-name"
         value={name}
@@ -155,6 +175,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
   AudienceBuilderStep: ({
     availableModes,
     criteria,
+    onCommonAudienceSelect,
     onBack,
     onContinue,
     onInitialFilterChange,
@@ -169,19 +190,23 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       | "specific"
       | "all_approved"
       | "all_available"
+      | "salesforce_lists"
     )[];
     readonly criteria: {
       readonly initialFilter?:
         | "project_status"
         | "specific"
         | "all_approved"
-        | "all_available";
+        | "all_available"
+        | "salesforce_lists";
+      readonly salesforceListIds?: readonly string[];
     };
     readonly onBack: () => void;
     readonly onContinue: () => void;
     readonly onInitialFilterChange: (
       value: "project_status" | "specific" | "all_approved" | "all_available",
     ) => void;
+    readonly onCommonAudienceSelect: (listId: string) => void;
     readonly onVolunteerSearchQueryChange: (value: string) => void;
     readonly onVolunteerToggle: (id: string) => void;
     readonly previewRows: readonly {
@@ -204,6 +229,9 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
     <section data-testid="audience-step">
       <div>AudienceBuilderStep</div>
       <div data-testid="audience-mode">{criteria.initialFilter ?? "unset"}</div>
+      <div data-testid="audience-list-ids">
+        {(criteria.salesforceListIds ?? []).join(",")}
+      </div>
       <div data-testid="audience-available-modes">
         {availableModes.join(",")}
       </div>
@@ -258,6 +286,15 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
           All available
         </button>
       ) : null}
+      <button
+        type="button"
+        aria-label="select-insiders"
+        onClick={() => {
+          onCommonAudienceSelect("insiders");
+        }}
+      >
+        Insiders
+      </button>
       <button
         type="button"
         aria-label="search-alice"
@@ -1396,6 +1433,114 @@ describe("NewCampaignWizard", () => {
     expect(
       document.querySelector('[aria-label="mode-project-status"]'),
     ).toBeNull();
+  });
+
+  it("restores Insiders from a draft and clears it when choosing a mode or a project sender", async () => {
+    const bootstrap = buildBootstrap({
+      senderOptions: [
+        {
+          projectId: "project-1",
+          projectName: "Beech Leaf Disease",
+          projectAliasLabel: "Forests",
+          email: "forests@example.org",
+          connectedToProjectId: "host-1",
+          status: "verified",
+          senderType: "project",
+        },
+        {
+          projectId: null,
+          projectName: "Adventure Scientists",
+          projectAliasLabel: "Adventure Scientists",
+          email: "info@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+          senderType: "org",
+        },
+      ],
+    });
+    const draft = buildDraft({
+      kind: "newsletter",
+      fromEmail: "info@adventurescientists.org",
+      replyToEmail: "info@adventurescientists.org",
+      audienceCriteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "salesforce_lists",
+        salesforceListIds: ["insiders"],
+      },
+    });
+
+    await renderWizard({ bootstrap, draft });
+    await goToStep(2);
+
+    expect(getByTestId("audience-mode").textContent).toBe("salesforce_lists");
+    expect(getByTestId("audience-list-ids").textContent).toBe("insiders");
+
+    await click("mode-all-available");
+
+    expect(getByTestId("audience-mode").textContent).toBe("all_available");
+    expect(getByTestId("audience-list-ids").textContent).toBe("");
+
+    await click("select-insiders");
+    await goToStep(1);
+    await click("sender-forests@example.org");
+    await goToStep(2);
+
+    expect(getByTestId("audience-mode").textContent).not.toBe("salesforce_lists");
+    expect(getByTestId("audience-list-ids").textContent).toBe("");
+  });
+
+  it("keeps an edited reply-to address while an untouched reply-to follows an org sender change", async () => {
+    const bootstrap = buildBootstrap({
+      senderOptions: [
+        {
+          projectId: null,
+          projectName: "Adventure Scientists",
+          projectAliasLabel: "Adventure Scientists",
+          email: "info@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+          senderType: "org",
+        },
+        {
+          projectId: null,
+          projectName: "Adventure Scientists",
+          projectAliasLabel: "Updates",
+          email: "updates@adventurescientists.org",
+          connectedToProjectId: null,
+          status: "verified",
+          senderType: "org",
+        },
+      ],
+    });
+
+    await renderWizard({
+      bootstrap,
+      draft: buildFreshDraft({
+        kind: "newsletter",
+        fromEmail: "info@adventurescientists.org",
+        replyToEmail: "info@adventurescientists.org",
+      }),
+    });
+    await click("sender-updates@adventurescientists.org");
+
+    expect((getByLabelText("campaign-reply-to") as HTMLInputElement).value).toBe(
+      "updates@adventurescientists.org",
+    );
+
+    await click("set-custom-reply-to");
+    await click("sender-info@adventurescientists.org");
+
+    expect((getByLabelText("campaign-reply-to") as HTMLInputElement).value).toBe(
+      "gregg@example.org",
+    );
   });
 
   it("searches newsletter subscribers for org senders and persists newsletterSubscriberIds", async () => {

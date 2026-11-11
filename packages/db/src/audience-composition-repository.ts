@@ -10,7 +10,11 @@ import {
   broadcastLinkClicks,
   broadcastOpens,
   broadcastUploadedExclusions,
+  contacts,
+  newsletterSubscribers,
+  newsletterSuppressions,
   salesforceAudienceListMembers,
+  salesforceAudienceLists,
 } from "./schema/index.js";
 
 type AudienceCompositionDatabase = PgDatabase<PgQueryResultHKT, DatabaseSchema>;
@@ -20,6 +24,94 @@ const RECIPIENT_DELIVERY_STATUSES_TO_EXCLUDE: DeliveryStatus[] = [
   "failed",
   "suppressed_at_send",
 ];
+
+export interface StandingListAudienceMember {
+  readonly email: string;
+  readonly newsletterSubscriberId: string | null;
+  readonly firstName: string | null;
+}
+
+/**
+ * Resolves a standing Salesforce list only when every selected list is an
+ * insiders list. Campaign lists intentionally return null: they still narrow
+ * the newsletter-subscriber base through normal audience composition.
+ */
+export async function resolveStandingListAudience(
+  db: AudienceCompositionDatabase,
+  listIds: readonly string[],
+): Promise<readonly StandingListAudienceMember[] | null> {
+  const ids = [...new Set(listIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return null;
+
+  const lists = await db
+    .select({
+      id: salesforceAudienceLists.id,
+      kind: salesforceAudienceLists.kind,
+    })
+    .from(salesforceAudienceLists)
+    .where(inArray(salesforceAudienceLists.id, ids));
+  if (
+    lists.length !== ids.length ||
+    lists.some((list) => list.kind !== "insiders")
+  ) {
+    return null;
+  }
+
+  const rows = await db
+    .select({
+      email: salesforceAudienceListMembers.normalizedEmail,
+      subscriberId: newsletterSubscribers.id,
+      subscriberStatus: newsletterSubscribers.status,
+      subscriberFirstName: newsletterSubscribers.firstName,
+      suppressionId: newsletterSuppressions.id,
+      contactFirstName: contacts.displayName,
+    })
+    .from(salesforceAudienceListMembers)
+    .leftJoin(
+      newsletterSubscribers,
+      eq(
+        salesforceAudienceListMembers.normalizedEmail,
+        newsletterSubscribers.email,
+      ),
+    )
+    .leftJoin(
+      newsletterSuppressions,
+      eq(
+        salesforceAudienceListMembers.normalizedEmail,
+        newsletterSuppressions.email,
+      ),
+    )
+    .leftJoin(
+      contacts,
+      eq(
+        salesforceAudienceListMembers.salesforceContactId,
+        contacts.salesforceContactId,
+      ),
+    )
+    .where(inArray(salesforceAudienceListMembers.listId, ids))
+    .orderBy(asc(salesforceAudienceListMembers.normalizedEmail));
+
+  const byEmail = new Map<string, StandingListAudienceMember>();
+  for (const row of rows) {
+    const email = row.email.trim().toLowerCase();
+    if (email.length === 0 || byEmail.has(email)) continue;
+    // A known newsletter subscriber who is no longer sendable is removed at
+    // base resolution. A member with no subscriber row remains reachable.
+    if (
+      row.subscriberId !== null &&
+      (row.subscriberStatus !== "subscribed" || row.suppressionId !== null)
+    )
+      continue;
+    const contactFirstName =
+      row.contactFirstName?.trim().split(/\s+/u)[0] ?? null;
+    byEmail.set(email, {
+      email,
+      newsletterSubscriberId: row.subscriberId,
+      firstName: row.subscriberFirstName ?? contactFirstName,
+    });
+  }
+  return [...byEmail.values()];
+}
 
 export async function upsertBroadcastUploadedExclusionsForRun(
   db: AudienceCompositionDatabase,

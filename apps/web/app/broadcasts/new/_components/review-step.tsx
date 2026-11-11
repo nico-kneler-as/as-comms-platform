@@ -28,6 +28,7 @@ interface ReviewStepProps {
   readonly projectChipLabel: string;
   readonly runName: string | null;
   readonly fromEmail: string | null;
+  readonly replyToEmail: string | null;
   readonly subject: string;
   readonly selectedSenderVerified: boolean;
   readonly audienceSize: number | null;
@@ -102,6 +103,7 @@ export function ReviewStep({
   projectChipLabel,
   runName,
   fromEmail,
+  replyToEmail,
   subject,
   selectedSenderVerified,
   audienceSize,
@@ -177,6 +179,12 @@ export function ReviewStep({
                 }
               />
             )}
+            {!isSmsLaunch && replyToEmail !== null ? (
+              <SummaryRow
+                label="Reply-to"
+                value={<span className="font-mono">{replyToEmail}</span>}
+              />
+            ) : null}
             <SummaryRow
               label="To"
               value={

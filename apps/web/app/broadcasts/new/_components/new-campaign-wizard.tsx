@@ -493,6 +493,7 @@ export function NewCampaignWizard({
     fromEmail,
     setFromEmail,
     replyToEmail,
+    setReplyToEmail,
     subject,
     setSubject,
     subjectB,
@@ -803,14 +804,15 @@ export function NewCampaignWizard({
 
   function changeInitialFilter(value: AudienceInitialFilter) {
     setHasPickedAudienceMode(true);
-    updateCriteria((current) =>
-      buildCriteriaForMode({
+    updateCriteria((current) => ({
+      ...buildCriteriaForMode({
         current,
         mode: value,
         projectOptions: effectiveProjectOptions,
         projectSelectionMode,
       }),
-    );
+      salesforceListIds: [],
+    }));
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
     setVolunteerSearchErrorMessage(null);
@@ -1138,11 +1140,13 @@ export function NewCampaignWizard({
                   launchType={launchType}
                   name={name}
                   fromEmail={fromEmail}
+                  replyToEmail={replyToEmail}
                   senderOptions={bootstrap.senderOptions}
                   activeSmsSender={bootstrap.activeSmsSender}
                   frozen={frozen}
                   onNameChange={setName}
                   onFromEmailChange={setFromEmail}
+                  onReplyToEmailChange={setReplyToEmail}
                   onBack={() => {
                     setCurrentStep(0);
                   }}
@@ -1159,6 +1163,10 @@ export function NewCampaignWizard({
                   hasPickedMode={hasPickedAudienceMode}
                   criteria={criteria}
                   selectedSenderType={selectedSenderType}
+                  commonAudiences={bootstrap.commonAudiences ?? []}
+                  commonAudiencesLastSyncedAt={
+                    bootstrap.commonAudiencesLastSyncedAt ?? null
+                  }
                   countState={countState}
                   previewRows={previewRows}
                   countLoading={countLoading}
@@ -1190,6 +1198,19 @@ export function NewCampaignWizard({
                   stateCountsLoading={stateCountsLoading}
                   stateCountsErrorMessage={stateCountsErrorMessage}
                   onInitialFilterChange={changeInitialFilter}
+                  onCommonAudienceSelect={(listId) => {
+                    setHasPickedAudienceMode(true);
+                    updateCriteria((current) => ({
+                      ...current,
+                      initialFilter: "salesforce_lists",
+                      salesforceListIds: [listId],
+                      projectId: null,
+                      projectIds: [],
+                      statuses: [],
+                      contactIds: [],
+                      newsletterSubscriberIds: [],
+                    }));
+                  }}
                   onProjectChange={toggleProject}
                   onToggleAllStatuses={toggleAllStatuses}
                   onStatusToggle={toggleStatus}
@@ -1314,6 +1335,11 @@ export function NewCampaignWizard({
                   )}
                   runName={name.trim().length === 0 ? null : name}
                   fromEmail={launchType === "sms" ? null : fromEmail}
+                  replyToEmail={
+                    launchType === "sms" || selectedSenderType !== "org"
+                      ? null
+                      : replyToEmail
+                  }
                   subject={composePreview?.sample?.subject ?? subject}
                   selectedSenderVerified={selectedSenderVerified}
                   audienceSize={

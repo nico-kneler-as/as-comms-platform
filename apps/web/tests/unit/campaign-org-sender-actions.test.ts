@@ -181,6 +181,7 @@ describe("campaign org-sender actions", () => {
         messages: [
           expect.objectContaining({
             To: "recipient@example.org",
+            ReplyTo: "info@adventurescientists.org",
           }),
         ],
       });
