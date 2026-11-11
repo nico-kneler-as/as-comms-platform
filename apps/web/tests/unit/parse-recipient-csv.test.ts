@@ -27,6 +27,22 @@ describe("parseRecipientCsv", () => {
     });
   });
 
+  it("reads spreadsheet-style headers like First Name and Last Name", () => {
+    expect(
+      parseRecipientCsv(
+        "First Name,Last Name,Email\nAda,Lovelace,ada@example.org\n",
+      ).recipients,
+    ).toEqual([
+      { email: "ada@example.org", firstName: "Ada", lastName: "Lovelace" },
+    ]);
+    expect(
+      parseRecipientCsv("E-mail,first_name\ngrace@example.org,Grace\n")
+        .recipients,
+    ).toEqual([
+      { email: "grace@example.org", firstName: "Grace", lastName: null },
+    ]);
+  });
+
   it("skips invalid emails and empty rows", () => {
     expect(
       parseRecipientCsv(

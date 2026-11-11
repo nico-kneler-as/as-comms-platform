@@ -265,11 +265,12 @@ async function createProjectBroadcastDraft(
     readonly projectId: string | null;
     readonly fromEmail: string;
     readonly launchType?: "normal_email" | "sms";
+    readonly kind?: "project" | "newsletter";
   },
 ) {
   return runtime.runtime.campaigns.campaignRuns.create({
     id: input.runId,
-    kind: "project",
+    kind: input.kind ?? "project",
     launchType: input.launchType ?? "normal_email",
     projectId: input.projectId,
     name: "CSV audience import",
@@ -1462,6 +1463,57 @@ describe("campaign audience data source", () => {
         },
       ],
     });
+  });
+
+  it("imports a CSV audience for an org sender (newsletter-kind draft)", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await createProjectBroadcastDraft(runtime, {
+      runId: "run-org-csv",
+      projectId: null,
+      fromEmail: "gregg@example.org",
+      kind: "newsletter",
+    });
+
+    const upload = await uploadBroadcastAudienceCsvAction({
+      runId: "run-org-csv",
+      csvText: [
+        "First Name,Last Name,Email",
+        "Ada,Lovelace,ada@example.org",
+        "Grace,Hopper,grace@example.org",
+      ].join("\n"),
+    });
+
+    expect(upload).toMatchObject({
+      ok: true,
+      data: {
+        importedCount: 2,
+        sample: [
+          { email: "ada@example.org", name: "Ada Lovelace" },
+          { email: "grace@example.org", name: "Grace Hopper" },
+        ],
+      },
+    });
+
+    const count = await resolveAudienceCountAction({
+      runId: "run-org-csv",
+      kind: "newsletter",
+      criteria: {
+        projectId: null,
+        projectIds: [],
+        statuses: [],
+        contactIds: [],
+        newsletterSubscriberIds: [],
+        expeditionIds: [],
+        lastActivityWindow: "all_time",
+        hasReplied: "either",
+        hasClicked: "either",
+        initialFilter: "csv_upload",
+      },
+    });
+    expect(count).toMatchObject({ ok: true, data: { count: 2 } });
   });
 
   it("imports a CSV audience, returns counts plus preview, and persists the stored rows", async () => {

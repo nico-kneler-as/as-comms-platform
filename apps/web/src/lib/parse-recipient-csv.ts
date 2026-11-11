@@ -95,8 +95,10 @@ function parseCsvRows(input: string): string[][] {
   return rows;
 }
 
+// "First Name", "first_name" and "first-name" all read as "firstname", so a
+// spreadsheet exported as-is keeps its names.
 function normalizeHeader(value: string): string {
-  return value.trim().toLowerCase();
+  return value.trim().toLowerCase().replace(/[\s_-]+/gu, "");
 }
 
 function normalizeOptionalValue(value: string | undefined): string | null {
