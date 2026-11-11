@@ -271,7 +271,6 @@ function createCampaignSendOrchestratorForRepositories(input: {
       auditEvidence: input.repositories.auditEvidence,
     },
     audienceResolver: createProjectAudienceResolver({
-      projectAudienceSource: env.PROJECT_AUDIENCE_SOURCE,
       subscriptionBoxAudienceSource: input.subscriptionBoxAudienceSource,
       repositories: input.repositories,
       settings: input.settings,
@@ -335,7 +334,6 @@ function createCampaignSendOrchestratorForRepositories(input: {
 }
 
 function createProjectAudienceResolver(input: {
-  readonly projectAudienceSource: "membership" | "subscription_box";
   readonly subscriptionBoxAudienceSource: Stage1WebRuntime["subscriptionBoxAudienceSource"];
   readonly repositories: Stage1WebRuntime["repositories"];
   readonly settings: Stage1WebRuntime["settings"];
@@ -349,19 +347,17 @@ function createProjectAudienceResolver(input: {
         settingsProjects: input.settings.projects,
       },
   });
-  return input.projectAudienceSource === "subscription_box"
-    ? createSubscriptionBoxAudienceResolver({
-        repositories: {
-          contacts: input.repositories.contacts,
-          contactMemberships: input.repositories.contactMemberships,
-          canonicalEvents: input.repositories.canonicalEvents,
-          projectDimensions: input.repositories.projectDimensions,
-          settingsProjects: input.settings.projects,
-        },
-        source: input.subscriptionBoxAudienceSource,
-        membershipResolver,
-      })
-    : membershipResolver;
+  return createSubscriptionBoxAudienceResolver({
+    repositories: {
+      contacts: input.repositories.contacts,
+      contactMemberships: input.repositories.contactMemberships,
+      canonicalEvents: input.repositories.canonicalEvents,
+      projectDimensions: input.repositories.projectDimensions,
+      settingsProjects: input.settings.projects,
+    },
+    source: input.subscriptionBoxAudienceSource,
+    membershipResolver,
+  });
 }
 
 async function createCampaignOrchestrator() {
