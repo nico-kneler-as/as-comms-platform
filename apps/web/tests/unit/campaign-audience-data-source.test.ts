@@ -619,6 +619,28 @@ describe("campaign audience data source", () => {
     ]);
   });
 
+  it("offers no common audiences while the synced insiders list is the Salesforce VIP? checkbox", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    await runtime.runtime.campaigns.salesforceAudienceLists.replaceSnapshot({
+      campaigns: [],
+      members: [],
+      insiders: [{ id: "003-vip", email: "vip@example.org" }],
+      capturedAt: "2026-11-11T12:00:00.000Z",
+    });
+    (
+      runtime.runtime.connection as {
+        sql: (strings: TemplateStringsArray, ...values: readonly unknown[]) => Promise<readonly unknown[]>;
+      }
+    ).sql = vi.fn(() => Promise.resolve([]));
+
+    const bootstrap = await getAudienceBuilderBootstrap();
+
+    expect(bootstrap.commonAudiences).toEqual([]);
+  });
+
   it("counts and previews Insiders from the standing-list base instead of approved contacts or newsletter subscribers", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");
