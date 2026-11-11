@@ -42,7 +42,6 @@ import {
   summarizeResidenceStates,
   toStandingListAudienceMembers,
   type AudienceMember,
-  type BoxAudiencePlan,
   type StandingListAudienceMember,
   type SmsBroadcastAudienceMember,
   type SmsBroadcastDropReason,
@@ -52,7 +51,6 @@ import type { UiError, UiResult, UiSuccess } from "@/src/server/ui-result";
 
 import { requireAdmin } from "@/src/server/auth/session";
 import { requireVolunteerSession, requireWorkspace } from "@/src/server/auth/workspace-access";
-import { readWebEnv } from "@/src/server/env";
 import {
   countBroadcastUploadedRecipients,
   getStage1WebRuntime,
@@ -101,7 +99,7 @@ export interface CampaignProjectOption {
   readonly aliasHint: string | null;
   readonly connectedToProjectId: string | null;
   readonly isSubProject: boolean;
-  /** Only read in subscription-box mode; false falls back to memberships. */
+  /** False falls back to memberships inside the box resolver. */
   readonly hasSubscriptionBox?: boolean;
 }
 
@@ -123,7 +121,6 @@ export interface AudienceBuilderBootstrap {
   readonly activeSmsSender: ActiveSmsSender | null;
   readonly commonAudiences?: readonly CommonAudienceOption[];
   readonly commonAudiencesLastSyncedAt?: string | null;
-  readonly projectAudienceSource?: "membership" | "subscription_box";
 }
 
 export interface CommonAudienceOption {
@@ -699,9 +696,9 @@ async function createResolver(input?: { readonly forceMembership?: boolean }) {
       settingsProjects: runtime.settings.projects,
     },
   });
-  return !input?.forceMembership &&
-    readWebEnv().PROJECT_AUDIENCE_SOURCE === "subscription_box"
-    ? createSubscriptionBoxAudienceResolver({
+  return input?.forceMembership
+    ? membershipResolver
+    : createSubscriptionBoxAudienceResolver({
         repositories: {
           contacts: runtime.repositories.contacts,
           contactMemberships: runtime.repositories.contactMemberships,
@@ -711,8 +708,7 @@ async function createResolver(input?: { readonly forceMembership?: boolean }) {
         },
         source: runtime.subscriptionBoxAudienceSource,
         membershipResolver,
-      })
-    : membershipResolver;
+      });
 }
 
 async function loadUploadedAudience(
@@ -1541,11 +1537,8 @@ export async function getCampaignWizardDraft(
 export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBootstrap> {
   await requireVolunteerSession();
   const runtime = await getStage1WebRuntime();
-  const projectAudienceSource = readWebEnv().PROJECT_AUDIENCE_SOURCE;
   const projectBoxes =
-    projectAudienceSource === "subscription_box"
-      ? await runtime.subscriptionBoxAudienceSource.loadProjectBoxes()
-      : new Map();
+    await runtime.subscriptionBoxAudienceSource.loadProjectBoxes();
   const allConnectedProjects = (
     await runtime.settings.projects.listAll()
   ).filter(
@@ -1664,7 +1657,6 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       activeSmsSender,
       commonAudiences,
       commonAudiencesLastSyncedAt,
-      projectAudienceSource,
     };
   }
 
@@ -1701,7 +1693,6 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     activeSmsSender,
     commonAudiences,
     commonAudiencesLastSyncedAt,
-    projectAudienceSource,
   };
 }
 
@@ -2371,15 +2362,12 @@ export async function loadMemberStatusCountsForProjects(
       );
     }
 
-    // In subscription-box mode a pill counts only people whose box is ticked
-    // (the same rule the audience uses), and Lead adds synthetic leads.
-    const boxPlans =
-      readWebEnv().PROJECT_AUDIENCE_SOURCE === "subscription_box"
-        ? await loadSubscriptionBoxPlans(
-            runtime.subscriptionBoxAudienceSource,
-            normalizedProjectIds,
-          )
-        : new Map<string, BoxAudiencePlan>();
+    // A pill counts only people whose box is ticked (the same rule the
+    // audience uses), and Lead adds synthetic leads.
+    const boxPlans = await loadSubscriptionBoxPlans(
+      runtime.subscriptionBoxAudienceSource,
+      normalizedProjectIds,
+    );
     const counts = new Map<ExpeditionMemberStatus, Set<string>>();
 
     for (const membership of memberships) {

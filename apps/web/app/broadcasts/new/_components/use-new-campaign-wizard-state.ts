@@ -76,9 +76,6 @@ function defaultAudienceModeForSenderType(
 export function readAllowedAudienceModesForSenderType(
   senderType: CampaignSenderType | null,
   launchType: LaunchType,
-  projectAudienceSource: NonNullable<
-    AudienceBuilderBootstrap["projectAudienceSource"]
-  > = "membership",
 ): readonly Exclude<AudienceInitialFilter, "salesforce_lists">[] {
   if (launchType === "sms") {
     return ["project_status", "specific", "csv_upload"];
@@ -88,9 +85,7 @@ export function readAllowedAudienceModesForSenderType(
     ? ["specific", "all_available", "csv_upload"]
     : [
         "project_status",
-        ...(projectAudienceSource === "subscription_box"
-          ? (["project_subscribed"] as const)
-          : []),
+        "project_subscribed",
         "specific",
         "csv_upload",
       ];
@@ -854,9 +849,8 @@ export function useNewCampaignWizardState({
       readAllowedAudienceModesForSenderType(
         selectedSenderType,
         launchType,
-        bootstrap.projectAudienceSource ?? "membership",
       ),
-    [bootstrap.projectAudienceSource, launchType, selectedSenderType],
+    [launchType, selectedSenderType],
   );
   const kind =
     launchType === "sms"

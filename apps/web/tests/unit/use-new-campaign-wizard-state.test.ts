@@ -33,6 +33,7 @@ describe("use-new-campaign-wizard-state audience mode gating", () => {
       readAllowedAudienceModesForSenderType("project", "normal_email"),
     ).toEqual([
       "project_status",
+      "project_subscribed",
       "specific",
       "csv_upload",
     ]);
@@ -42,23 +43,7 @@ describe("use-new-campaign-wizard-state audience mode gating", () => {
       "csv_upload",
     ]);
     expect(
-      readAllowedAudienceModesForSenderType(
-        "project",
-        "normal_email",
-        "subscription_box",
-      ),
-    ).toEqual([
-      "project_status",
-      "project_subscribed",
-      "specific",
-      "csv_upload",
-    ]);
-    expect(
-      readAllowedAudienceModesForSenderType(
-        "project",
-        "sms",
-        "subscription_box",
-      ),
+      readAllowedAudienceModesForSenderType("project", "sms"),
     ).not.toContain("project_subscribed");
   });
 });

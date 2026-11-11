@@ -888,7 +888,7 @@ describe("campaign audience data source", () => {
     expect(count).toMatchObject({ ok: true, data: { count: 1 } });
   });
 
-  it("uses boxes only for project email when the audience-source switch is enabled", async () => {
+  it("uses boxes for project email while SMS remains membership-based", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");
     }
@@ -1052,7 +1052,6 @@ describe("campaign audience data source", () => {
       initialFilter: "project_status" as const,
     };
 
-    vi.stubEnv("PROJECT_AUDIENCE_SOURCE", "subscription_box");
     await expect(
       resolveAudienceCountAction({
         runId: "box-source-count",
@@ -1074,14 +1073,16 @@ describe("campaign audience data source", () => {
         launchType: "normal_email",
       }),
     ).resolves.toMatchObject({ ok: true, data: { count: 1 } });
-    await expect(
-      resolveStoredCampaignAudience({
-        kind: "project",
-        criteria,
-        at: new Date(),
-        launchType: "sms",
-      }),
-    ).resolves.toHaveLength(2);
+    const smsAudience = await resolveStoredCampaignAudience({
+      kind: "project",
+      criteria,
+      at: new Date(),
+      launchType: "sms",
+    });
+    expect(smsAudience.map((member) => member.contactId)).toEqual([
+      "ticked-contact",
+      "unticked-contact",
+    ]);
 
     await expect(
       loadAudienceStateCountsAction({
@@ -1096,18 +1097,6 @@ describe("campaign audience data source", () => {
       }),
     ).resolves.toMatchObject({ ok: true, data: { total: 2 } });
 
-    vi.stubEnv("PROJECT_AUDIENCE_SOURCE", "membership");
-    await expect(
-      resolveAudienceCountAction({
-        runId: "membership-source-count",
-        kind: "project",
-        criteria,
-        launchType: "normal_email",
-      }),
-    ).resolves.toMatchObject({ ok: true, data: { count: 2 } });
-    const membershipPills = await loadMemberStatusCountsForProjects(["project-boxed"]);
-    expect(membershipPills).toMatchObject({ ok: true, data: { Accepted: 2 } });
-    expect(membershipPills.ok && "Lead" in membershipPills.data).toBe(false);
   });
 
   it("filters all-approved newsletter audiences at freeze instead of falling back to subscribers", async () => {

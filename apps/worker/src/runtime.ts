@@ -171,14 +171,6 @@ const workerWebConfigSchema = z.object({
   revalidateToken: z.string().min(1),
 });
 
-const workerProjectAudienceSourceSchema = z
-  .preprocess(
-    (value) =>
-      value === "subscription_box" ? "subscription_box" : "membership",
-    z.enum(["membership", "subscription_box"]),
-  )
-  .default("membership");
-
 const workerConfigSchema = z.object({
   connectionString: z.string().min(1),
   concurrency: z.number().int().positive().default(1),
@@ -186,7 +178,6 @@ const workerConfigSchema = z.object({
   capture: workerCaptureConfigSchema,
   mailchimpTransition: workerMailchimpTransitionConfigSchema,
   sms: workerSmsConfigSchema,
-  projectAudienceSource: workerProjectAudienceSourceSchema,
   web: workerWebConfigSchema.optional(),
 });
 
@@ -409,7 +400,6 @@ function buildCampaignSendDependencies(input: {
   readonly settings: ReturnType<
     typeof createStage2RepositoryBundleFromConnection
   >;
-  readonly projectAudienceSource: "membership" | "subscription_box";
 }): CampaignSendTaskDependencies | undefined {
   const serverToken = readOptionalTrimmedEnv(input.env.POSTMARK_SERVER_TOKEN);
   const baseUrl =
@@ -443,20 +433,17 @@ function buildCampaignSendDependencies(input: {
       settingsProjects: input.settings.projects,
     },
   });
-  const audienceResolver =
-    input.projectAudienceSource === "subscription_box"
-      ? createSubscriptionBoxAudienceResolver({
-          repositories: {
-            contacts: input.repositories.contacts,
-            contactMemberships: input.repositories.contactMemberships,
-            canonicalEvents: input.repositories.canonicalEvents,
-            projectDimensions: input.repositories.projectDimensions,
-            settingsProjects: input.settings.projects,
-          },
-          source: createSubscriptionBoxAudienceSource(input.connection.db),
-          membershipResolver: membershipAudienceResolver,
-        })
-      : membershipAudienceResolver;
+  const audienceResolver = createSubscriptionBoxAudienceResolver({
+    repositories: {
+      contacts: input.repositories.contacts,
+      contactMemberships: input.repositories.contactMemberships,
+      canonicalEvents: input.repositories.canonicalEvents,
+      projectDimensions: input.repositories.projectDimensions,
+      settingsProjects: input.settings.projects,
+    },
+    source: createSubscriptionBoxAudienceSource(input.connection.db),
+    membershipResolver: membershipAudienceResolver,
+  });
   const exclusionFilter = createExclusionFilter({
     repositories: {
       campaignRuns: input.campaigns.campaignRuns,
@@ -1293,7 +1280,6 @@ export function readWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig | null {
     },
     mailchimpTransition: readMailchimpTransitionConfig(env),
     sms: readWorkerSmsConfig(env),
-    projectAudienceSource: env.PROJECT_AUDIENCE_SOURCE,
     web: readOptionalWebConfig(env),
   });
 }
@@ -1367,7 +1353,6 @@ export async function createStage1WorkerRuntimeServices(
     campaigns,
     repositories,
     settings,
-    projectAudienceSource: config.projectAudienceSource,
   });
   const campaignResend: CampaignResendTaskDependencies | undefined =
     campaignSend === undefined

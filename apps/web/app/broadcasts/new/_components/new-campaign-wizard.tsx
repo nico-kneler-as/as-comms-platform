@@ -1186,10 +1186,7 @@ export function NewCampaignWizard({
                   }
                   projectOptions={effectiveProjectOptions}
                   singleSelectProjects={singleSelectProjects}
-                  subscriptionBoxMode={
-                    bootstrap.projectAudienceSource === "subscription_box" &&
-                    launchType !== "sms"
-                  }
+                  subscriptionBoxMode={launchType !== "sms"}
                   statusOptions={bootstrap.statuses}
                   statusCounts={statusCounts}
                   statusCountsLoading={statusCountsLoading}
