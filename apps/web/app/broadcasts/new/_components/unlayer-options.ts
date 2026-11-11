@@ -37,6 +37,8 @@ export const CUSTOM_CSS = `
 }
 ` as const;
 
+// Editor-only stand-in. renderBroadcastEmail strips this block and the sent
+// email carries the address from org_settings (formatOrgAddress).
 export const FOOTER_HTML = `<!-- as-locked-footer-start -->
 <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 16px;">
 <div style="color:#64748b;font-size:12px;line-height:1.6;">
@@ -45,7 +47,7 @@ export const FOOTER_HTML = `<!-- as-locked-footer-start -->
   <a href="#" target="_blank" rel="noreferrer noopener" style="color:#64748b;text-decoration:underline;">Unsubscribe from all Adventure Scientists emails</a>
 </div>
 <div style="color:#64748b;font-size:12px;line-height:1.6;margin-top:8px;">
-  Adventure Scientists • 1881 9th St, Suite 201 • Bozeman, MT 59715
+  Adventure Scientists • 219 North 19th Avenue • Bozeman, Montana 59718
 </div>
 <!-- as-locked-footer-end -->` as const;
 

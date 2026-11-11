@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { CampaignKind, ContactConsentRecord } from "@as-comms/contracts";
-import { createConsentLedger } from "@as-comms/domain";
+import { createConsentLedger, formatOrgAddress } from "@as-comms/domain";
 
 import type { Stage1WebRuntime } from "@/src/server/stage1-runtime";
 
@@ -127,18 +127,6 @@ export function createDirectNewsletterUnsubscribeToken(
   ].join(".");
 }
 
-function formatAddress(input: Awaited<ReturnType<Stage1WebRuntime["campaigns"]["orgSettings"]["read"]>>): string | null {
-  const line1 = input.physicalAddressLine1.trim();
-  const line2 = input.physicalAddressLine2.trim();
-  const city = input.physicalCity.trim();
-  const state = input.physicalState.trim();
-  const zip = input.physicalZip.trim();
-  const country = input.physicalCountry.trim();
-  const cityLine = [city, state, zip].filter((part) => part.length > 0).join(", ");
-  const parts = [line1, line2, cityLine, country].filter((part) => part.length > 0);
-  return parts.length === 0 ? null : parts.join(" • ");
-}
-
 function buildInvalidModel(token: string, footerAddress: string | null): UnsubscribePageModel {
   return {
     state: "invalid",
@@ -253,7 +241,7 @@ export async function loadUnsubscribePageModel(input: {
   readonly requestedAllBanner: boolean;
   readonly confirmed: boolean;
 }): Promise<UnsubscribePageModel> {
-  const footerAddress = formatAddress(await input.runtime.campaigns.orgSettings.read());
+  const footerAddress = formatOrgAddress(await input.runtime.campaigns.orgSettings.read());
   const target = await resolveUnsubscribeTarget(input.runtime, input.token);
 
   if (target === null) {
