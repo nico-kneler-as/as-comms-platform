@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createStage5RepositoryBundle } from "../src/index.js";
+import {
+  createStage5RepositoryBundle,
+  salesforceSubscriptionPreferences,
+} from "../src/index.js";
 import { createTestStage1Context } from "./helpers.js";
 
 type TestContext = Awaited<ReturnType<typeof createTestStage1Context>>;
@@ -17,6 +20,39 @@ function record(
     hasOptedOutOfEmail,
     salesforceContactId: `003-${String(index)}`,
     salesforceLastModifiedAt: new Date("2026-11-06T12:00:00.000Z"),
+  };
+}
+
+function subscriptionPreference(
+  salesforceRecordId: string,
+  input: {
+    readonly email: string;
+    readonly unsubscribedFromAll: boolean;
+    readonly isDeleted?: boolean;
+  },
+) {
+  const now = new Date("2026-11-06T12:00:00.000Z");
+  return {
+    salesforceRecordId,
+    email: input.email,
+    salesforceContactId: null,
+    generalNewsletter: false,
+    oregonShoresNewsletter: false,
+    pnwForestMonitoring: false,
+    beechAndButternut: false,
+    trackingWhitebarkPine: false,
+    coralReefExpansion: false,
+    monitoringKillerWhalesProject: false,
+    unsubscribedFromAll: input.unsubscribedFromAll,
+    unsubscribedAt: null,
+    emailBounced: false,
+    recordCreationSource: null,
+    isDeleted: input.isDeleted ?? false,
+    sfLastModifiedAt: now,
+    sfLastModifiedById: null,
+    capturedAt: now,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -85,6 +121,30 @@ describe("Salesforce contact-states repository", () => {
     );
     expect(await repository.findByEmails(["person-2@example.org"])).toEqual(
       new Map([["person-2@example.org", null]]),
+    );
+  });
+
+  it("lists active Salesforce unsubscribed-from-all emails normalized", async () => {
+    context = await createTestStage1Context();
+    const repository = createStage5RepositoryBundle(context.db).salesforceContactStates;
+    await context.db.insert(salesforceSubscriptionPreferences).values([
+      subscriptionPreference("all", {
+        email: " All@Example.ORG ",
+        unsubscribedFromAll: true,
+      }),
+      subscriptionPreference("not-all", {
+        email: "not-all@example.org",
+        unsubscribedFromAll: false,
+      }),
+      subscriptionPreference("deleted", {
+        email: "deleted@example.org",
+        unsubscribedFromAll: true,
+        isDeleted: true,
+      }),
+    ]);
+
+    expect(await repository.listUnsubscribedFromAllEmails()).toEqual(
+      new Set(["all@example.org"]),
     );
   });
 });

@@ -641,6 +641,96 @@ describe("Stage 5 campaigns repositories", () => {
     expect(allScopeNewsletterOptOut).toBe(true);
   });
 
+  it("lists contact all opt-outs by normalized primary and identity email", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+    const at = new Date("2026-05-15T12:00:00.000Z");
+
+    await context.repositories.contacts.upsert({
+      id: "contact-primary",
+      salesforceContactId: null,
+      displayName: "Primary",
+      primaryEmail: " Primary@Example.ORG ",
+      primaryPhone: null,
+      createdAt: at.toISOString(),
+      updatedAt: at.toISOString(),
+    });
+    await context.repositories.contacts.upsert({
+      id: "contact-identity",
+      salesforceContactId: null,
+      displayName: "Identity",
+      primaryEmail: null,
+      primaryPhone: null,
+      createdAt: at.toISOString(),
+      updatedAt: at.toISOString(),
+    });
+    await context.repositories.contacts.upsert({
+      id: "contact-project-only",
+      salesforceContactId: null,
+      displayName: "Project only",
+      primaryEmail: "project-only@example.org",
+      primaryPhone: null,
+      createdAt: at.toISOString(),
+      updatedAt: at.toISOString(),
+    });
+    await context.repositories.contacts.upsert({
+      id: "contact-future",
+      salesforceContactId: null,
+      displayName: "Future",
+      primaryEmail: "future@example.org",
+      primaryPhone: null,
+      createdAt: at.toISOString(),
+      updatedAt: at.toISOString(),
+    });
+    await context.repositories.contactIdentities.upsert({
+      id: "identity-email",
+      contactId: "contact-identity",
+      kind: "email",
+      normalizedValue: " Identity@Example.ORG ",
+      isPrimary: false,
+      source: "manual",
+      verifiedAt: null,
+    });
+
+    await campaigns.contactConsent.recordOptOut(
+      "contact-primary",
+      { type: "all" },
+      "admin_action",
+      undefined,
+      "primary@example.org",
+      at,
+    );
+    await campaigns.contactConsent.recordOptOut(
+      "contact-identity",
+      { type: "all" },
+      "admin_action",
+      undefined,
+      "identity@example.org",
+      at,
+    );
+    await campaigns.contactConsent.recordOptOut(
+      "contact-project-only",
+      { type: "project", id: "project-1" },
+      "admin_action",
+      undefined,
+      "project-only@example.org",
+      at,
+    );
+    await campaigns.contactConsent.recordOptOut(
+      "contact-future",
+      { type: "all" },
+      "admin_action",
+      undefined,
+      "future@example.org",
+      new Date("2026-05-16T12:00:00.000Z"),
+    );
+
+    expect(await campaigns.contactConsent.listOptedOutEmails("all", at)).toEqual(
+      new Set(["primary@example.org", "identity@example.org"]),
+    );
+  });
+
   it("returns a unified projection across Postmark and Mailchimp-backed runs", async () => {
     const context = await createTestStage1Context();
     contexts.push(context);
