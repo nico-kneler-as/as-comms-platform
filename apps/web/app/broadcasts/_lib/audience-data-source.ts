@@ -1637,8 +1637,13 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     runtime.campaigns.salesforceAudienceLists.listAll(),
     runtime.campaigns.salesforceAudienceLists.lastSyncedAt(),
   ]);
+  // Hidden for now (2026-11-11): the synced "insiders" list is the Salesforce
+  // "VIP?" checkbox, which is not Gregg's Insiders list (only 24 of his 436
+  // addresses are marked VIP?). Add a kind back here once the real list lives
+  // in Salesforce. Until then, org senders reach a list with a CSV upload.
+  const commonAudienceKinds: readonly string[] = [];
   const commonAudiences = allAudienceLists
-    .filter((list) => list.kind === "insiders")
+    .filter((list) => commonAudienceKinds.includes(list.kind))
     .map(
       (list) =>
         ({
