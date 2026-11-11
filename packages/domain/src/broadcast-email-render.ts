@@ -65,7 +65,9 @@ export function formatOrgAddress(input: OrgSettingsRecord): string | null {
   const state = input.physicalState.trim();
   const zip = input.physicalZip.trim();
   const country = input.physicalCountry.trim();
-  const cityLine = [city, state, zip].filter((part) => part.length > 0).join(", ");
+  // US style: "Bozeman, Montana 59718" (no comma between state and zip).
+  const stateZip = [state, zip].filter((part) => part.length > 0).join(" ");
+  const cityLine = [city, stateZip].filter((part) => part.length > 0).join(", ");
   const parts = [line1, line2, cityLine, country].filter((part) => part.length > 0);
   return parts.length === 0 ? null : parts.join(" • ");
 }

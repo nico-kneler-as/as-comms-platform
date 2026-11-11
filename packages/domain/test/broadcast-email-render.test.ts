@@ -7,6 +7,7 @@ import {
   buildPostmarkUnsubscribePlaceholderHtml,
   buildBroadcastUnsubscribeUrls,
   formatBroadcastFromHeader,
+  formatOrgAddress,
   renderBroadcastEmail,
   stripLockedFooterBlock,
   type BroadcastEmailRenderInput,
@@ -22,6 +23,26 @@ describe("broadcast-email-render helpers", () => {
     ).toBe(
       '"Adventure Scientists – PNW Biodiversity" <pnwbio@adventurescientists.org>',
     );
+  });
+
+  it("formats the org address US-style, with no comma between state and zip", () => {
+    const base = {
+      id: "singleton" as const,
+      physicalAddressLine1: "Adventure Scientists",
+      physicalAddressLine2: "219 North 19th Avenue",
+      physicalCity: "Bozeman",
+      physicalState: "Montana",
+      physicalZip: "59718",
+      physicalCountry: "USA",
+      createdAt: "2026-11-11T00:00:00.000Z",
+      updatedAt: "2026-11-11T00:00:00.000Z",
+    };
+    expect(formatOrgAddress(base)).toBe(
+      "Adventure Scientists • 219 North 19th Avenue • Bozeman, Montana 59718 • USA",
+    );
+    expect(
+      formatOrgAddress({ ...base, physicalAddressLine2: "", physicalState: "" }),
+    ).toBe("Adventure Scientists • Bozeman, 59718 • USA");
   });
 
   it("falls back to the org name when no project alias exists", () => {
