@@ -26,9 +26,11 @@ async function seedTarget(
     readonly token: string;
     readonly contactId?: string | null;
     readonly newsletterSubscriberId?: string | null;
+    readonly email?: string;
   },
 ) {
   const campaigns = (await getStage1WebRuntime()).campaigns;
+  const email = input.email ?? "taylor@example.org";
   const contactId =
     input.contactId === undefined
       ? input.kind === "project"
@@ -49,7 +51,7 @@ async function seedTarget(
       id: contactId,
       salesforceContactId: null,
       displayName: "Taylor Recipient",
-      primaryEmail: "taylor@example.org",
+      primaryEmail: email,
       primaryPhone: null,
       createdAt: "2026-05-15T12:00:00.000Z",
       updatedAt: "2026-05-15T12:00:00.000Z",
@@ -79,7 +81,7 @@ async function seedTarget(
               updated_at
             ) values (
               gen_random_uuid(),
-              ${"taylor@example.org"},
+              ${email},
               ${"Taylor"},
               ${"Recipient"},
               ${"subscribed"},
@@ -171,7 +173,7 @@ async function seedTarget(
       id: `snapshot-${input.token}`,
       contactId,
       newsletterSubscriberId: persistedNewsletterSubscriberId,
-      frozenEmail: "taylor@example.org",
+      frozenEmail: email,
       frozenFirstName: "Taylor",
       frozenProjectName:
         input.kind === "project" ? "Beech Leaf Disease" : null,
@@ -651,6 +653,119 @@ describe("public unsubscribe page", () => {
       reason: "platform_optout",
       source: "recipient_click",
     });
+  });
+
+  it("records all consent for a platform contact owning a newsletter recipient email", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const email = "newsletter-contact-owner@example.org";
+    await runtime.context.repositories.contacts.upsert({
+      id: "contact-newsletter-owner",
+      salesforceContactId: null,
+      displayName: "Newsletter owner",
+      primaryEmail: email,
+      primaryPhone: null,
+      createdAt: "2026-05-15T12:00:00.000Z",
+      updatedAt: "2026-05-15T12:00:00.000Z",
+    });
+    await seedTarget(runtime, {
+      kind: "newsletter",
+      token: "token-news-contact-owner",
+      contactId: null,
+      newsletterSubscriberId: "newsletter-contact-owner",
+      email,
+    });
+
+    const response = await unsubscribeAllPost(
+      new Request("http://localhost/u/token-news-contact-owner/all", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-news-contact-owner" }) },
+    );
+
+    expect(response.status).toBe(303);
+    await expect(
+      (await getStage1WebRuntime()).campaigns.contactConsent.listForContact(
+        "contact-newsletter-owner",
+      ),
+    ).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scopeType: "all",
+        source: "recipient_click",
+        sourceRunId: "run-token-news-contact-owner",
+      }),
+    ]));
+  });
+
+  it("records an all-opt-out outbox row with the newsletter suppression for a subscriber without a contact", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const email = "newsletter-no-contact@example.org";
+    await seedTarget(runtime, {
+      kind: "newsletter",
+      token: "token-news-no-contact",
+      contactId: null,
+      newsletterSubscriberId: "newsletter-no-contact",
+      email,
+    });
+
+    const response = await unsubscribeAllPost(
+      new Request("http://localhost/u/token-news-no-contact/all", { method: "POST" }),
+      { params: Promise.resolve({ token: "token-news-no-contact" }) },
+    );
+
+    expect(response.status).toBe(303);
+    await expect(
+      (await getStage1WebRuntime()).campaigns.newsletterSuppressions.findByEmail(email),
+    ).resolves.toMatchObject({
+      email,
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+    const outboxResult = await runtime.context.db.execute(sql`
+      select email, contact_id, event_kind from salesforce_subscription_outbox
+      where email = ${email}
+    `);
+    const outboxRows =
+      (outboxResult as { rows?: readonly Record<string, unknown>[] }).rows ?? [];
+    expect(outboxRows).toEqual([
+      expect.objectContaining({
+        email,
+        contact_id: null,
+        event_kind: "all_opt_out",
+      }),
+    ]);
+  });
+
+  it("keeps the no-contact, no-subscriber all-click behavior on the suppression list", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const email = "csv-no-contact@example.org";
+    await seedTarget(runtime, {
+      kind: "project",
+      token: "token-project-no-contact",
+      contactId: null,
+      newsletterSubscriberId: null,
+      email,
+    });
+
+    const response = await unsubscribeAllPost(
+      new Request("http://localhost/u/token-project-no-contact/all", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-project-no-contact" }) },
+    );
+
+    expect(response.status).toBe(303);
+    await expect(
+      (await getStage1WebRuntime()).campaigns.suppressionList.isSuppressed(
+        email,
+        new Date(),
+      ),
+    ).resolves.toBe(true);
   });
 
   it("matches the project snapshot", () => {

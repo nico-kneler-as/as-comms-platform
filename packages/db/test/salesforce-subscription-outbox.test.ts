@@ -95,6 +95,39 @@ describe("salesforce subscription outbox", () => {
     expect((await context.db.select().from(salesforceSubscriptionOutbox))).toHaveLength(1);
   });
 
+  it("records a newsletter suppression and one all-opt-out outbox row together", async () => {
+    const { context, campaigns } = await setup();
+    const occurredAt = new Date("2026-02-04T04:05:06.000Z");
+
+    await campaigns.newsletterSuppressions.recordAllOptOut(
+      " Subscriber@Example.ORG ",
+      occurredAt,
+    );
+
+    await expect(
+      campaigns.newsletterSuppressions.findByEmail("subscriber@example.org"),
+    ).resolves.toMatchObject({
+      email: "subscriber@example.org",
+      reason: "platform_optout",
+      source: "recipient_click",
+    });
+    expect(
+      (await context.db.select().from(salesforceSubscriptionOutbox)).map((row) => ({
+        email: row.email,
+        contactId: row.contactId,
+        eventKind: row.eventKind,
+        occurredAt: row.occurredAt,
+      })),
+    ).toEqual([
+      {
+        email: "subscriber@example.org",
+        contactId: null,
+        eventKind: "all_opt_out",
+        occurredAt,
+      },
+    ]);
+  });
+
   it("rolls back consent when the outbox insert fails", async () => {
     const { context, campaigns } = await setup();
     await insertContact(context, "contact-rollback", "rollback@example.org");

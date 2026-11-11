@@ -19,7 +19,7 @@ describe("salesforce-contact-states-sync", () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const task = createSalesforceContactStatesSyncTask({
       capture: { captureContactStates: vi.fn().mockResolvedValue(snapshot) },
-      repository: { replaceAll, findByEmails: vi.fn(), listOptedOutEmails: vi.fn(), lastSyncedAt: vi.fn(), countAll: vi.fn() },
+      repository: { replaceAll, findByEmails: vi.fn(), listOptedOutEmails: vi.fn(), listUnsubscribedFromAllEmails: vi.fn(), lastSyncedAt: vi.fn(), countAll: vi.fn() },
       logger,
     });
 
@@ -37,7 +37,7 @@ describe("salesforce-contact-states-sync", () => {
     const replaceAll = vi.fn();
     const task = createSalesforceContactStatesSyncTask({
       capture: { captureContactStates: vi.fn().mockRejectedValue(new Error("403 access denied")) },
-      repository: { replaceAll, findByEmails: vi.fn(), listOptedOutEmails: vi.fn(), lastSyncedAt: vi.fn(), countAll: vi.fn() },
+      repository: { replaceAll, findByEmails: vi.fn(), listOptedOutEmails: vi.fn(), listUnsubscribedFromAllEmails: vi.fn(), lastSyncedAt: vi.fn(), countAll: vi.fn() },
       logger: { info: vi.fn(), error: vi.fn() },
     });
 

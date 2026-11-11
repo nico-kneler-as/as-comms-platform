@@ -205,6 +205,7 @@ import {
   salesforceAudienceLists,
   salesforceContactStates,
   salesforceReconciliationRuns,
+  salesforceSubscriptionPreferences,
   salesforceEventContext,
   simpleTextingMessageDetails,
   suppressionList,
@@ -462,6 +463,10 @@ export interface Stage5RepositoryBundle {
       },
       at: Date,
     ): Promise<boolean>;
+    listOptedOutEmails(
+      scopeType: "all" | "newsletter",
+      at: Date,
+    ): Promise<ReadonlySet<string>>;
     listForContact(contactId: string): Promise<readonly ContactConsentRecord[]>;
   };
   readonly suppressionList: {
@@ -494,6 +499,10 @@ export interface Stage5RepositoryBundle {
     upsert(
       input: UpsertNewsletterSuppressionInput,
       occurredAt?: Date,
+    ): Promise<NewsletterSuppressionRecord>;
+    recordAllOptOut(
+      email: string,
+      occurredAt: Date,
     ): Promise<NewsletterSuppressionRecord>;
     findByEmail(email: string): Promise<NewsletterSuppressionRecord | null>;
   };
@@ -580,6 +589,7 @@ export interface SalesforceContactStatesRepository {
   replaceAll(records: readonly SalesforceContactStateRecord[], syncedAt: Date): Promise<void>;
   findByEmails(normalizedEmails: readonly string[]): Promise<ReadonlyMap<string, ResidenceStateCode | null>>;
   listOptedOutEmails(): Promise<ReadonlySet<string>>;
+  listUnsubscribedFromAllEmails(): Promise<ReadonlySet<string>>;
   lastSyncedAt(): Promise<Date | null>;
   countAll(): Promise<number>;
 }
@@ -8110,6 +8120,20 @@ function createSalesforceContactStatesRepository(
       return new Set(rows.map((row) => row.normalizedEmail));
     },
 
+    async listUnsubscribedFromAllEmails() {
+      const normalizedEmail = sql<string>`lower(btrim(${salesforceSubscriptionPreferences.email}))`;
+      const rows = await db
+        .select({ normalizedEmail })
+        .from(salesforceSubscriptionPreferences)
+        .where(
+          and(
+            eq(salesforceSubscriptionPreferences.unsubscribedFromAll, true),
+            eq(salesforceSubscriptionPreferences.isDeleted, false),
+          ),
+        );
+      return new Set(rows.map((row) => row.normalizedEmail));
+    },
+
     async lastSyncedAt() {
       const [row] = await db
         .select({ syncedAt: salesforceContactStates.syncedAt })
@@ -8797,6 +8821,42 @@ export function createStage5RepositoryBundle(
         return row !== undefined;
       },
 
+      async listOptedOutEmails(scopeType, at) {
+        const normalizedPrimaryEmail = sql<string>`lower(btrim(${contacts.primaryEmail}))`;
+        const normalizedIdentityEmail = sql<string>`lower(btrim(${contactIdentities.normalizedValue}))`;
+        const [primaryRows, identityRows] = await Promise.all([
+          db
+            .select({ normalizedEmail: normalizedPrimaryEmail })
+            .from(contactConsent)
+            .innerJoin(contacts, eq(contacts.id, contactConsent.contactId))
+            .where(
+              and(
+                eq(contactConsent.scopeType, scopeType),
+                lte(contactConsent.optedOutAt, at),
+                isNotNull(contacts.primaryEmail),
+              ),
+            ),
+          db
+            .select({ normalizedEmail: normalizedIdentityEmail })
+            .from(contactConsent)
+            .innerJoin(
+              contactIdentities,
+              eq(contactIdentities.contactId, contactConsent.contactId),
+            )
+            .where(
+              and(
+                eq(contactConsent.scopeType, scopeType),
+                lte(contactConsent.optedOutAt, at),
+                eq(contactIdentities.kind, "email"),
+              ),
+            ),
+        ]);
+        return new Set([
+          ...primaryRows.map((row) => row.normalizedEmail),
+          ...identityRows.map((row) => row.normalizedEmail),
+        ]);
+      },
+
       async listForContact(contactId) {
         const rows = await db
           .select()
@@ -8925,6 +8985,22 @@ export function createStage5RepositoryBundle(
               occurredAt: occurredAt ?? new Date(),
             });
           }
+          return result;
+        });
+      },
+
+      async recordAllOptOut(email, occurredAt) {
+        return db.transaction(async (tx) => {
+          const result = await upsertNewsletterSuppression(tx as Stage1Database, {
+            email,
+            reason: "platform_optout",
+            source: "recipient_click",
+          });
+          await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+            email,
+            eventKind: "all_opt_out",
+            occurredAt,
+          });
           return result;
         });
       },

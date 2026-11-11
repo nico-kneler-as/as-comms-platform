@@ -12,6 +12,10 @@ interface ExclusionFilterRepositories {
       scope: { readonly type: "project" | "newsletter" | "all"; readonly id?: string },
       at: Date,
     ): Promise<boolean>;
+    listOptedOutEmails(
+      scopeType: "all" | "newsletter",
+      at: Date,
+    ): Promise<ReadonlySet<string>>;
   };
   readonly suppressionList: {
     isSuppressed(normalizedEmail: string, at: Date): Promise<boolean>;
@@ -21,6 +25,7 @@ interface ExclusionFilterRepositories {
   };
   readonly salesforceEmailOptOuts: {
     listOptedOutEmails(): Promise<ReadonlySet<string>>;
+    listUnsubscribedFromAllEmails(): Promise<ReadonlySet<string>>;
   };
 }
 
@@ -54,6 +59,8 @@ async function resolveExclusionReason(
   member: AudienceMember,
   at: Date,
   salesforceOptedOutEmails: ReadonlySet<string> | null,
+  allOptedOutEmails: ReadonlySet<string> | null,
+  newsletterOptedOutEmails: ReadonlySet<string> | null,
 ): Promise<ExcludedMember["reason"] | null> {
   if (await repositories.suppressionList.isSuppressed(normalizeEmail(member.frozenEmail), at)) {
     return "suppressed";
@@ -75,12 +82,13 @@ async function resolveExclusionReason(
   }
 
   if (
-    member.contactId !== null &&
-    await repositories.contactConsent.isOptedOut(
-      member.contactId,
-      { type: "all" },
-      at,
-    )
+    allOptedOutEmails?.has(normalizeEmail(member.frozenEmail)) === true ||
+    (member.contactId !== null &&
+      await repositories.contactConsent.isOptedOut(
+        member.contactId,
+        { type: "all" },
+        at,
+      ))
   ) {
     return "opted_out_all";
   }
@@ -100,12 +108,13 @@ async function resolveExclusionReason(
 
   if (
     run.kind === "newsletter" &&
-    member.contactId !== null &&
-    (await repositories.contactConsent.isOptedOut(
-      member.contactId,
-      { type: "newsletter" },
-      at,
-    ))
+    (newsletterOptedOutEmails?.has(normalizeEmail(member.frozenEmail)) === true ||
+      (member.contactId !== null &&
+        await repositories.contactConsent.isOptedOut(
+          member.contactId,
+          { type: "newsletter" },
+          at,
+        )))
   ) {
     return "opted_out_newsletter";
   }
@@ -122,9 +131,41 @@ export function createExclusionFilter(deps: {
       if (run === null) {
         throw new Error(`Campaign run ${runId} was not found.`);
       }
-      const salesforceOptedOutEmails = run.launchType === "sms"
-        ? null
-        : await deps.repositories.salesforceEmailOptOuts.listOptedOutEmails();
+      const emailExclusions = run.launchType === "sms"
+        ? {
+            salesforceOptedOutEmails: null,
+            allOptedOutEmails: null,
+            newsletterOptedOutEmails: null,
+          }
+        : await (async () => {
+            const [
+              salesforceOptedOutEmails,
+              contactAllOptedOutEmails,
+              salesforceAllOptedOutEmails,
+              newsletterOptedOutEmails,
+            ] = await Promise.all([
+              deps.repositories.salesforceEmailOptOuts.listOptedOutEmails(),
+              deps.repositories.contactConsent.listOptedOutEmails("all", at),
+              deps.repositories.salesforceEmailOptOuts.listUnsubscribedFromAllEmails(),
+              run.kind === "newsletter"
+                ? deps.repositories.contactConsent.listOptedOutEmails(
+                    "newsletter",
+                    at,
+                  )
+                : Promise.resolve(null),
+            ]);
+            return {
+              salesforceOptedOutEmails,
+              allOptedOutEmails: new Set([
+                ...contactAllOptedOutEmails,
+                ...salesforceAllOptedOutEmails,
+              ].map(normalizeEmail)),
+              newsletterOptedOutEmails:
+                newsletterOptedOutEmails === null
+                  ? null
+                  : new Set([...newsletterOptedOutEmails].map(normalizeEmail)),
+            };
+          })();
 
       const eligible: AudienceMember[] = [];
       const excluded: ExcludedMember[] = [];
@@ -135,7 +176,9 @@ export function createExclusionFilter(deps: {
           run,
           member,
           at,
-          salesforceOptedOutEmails,
+          emailExclusions.salesforceOptedOutEmails,
+          emailExclusions.allOptedOutEmails,
+          emailExclusions.newsletterOptedOutEmails,
         );
 
         if (reason === null) {

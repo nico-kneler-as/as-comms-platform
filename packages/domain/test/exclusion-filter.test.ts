@@ -13,7 +13,7 @@ function buildRun(
   input: {
     readonly launchType?: CampaignRunRecord["launchType"];
     readonly projectId?: string | null;
-    readonly initialFilter?: "csv_upload";
+    readonly initialFilter?: "csv_upload" | "salesforce_lists";
   } = {},
 ): CampaignRunRecord {
   const projectId =
@@ -90,7 +90,16 @@ function createFilter(input: {
   newsletterSuppressedEmails?: readonly string[];
   optedOutScopes?: ReadonlySet<string>;
   salesforceOptedOutEmails?: ReadonlySet<string>;
+  contactOptedOutEmails?: Partial<
+    Readonly<Record<"all" | "newsletter", ReadonlySet<string>>>
+  >;
+  salesforceAllOptedOutEmails?: ReadonlySet<string>;
   listSalesforceOptedOutEmails?: () => Promise<ReadonlySet<string>>;
+  listContactOptedOutEmails?: (
+    scopeType: "all" | "newsletter",
+    at: Date,
+  ) => Promise<ReadonlySet<string>>;
+  listSalesforceAllOptedOutEmails?: () => Promise<ReadonlySet<string>>;
 }): ExclusionFilter {
   const suppressed = new Set(input.suppressedEmails ?? []);
   const newsletterSuppressed = new Set(input.newsletterSuppressedEmails ?? []);
@@ -106,6 +115,9 @@ function createFilter(input: {
           Promise.resolve(
             optedOutScopes.has(`${contactId}:${scope.type}:${scope.id ?? "*"}`),
           ),
+        listOptedOutEmails: input.listContactOptedOutEmails ??
+          ((scopeType) =>
+            Promise.resolve(input.contactOptedOutEmails?.[scopeType] ?? new Set())),
       },
       suppressionList: {
         isSuppressed: (email) => Promise.resolve(suppressed.has(email)),
@@ -116,6 +128,8 @@ function createFilter(input: {
       salesforceEmailOptOuts: {
         listOptedOutEmails: input.listSalesforceOptedOutEmails ??
           (() => Promise.resolve(input.salesforceOptedOutEmails ?? new Set())),
+        listUnsubscribedFromAllEmails: input.listSalesforceAllOptedOutEmails ??
+          (() => Promise.resolve(input.salesforceAllOptedOutEmails ?? new Set())),
       },
     },
   });
@@ -361,6 +375,190 @@ describe("createExclusionFilter", () => {
     expect(result.excluded).toMatchObject([
       { contactId: "contact-1", reason: "opted_out_all" },
     ]);
+  });
+
+  it.each([
+    {
+      label: "a newsletter recipient without a contact id",
+      run: buildRun("newsletter"),
+      member: { ...buildMember(null), frozenEmail: "shared@example.org" },
+    },
+    {
+      label: "a Salesforce-list recipient owned by a different contact",
+      run: buildRun("project", { initialFilter: "salesforce_lists" }),
+      member: { ...buildMember("recipient-contact"), frozenEmail: "shared@example.org" },
+    },
+    {
+      label: "a project recipient owned by a different contact",
+      run: buildRun("project"),
+      member: { ...buildMember("recipient-contact"), frozenEmail: "shared@example.org" },
+    },
+  ])("excludes $label when the email has a contact all opt-out", async ({ run, member }) => {
+    const filter = createFilter({
+      run,
+      contactOptedOutEmails: { all: new Set(["shared@example.org"]) },
+    });
+
+    await expect(
+      filter.applyExclusions([member], run.id, new Date("2026-05-15T12:00:00.000Z")),
+    ).resolves.toMatchObject({ excluded: [{ reason: "opted_out_all" }] });
+  });
+
+  it.each(["project", "newsletter"] as const)(
+    "excludes Salesforce unsubscribed-from-all emails from %s runs",
+    async (kind) => {
+      const run = buildRun(kind);
+      const filter = createFilter({
+        run,
+        salesforceAllOptedOutEmails: new Set(["mirror@example.org"]),
+      });
+
+      await expect(
+        filter.applyExclusions(
+          [{ ...buildMember(null), frozenEmail: "mirror@example.org" }],
+          run.id,
+          new Date("2026-05-15T12:00:00.000Z"),
+        ),
+      ).resolves.toMatchObject({ excluded: [{ reason: "opted_out_all" }] });
+    },
+  );
+
+  it("applies email-owned newsletter opt-outs only to newsletter runs", async () => {
+    const contactOptedOutEmails = {
+      newsletter: new Set(["newsletter-only@example.org"]),
+    };
+    const newsletterRun = buildRun("newsletter");
+    const projectRun = buildRun("project");
+    const member = {
+      ...buildMember(null),
+      frozenEmail: "newsletter-only@example.org",
+    };
+
+    await expect(
+      createFilter({ run: newsletterRun, contactOptedOutEmails }).applyExclusions(
+        [member],
+        newsletterRun.id,
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      excluded: [{ reason: "opted_out_newsletter" }],
+    });
+    await expect(
+      createFilter({ run: projectRun, contactOptedOutEmails }).applyExclusions(
+        [member],
+        projectRun.id,
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ eligible: [{ frozenEmail: "newsletter-only@example.org" }] });
+  });
+
+  it("never applies project-scoped opt-outs by email to newsletter recipients", async () => {
+    const filter = createFilter({
+      run: buildRun("newsletter"),
+      optedOutScopes: new Set(["other-contact:project:project-a"]),
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "shared-project@example.org" }],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({
+      eligible: [{ frozenEmail: "shared-project@example.org" }],
+    });
+  });
+
+  it("does not apply a future all opt-out", async () => {
+    const filter = createFilter({
+      run: buildRun("project"),
+      listContactOptedOutEmails: (_scopeType, at) =>
+        Promise.resolve(
+          at >= new Date("2026-05-16T12:00:00.000Z")
+            ? new Set(["future@example.org"])
+            : new Set(),
+        ),
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "future@example.org" }],
+        "run-project",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ eligible: [{ frozenEmail: "future@example.org" }] });
+  });
+
+  it("normalizes all-opt-out email matches", async () => {
+    const filter = createFilter({
+      run: buildRun("project"),
+      contactOptedOutEmails: { all: new Set([" Owner@Example.ORG "]) },
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: " owner@example.org " }],
+        "run-project",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ excluded: [{ reason: "opted_out_all" }] });
+  });
+
+  it("does not load or apply the new email sets to SMS runs", async () => {
+    const listContactOptedOutEmails = vi.fn(() =>
+      Promise.resolve(new Set(["sms@example.org"])),
+    );
+    const listSalesforceAllOptedOutEmails = vi.fn(() =>
+      Promise.resolve(new Set(["sms@example.org"])),
+    );
+    const filter = createFilter({
+      run: buildRun("newsletter", { launchType: "sms" }),
+      listContactOptedOutEmails,
+      listSalesforceAllOptedOutEmails,
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "sms@example.org" }],
+        "run-newsletter",
+        new Date("2026-05-15T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ eligible: [{ frozenEmail: "sms@example.org" }] });
+    expect(listContactOptedOutEmails).not.toHaveBeenCalled();
+    expect(listSalesforceAllOptedOutEmails).not.toHaveBeenCalled();
+  });
+
+  it("loads each email opt-out set once for a multi-member exclusion call", async () => {
+    const listContactOptedOutEmails = vi.fn(() => Promise.resolve(new Set<string>()));
+    const listSalesforceAllOptedOutEmails = vi.fn(() => Promise.resolve(new Set<string>()));
+    const filter = createFilter({
+      run: buildRun("newsletter"),
+      listContactOptedOutEmails,
+      listSalesforceAllOptedOutEmails,
+    });
+
+    await filter.applyExclusions(
+      [
+        buildMember("contact-1"),
+        buildMember("contact-2"),
+        buildMember("contact-3"),
+      ],
+      "run-newsletter",
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+
+    expect(listContactOptedOutEmails).toHaveBeenCalledTimes(2);
+    expect(listContactOptedOutEmails).toHaveBeenNthCalledWith(
+      1,
+      "all",
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    expect(listContactOptedOutEmails).toHaveBeenNthCalledWith(
+      2,
+      "newsletter",
+      new Date("2026-05-15T12:00:00.000Z"),
+    );
+    expect(listSalesforceAllOptedOutEmails).toHaveBeenCalledTimes(1);
   });
 
   it("records the correct exclusion reasons across the stack", async () => {
