@@ -2449,12 +2449,9 @@ export async function uploadBroadcastAudienceCsvAction(input: {
     if (run === null) {
       return errorResult("campaign_not_found", "Broadcast draft not found.");
     }
-    if (run.kind !== "project") {
-      return errorResult(
-        "campaign_csv_upload_sender_unsupported",
-        "CSV import is only available for project senders.",
-      );
-    }
+    // Org senders (kind "newsletter") import CSVs too (#638): their recipients
+    // are one-off emails, and the unsubscribe routes and exclusion filter
+    // already handle them by email.
 
     const parsed = parseRecipientCsv(input.csvText);
     const uploadedRows: BroadcastUploadedRecipientInput[] =
