@@ -444,30 +444,16 @@ export function AudienceBuilderStep({
 
             {initialFilter === "audience_list" ? (
               <>
+                {/* A list send has no state filter (residence states don't
+                    apply to audience_list), so no filter panel here. */}
                 <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
                   <p className="text-[13px] leading-relaxed text-slate-600">
-                    This broadcast goes to the selected audience list, minus
-                    list opt-outs and other required suppressions.
+                    This broadcast goes to everyone on the list, minus people
+                    who left the list, unsubscribed from all Adventure
+                    Scientists email, or bounced. Leaving the newsletter does
+                    not remove someone from this list.
                   </p>
                 </section>
-                <AudienceFilterPanel
-                  criteria={criteria}
-                  projectOptions={[]}
-                  statusOptions={statusOptions}
-                  statusCounts={statusCounts}
-                  statusCountsLoading={statusCountsLoading}
-                  statusCountsErrorMessage={statusCountsErrorMessage}
-                  stateCounts={stateCounts}
-                  stateCountsLoading={stateCountsLoading}
-                  stateCountsErrorMessage={stateCountsErrorMessage}
-                  showProjectSection={false}
-                  showStatusSection={false}
-                  onProjectChange={onProjectChange}
-                  onToggleAllStatuses={onToggleAllStatuses}
-                  onStatusToggle={onStatusToggle}
-                  onStateToggle={onStateToggle}
-                  onClearStates={onClearStates}
-                />
                 <AudiencePreviewList
                   rows={previewRows}
                   loading={previewLoading}
