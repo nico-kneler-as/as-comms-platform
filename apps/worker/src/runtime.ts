@@ -34,6 +34,7 @@ import {
   createStage1NormalizationService,
   createStage1PersistenceService,
   createSubscriptionBoxAudienceResolver,
+  resolveAudienceListForRun,
   resolveUploadedAudienceForRun,
 } from "@as-comms/domain";
 import {
@@ -466,6 +467,8 @@ function buildCampaignSendDependencies(input: {
   const broadcastMessageStream =
     readOptionalTrimmedEnv(input.env.POSTMARK_BROADCAST_STREAM_ID) ??
     "broadcast";
+  const listMessageStream =
+    readOptionalTrimmedEnv(input.env.POSTMARK_LISTS_STREAM_ID) ?? "lists";
   const pacing = readCampaignSendPacingConfig(input.env);
 
   return {
@@ -476,6 +479,7 @@ function buildCampaignSendDependencies(input: {
         settingsProjects: input.settings.projects,
         settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
+        audienceLists: input.campaigns.audienceLists,
         broadcastWebVersions: {
           ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
           async storeRendered(runId, rendered) {
@@ -510,6 +514,24 @@ function buildCampaignSendDependencies(input: {
           },
         );
       },
+      resolveAudienceList: (run, at) => {
+        void at;
+        if (run.audienceListId == null) {
+          throw new Error(
+            `Campaign run ${run.id} is missing its audience list id.`,
+          );
+        }
+        return resolveAudienceListForRun(
+          {
+            audienceLists: input.campaigns.audienceLists,
+            contacts: input.repositories.contacts,
+          },
+          {
+            listId: run.audienceListId,
+            fromEmail: run.fromEmail,
+          },
+        );
+      },
       resolveNewsletterAudience: async () =>
         (await listSendableNewsletterSubscribers(input.connection.db)).map((subscriber) => ({
           contactId: null,
@@ -534,6 +556,7 @@ function buildCampaignSendDependencies(input: {
       postmarkClient,
       appUrl,
       broadcastMessageStream,
+      listMessageStream,
       pacing,
       async scheduleContinuation(runId, runAt) {
         const payload = campaignSendPayloadSchema.parse({ runId });

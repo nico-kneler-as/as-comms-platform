@@ -29,6 +29,7 @@ export function readEffectiveResidenceStates(
       return criteria.states ?? [];
     case "specific":
     case "csv_upload":
+    case "audience_list":
     case "salesforce_lists":
       return [];
   }

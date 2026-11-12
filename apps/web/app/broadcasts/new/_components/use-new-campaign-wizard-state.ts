@@ -76,7 +76,10 @@ function defaultAudienceModeForSenderType(
 export function readAllowedAudienceModesForSenderType(
   senderType: CampaignSenderType | null,
   launchType: LaunchType,
-): readonly Exclude<AudienceInitialFilter, "salesforce_lists">[] {
+): readonly Exclude<
+  AudienceInitialFilter,
+  "audience_list" | "salesforce_lists"
+>[] {
   if (launchType === "sms") {
     return ["project_status", "specific", "csv_upload"];
   }
@@ -102,6 +105,7 @@ function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "audience_list":
     case "salesforce_lists":
     case "project_status":
     case "project_subscribed":
@@ -471,6 +475,7 @@ function buildCriteriaForMode(input: {
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
+    audienceListId: undefined,
   };
 }
 
@@ -486,6 +491,7 @@ function clearAudienceCriteria(
     states: [],
     contactIds: [],
     newsletterSubscriberIds: [],
+    audienceListId: undefined,
   };
 }
 
@@ -589,6 +595,7 @@ function hasCompletedAudienceStep(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "audience_list":
     case "salesforce_lists":
       return true;
   }
@@ -922,7 +929,8 @@ export function useNewCampaignWizardState({
 
   useEffect(() => {
     const currentMode =
-      criteria.initialFilter === "salesforce_lists"
+      criteria.initialFilter === "salesforce_lists" ||
+      criteria.initialFilter === "audience_list"
         ? "all_available"
         : criteria.initialFilter;
     if (
@@ -1025,12 +1033,17 @@ export function useNewCampaignWizardState({
 
       const nextMode: AudienceInitialFilter =
         current.initialFilter !== "salesforce_lists" &&
+        current.initialFilter !== "audience_list" &&
         availableAudienceModes.includes(current.initialFilter)
         ? current.initialFilter
         : defaultAudienceModeForSenderType(selectedSenderType);
 
       return buildCriteriaForMode({
-        current: { ...current, salesforceListIds: [] },
+        current: {
+          ...current,
+          salesforceListIds: [],
+          audienceListId: undefined,
+        },
         mode: nextMode,
         projectOptions: effectiveProjectOptions,
         projectSelectionMode,

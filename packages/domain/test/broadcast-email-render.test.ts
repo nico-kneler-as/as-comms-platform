@@ -94,6 +94,31 @@ describe("broadcast-email-render helpers", () => {
     expect(footer.text).toContain("Unsubscribe from PNW Biodiversity emails");
     expect(footer.html.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
   });
+
+  it("builds a list-specific footer in HTML and plain text", () => {
+    const footer = buildBroadcastUnsubscribeFooter({
+      kind: "newsletter",
+      projectName: null,
+      projectAlias: null,
+      listName: "Insiders",
+      footerAddress: "123 Main St • Bozeman, MT 59715",
+      scopedHref: "https://as.example.org/u/list-token",
+      allHref: "https://as.example.org/u/list-token/all",
+    });
+
+    expect(footer.html).toContain("Unsubscribe from Insiders emails");
+    expect(footer.html).toContain(
+      "Unsubscribe from all Adventure Scientists emails",
+    );
+    expect(footer.text).toContain(
+      "Unsubscribe from Insiders emails: https://as.example.org/u/list-token",
+    );
+    expect(footer.text).toContain(
+      "Unsubscribe from all Adventure Scientists emails: https://as.example.org/u/list-token/all",
+    );
+    expect(footer.html).toContain("123 Main St");
+    expect(footer.html.match(/\{\{\{ pm:unsubscribe \}\}\}/gu)).toHaveLength(1);
+  });
 });
 
 describe("buildBroadcastSignatureBlock", () => {

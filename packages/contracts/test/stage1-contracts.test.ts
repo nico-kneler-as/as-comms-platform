@@ -216,6 +216,37 @@ describe("Stage 1 contracts", () => {
     }).success).toBe(false);
   });
 
+  it("requires a newsletter run and list id for an audience-list audience", () => {
+    const baseRun = {
+      id: "run-insiders",
+      kind: "newsletter" as const,
+      launchType: "normal_email" as const,
+      state: "draft" as const,
+      projectId: null,
+      audienceCriteria: {
+        initialFilter: "audience_list" as const,
+        audienceListId: "insiders",
+      },
+      createdAt: "2026-11-12T00:00:00.000Z",
+      updatedAt: "2026-11-12T00:00:00.000Z",
+    };
+
+    expect(campaignRunRecordSchema.safeParse(baseRun).success).toBe(true);
+    expect(
+      campaignRunRecordSchema.safeParse({
+        ...baseRun,
+        audienceCriteria: { initialFilter: "audience_list" },
+      }).success,
+    ).toBe(false);
+    expect(
+      campaignRunRecordSchema.safeParse({
+        ...baseRun,
+        kind: "project",
+        projectId: "project-1",
+      }).success,
+    ).toBe(false);
+  });
+
   it("normalizes optional residence-state criteria as canonical codes", () => {
     expect(audienceCriteriaSchema.parse({}).states).toEqual([]);
     expect(audienceCriteriaSchema.parse({

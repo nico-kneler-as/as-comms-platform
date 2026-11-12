@@ -15,15 +15,30 @@ export async function POST(
   const decodedToken = decodeURIComponent(token);
   const runtime = await getStage1WebRuntime();
   const target = await resolveUnsubscribeTarget(runtime, decodedToken);
+  const scope = target === null ? null : resolveUnsubscribeScope(target);
 
-  if (target !== null && target.contactId !== null) {
-    const scope = resolveUnsubscribeScope(target);
-    if (scope !== null) {
+  if (target !== null && scope?.type === "list" && scope.id !== undefined) {
+    await runtime.campaigns.emailOptOuts.record({
+      email: target.email,
+      scope: { type: "list", listId: scope.id },
+      source: "recipient_click",
+      sourceRunId: target.runId,
+      occurredAt: new Date(),
+    });
+  } else if (target !== null && target.contactId !== null) {
+    if (scope !== null && scope.type !== "list") {
+      const consentScope =
+        scope.type === "newsletter"
+          ? { type: "newsletter" as const }
+          : {
+              type: "project" as const,
+              ...(scope.id === undefined ? {} : { id: scope.id }),
+            };
       await createConsentLedger({
         repositories: runtime.campaigns,
       }).recordOptOut({
         contactId: target.contactId,
-        scope,
+        scope: consentScope,
         source: "recipient_click",
         sourceRunId: target.runId,
         email: target.email,
@@ -35,6 +50,7 @@ export async function POST(
   // but its recipients are one-off emails, not subscribers.
   if (
     target !== null &&
+    scope?.type !== "list" &&
     target.contactId === null &&
     target.newsletterSubscriberId !== null
   ) {
@@ -50,6 +66,7 @@ export async function POST(
   // newsletter suppressions).
   if (
     target !== null &&
+    scope?.type !== "list" &&
     target.contactId === null &&
     target.newsletterSubscriberId === null
   ) {

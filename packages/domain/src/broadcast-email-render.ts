@@ -93,6 +93,7 @@ export function buildBroadcastUnsubscribeFooter(input: {
   readonly kind: CampaignKind;
   readonly projectName: string | null;
   readonly projectAlias: string | null;
+  readonly listName?: string | null;
   readonly footerAddress: string | null;
   readonly scopedHref: string;
   readonly allHref: string;
@@ -100,19 +101,24 @@ export function buildBroadcastUnsubscribeFooter(input: {
   readonly html: string;
   readonly text: string;
 } {
+  const listName = input.listName?.trim() ?? "";
   const scopedLabel =
-    input.kind === "newsletter"
+    listName.length > 0
+      ? `Unsubscribe from ${listName} emails`
+      : input.kind === "newsletter"
       ? "Unsubscribe from the AS newsletter"
       : `Unsubscribe from ${input.projectAlias ?? input.projectName ?? "this project"} emails`;
   const allLabel = "Unsubscribe from all Adventure Scientists emails";
   const linkLabels =
-    input.kind === "newsletter" ? [scopedLabel] : [scopedLabel, allLabel];
+    input.kind === "newsletter" && listName.length === 0
+      ? [scopedLabel]
+      : [scopedLabel, allLabel];
   const textLinks =
-    input.kind === "newsletter"
+    input.kind === "newsletter" && listName.length === 0
       ? `${scopedLabel}: ${input.scopedHref}`
       : `${scopedLabel}: ${input.scopedHref}\n${allLabel}: ${input.allHref}`;
   const htmlLinks =
-    input.kind === "newsletter"
+    input.kind === "newsletter" && listName.length === 0
       ? `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`
       : [
           `<a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener">${escapeHtml(scopedLabel)}</a>`,
@@ -139,6 +145,7 @@ export interface BroadcastEmailRenderInput {
   readonly kind: CampaignKind;
   readonly projectName: string | null;
   readonly projectAlias: string | null;
+  readonly listName?: string | null;
   readonly footerAddress: string | null;
   readonly preheader: string | null;
   readonly bodyHtmlTemplate: string;
@@ -188,6 +195,7 @@ export function renderBroadcastEmail(
     kind: input.kind,
     projectName: input.projectName,
     projectAlias: input.projectAlias,
+    ...(input.listName === undefined ? {} : { listName: input.listName }),
     footerAddress: input.footerAddress,
     scopedHref: input.scopedUnsubscribeHref,
     allHref: input.allUnsubscribeHref,

@@ -37,6 +37,7 @@ import {
   normalizeEmailAddress,
   readFirstName,
   resolveContactsByEmail,
+  resolveAudienceListForRun,
   resolveUploadedAudienceForRun,
   renderBroadcastEmail,
   summarizeResidenceStates,
@@ -127,6 +128,7 @@ export interface CommonAudienceOption {
   readonly id: string;
   readonly title: string;
   readonly memberCount: number;
+  readonly membersReplacedAt?: string | null;
 }
 
 export interface AudiencePreviewRow {
@@ -148,6 +150,14 @@ export interface CsvUploadSummary {
   readonly invalidSkippedCount: number;
   readonly duplicatesRemovedCount: number;
   readonly sample: readonly AudiencePreviewRow[];
+}
+
+export interface AudienceListUploadSummary {
+  readonly importedCount: number;
+  readonly invalidSkippedCount: number;
+  readonly duplicatesRemovedCount: number;
+  readonly memberCount: number;
+  readonly membersReplacedAt: string;
 }
 
 export interface ExclusionsCsvUploadSummary {
@@ -503,6 +513,7 @@ function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "audience_list":
     case "salesforce_lists":
     case "project_status":
     case "project_subscribed":
@@ -520,6 +531,7 @@ function readAudienceMode(
   | "all_approved"
   | "all_available"
   | "csv_upload"
+  | "audience_list"
   | "salesforce_lists" {
   return criteria.initialFilter ?? "project_status";
 }
@@ -611,6 +623,9 @@ function toStoredAudienceCriteria(
     ...(criteria.salesforceListIds === undefined
       ? {}
       : { salesforceListIds: criteria.salesforceListIds }),
+    ...(criteria.audienceListId === undefined
+      ? {}
+      : { audienceListId: criteria.audienceListId }),
     ...(criteria.exclusions === undefined
       ? {}
       : { exclusions: criteria.exclusions }),
@@ -728,6 +743,20 @@ async function loadUploadedAudience(
       contacts: runtime.repositories.contacts,
       settingsProjects: runtime.settings.projects,
       settingsAliases: runtime.settings.aliases,
+    },
+    input,
+  );
+}
+
+async function loadAudienceListAudience(input: {
+  readonly listId: string;
+  readonly fromEmail?: string | null;
+}): Promise<readonly AudienceMember[]> {
+  const runtime = await getStage1WebRuntime();
+  return resolveAudienceListForRun(
+    {
+      audienceLists: runtime.campaigns.audienceLists,
+      contacts: runtime.repositories.contacts,
     },
     input,
   );
@@ -1325,6 +1354,21 @@ export async function resolveStoredCampaignAudience(input: {
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
     });
   }
+  if (mode === "audience_list") {
+    const listId = input.criteria.audienceListId;
+    if (listId === undefined) {
+      throw new Error("Audience-list audiences require a list id.");
+    }
+    const runtime = await getStage1WebRuntime();
+    const storedRun =
+      input.runId === undefined
+        ? null
+        : await runtime.campaigns.campaignRuns.findById(input.runId);
+    return loadAudienceListAudience({
+      listId,
+      fromEmail: input.fromEmail ?? storedRun?.fromEmail ?? null,
+    });
+  }
 
   if (input.kind === "newsletter") {
     // Hand-picked recipients win over the mode marker (which can be stale or
@@ -1631,23 +1675,15 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
           phoneE164: sender.phoneE164,
         }) satisfies ActiveSmsSender,
     )[0] ?? null;
-  const [allAudienceLists, commonAudiencesLastSyncedAt] = await Promise.all([
-    runtime.campaigns.salesforceAudienceLists.listAll(),
-    runtime.campaigns.salesforceAudienceLists.lastSyncedAt(),
-  ]);
-  // Hidden for now (2026-11-11): the synced "insiders" list is the Salesforce
-  // "VIP?" checkbox, which is not Gregg's Insiders list (only 24 of his 436
-  // addresses are marked VIP?). Add a kind back here once the real list lives
-  // in Salesforce. Until then, org senders reach a list with a CSV upload.
-  const commonAudienceKinds: readonly string[] = [];
+  const allAudienceLists = await runtime.campaigns.audienceLists.listAll();
   const commonAudiences = allAudienceLists
-    .filter((list) => commonAudienceKinds.includes(list.kind))
     .map(
       (list) =>
         ({
           id: list.id,
           title: list.name,
           memberCount: list.memberCount,
+          membersReplacedAt: list.membersReplacedAt,
         }) satisfies CommonAudienceOption,
     );
 
@@ -1659,7 +1695,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
       senderOptions,
       activeSmsSender,
       commonAudiences,
-      commonAudiencesLastSyncedAt,
+      commonAudiencesLastSyncedAt: null,
     };
   }
 
@@ -1695,7 +1731,7 @@ export async function getAudienceBuilderBootstrap(): Promise<AudienceBuilderBoot
     senderOptions,
     activeSmsSender,
     commonAudiences,
-    commonAudiencesLastSyncedAt,
+    commonAudiencesLastSyncedAt: null,
   };
 }
 
@@ -2014,6 +2050,13 @@ export async function loadComposePreviewAction(input: {
         ? null
         : ((await runtime.settings.projects.findById(projectId))
             ?.projectAlias ?? null);
+    const listName =
+      input.criteria.initialFilter === "audience_list" &&
+      input.criteria.audienceListId !== undefined
+        ? (await runtime.campaigns.audienceLists.findById(
+            input.criteria.audienceListId,
+          ))?.name ?? null
+        : null;
     const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
       appUrl: origin,
       unsubscribeToken: `preview-${input.kind}`,
@@ -2040,6 +2083,7 @@ export async function loadComposePreviewAction(input: {
         input.fromEmail ??
         sample?.frozenAliasEmail ??
         "preview@example.invalid",
+      ...(listName === null ? {} : { listName }),
       ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });
     const rendered = mergeRenderer.render(
@@ -2473,6 +2517,52 @@ export async function uploadBroadcastAudienceCsvAction(input: {
       error instanceof Error
         ? error.message
         : "Unable to import the CSV audience.",
+      true,
+    );
+  }
+}
+
+export async function replaceAudienceListMembersAction(input: {
+  readonly listId: string;
+  readonly csvText: string;
+}): Promise<UiResult<AudienceListUploadSummary>> {
+  const session = await requireVolunteerSession();
+
+  try {
+    const runtime = await getStage1WebRuntime();
+    const list = await runtime.campaigns.audienceLists.findById(input.listId);
+    if (list === null) {
+      return errorResult("audience_list_not_found", "Audience list not found.");
+    }
+
+    const parsed = parseRecipientCsv(input.csvText);
+    const memberCount = await runtime.campaigns.audienceLists.replaceMembers(
+      list.id,
+      parsed.recipients.map((recipient) => ({
+        email: recipient.email,
+        firstName: recipient.firstName,
+        lastName: recipient.lastName,
+      })),
+      session.id,
+    );
+    const updated = await runtime.campaigns.audienceLists.findById(list.id);
+    if (updated?.membersReplacedAt == null) {
+      throw new Error("The audience list replacement timestamp was not saved.");
+    }
+
+    return successResult({
+      importedCount: parsed.importedCount,
+      invalidSkippedCount: parsed.invalidSkippedCount,
+      duplicatesRemovedCount: parsed.duplicatesRemovedCount,
+      memberCount,
+      membersReplacedAt: updated.membersReplacedAt,
+    });
+  } catch (error) {
+    return errorResult(
+      "audience_list_replace_failed",
+      error instanceof Error
+        ? error.message
+        : "Unable to replace the audience list.",
       true,
     );
   }

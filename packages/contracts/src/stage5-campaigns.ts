@@ -309,6 +309,7 @@ export const audienceCriteriaSchema = z
     salesforceListIds: z.array(z.string().min(1)).default(
       audienceCriteriaDefaults.salesforceListIds,
     ),
+    audienceListId: z.string().trim().min(1).optional(),
     exclusions: audienceExclusionsSchema.default(audienceCriteriaDefaults.exclusions),
     initialFilter: z
       .enum([
@@ -318,6 +319,7 @@ export const audienceCriteriaSchema = z
         "all_approved",
         "all_available",
         "csv_upload",
+        "audience_list",
         "salesforce_lists",
       ])
       .optional(),
@@ -419,6 +421,22 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
         path: ["audienceCriteria", "initialFilter"],
         message: "salesforce_lists is only valid when kind='newsletter'.",
       });
+    }
+    if (value.audienceCriteria.initialFilter === "audience_list") {
+      if (value.kind !== "newsletter") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["audienceCriteria", "initialFilter"],
+          message: "audience_list is only valid when kind='newsletter'.",
+        });
+      }
+      if ((value.audienceCriteria.audienceListId?.trim().length ?? 0) === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["audienceCriteria", "audienceListId"],
+          message: "audienceListId is required when initialFilter='audience_list'.",
+        });
+      }
     }
     if (
       value.state === "draft" &&
@@ -720,8 +738,32 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     lastEditedByUserId: nullableStringSchema.default(null),
   })
   .superRefine((value, context) => {
-    if (value.audienceCriteria.initialFilter === "salesforce_lists" && value.kind !== "newsletter") {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ["audienceCriteria", "initialFilter"], message: "salesforce_lists is only valid when kind='newsletter'." });
+    if (
+      value.audienceCriteria.initialFilter === "salesforce_lists" &&
+      value.kind !== "newsletter"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["audienceCriteria", "initialFilter"],
+        message: "salesforce_lists is only valid when kind='newsletter'.",
+      });
+    }
+    if (value.audienceCriteria.initialFilter === "audience_list") {
+      if (value.kind !== "newsletter") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["audienceCriteria", "initialFilter"],
+          message: "audience_list is only valid when kind='newsletter'.",
+        });
+      }
+      if ((value.audienceCriteria.audienceListId?.trim().length ?? 0) === 0) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["audienceCriteria", "audienceListId"],
+          message:
+            "audienceListId is required when initialFilter='audience_list'.",
+        });
+      }
     }
   });
 export type CreateDraftInput = z.input<typeof createDraftInputSchema>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import type {
   AudienceCriteria,
@@ -11,6 +11,7 @@ import type {
 
 import type {
   AudienceBuilderBootstrap,
+  AudienceListUploadSummary,
   CampaignProjectOption,
   CampaignSenderOption,
   CampaignSenderType,
@@ -22,6 +23,7 @@ import {
   clearBroadcastExclusionsAction,
   getVolunteerExclusionBroadcastsAction,
   previewVolunteerExclusionsAction,
+  replaceAudienceListMembersAction,
   saveCampaignWizardDraftAction,
   uploadBroadcastExclusionsCsvAction,
   uploadBroadcastAudienceCsvAction,
@@ -132,6 +134,7 @@ export function hasAppliedAudienceFilters(
     case "all_approved":
     case "all_available":
     case "csv_upload":
+    case "audience_list":
     case "salesforce_lists":
     case "project_status":
     case "project_subscribed":
@@ -407,6 +410,7 @@ function buildCriteriaForMode(input: {
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
+    audienceListId: undefined,
   };
 }
 
@@ -421,6 +425,7 @@ export function clearAudienceCriteria(
     statuses: [],
     contactIds: [],
     newsletterSubscriberIds: [],
+    audienceListId: undefined,
   };
 }
 
@@ -445,6 +450,16 @@ function readProjectChipLabel(
   bootstrap: AudienceBuilderBootstrap,
 ): string {
   if (kind === "newsletter") {
+    if (
+      criteria.initialFilter === "audience_list" &&
+      criteria.audienceListId !== undefined
+    ) {
+      return (
+        bootstrap.commonAudiences?.find(
+          (audience) => audience.id === criteria.audienceListId,
+        )?.title ?? "Audience list"
+      );
+    }
     return (criteria.contactIds?.length ?? 0) > 0
       ? "Specific individuals"
       : "Newsletter";
@@ -606,6 +621,12 @@ export function NewCampaignWizard({
   const [earlierBroadcasts, setEarlierBroadcasts] = useState<readonly { readonly id: string; readonly name: string }[]>([]);
   const [exclusionPreview, setExclusionPreview] = useState<{ readonly total: number; readonly excludedByReason: Readonly<Record<string, number>>; readonly consentExcluded: number } | null>(null);
   const [exclusionCsvSummary, setExclusionCsvSummary] = useState<{ readonly acceptedCount: number; readonly invalidSkippedCount: number } | null>(null);
+  const [audienceListUploadSummary, setAudienceListUploadSummary] =
+    useState<AudienceListUploadSummary | null>(null);
+  const [audienceListUploadErrorMessage, setAudienceListUploadErrorMessage] =
+    useState<string | null>(null);
+  const [audienceListUploadPending, startAudienceListUploadTransition] =
+    useTransition();
   // Reopening a draft keeps its reminder: starting from "off" would cancel it
   // when the draft is launched.
   const [resendEnabled, setResendEnabled] = useState(draft.resend != null);
@@ -812,6 +833,7 @@ export function NewCampaignWizard({
         projectSelectionMode,
       }),
       salesforceListIds: [],
+      audienceListId: undefined,
     }));
     setVolunteerSearchQuery("");
     setVolunteerSearchRows([]);
@@ -940,6 +962,45 @@ export function NewCampaignWizard({
           });
           setPreviewRows(result.data.sample);
         }
+        setCsvUploadVersion((current) => current + 1);
+        resolve();
+      });
+    });
+  }
+
+  async function handleAudienceListUpload(listId: string, csvText: string) {
+    setHasPickedAudienceMode(true);
+    updateCriteria((current) => ({
+      ...current,
+      initialFilter: "audience_list",
+      audienceListId: listId,
+      salesforceListIds: [],
+      projectId: null,
+      projectIds: [],
+      statuses: [],
+      states: [],
+      contactIds: [],
+      newsletterSubscriberIds: [],
+    }));
+
+    await new Promise<void>((resolve) => {
+      startAudienceListUploadTransition(async () => {
+        const result = await replaceAudienceListMembersAction({
+          listId,
+          csvText,
+        });
+        if (!result.ok) {
+          setAudienceListUploadErrorMessage(result.message);
+          resolve();
+          return;
+        }
+
+        setAudienceListUploadSummary(result.data);
+        setAudienceListUploadErrorMessage(null);
+        setCountState({
+          count: result.data.memberCount,
+          hasAppliedFilters: true,
+        });
         setCsvUploadVersion((current) => current + 1);
         resolve();
       });
@@ -1164,9 +1225,6 @@ export function NewCampaignWizard({
                   criteria={criteria}
                   selectedSenderType={selectedSenderType}
                   commonAudiences={bootstrap.commonAudiences ?? []}
-                  commonAudiencesLastSyncedAt={
-                    bootstrap.commonAudiencesLastSyncedAt ?? null
-                  }
                   countState={countState}
                   previewRows={previewRows}
                   countLoading={countLoading}
@@ -1179,6 +1237,11 @@ export function NewCampaignWizard({
                   csvUploadSummary={csvUploadSummary}
                   csvUploadPending={csvUploadPending}
                   csvUploadErrorMessage={csvUploadErrorMessage}
+                  audienceListUploadSummary={audienceListUploadSummary}
+                  audienceListUploadPending={audienceListUploadPending}
+                  audienceListUploadErrorMessage={
+                    audienceListUploadErrorMessage
+                  }
                   smsCsvAudienceSummary={smsCsvAudienceSummary}
                   smsCsvAudienceSummaryLoading={smsCsvAudienceSummaryLoading}
                   smsCsvAudienceSummaryErrorMessage={
@@ -1197,16 +1260,37 @@ export function NewCampaignWizard({
                   onInitialFilterChange={changeInitialFilter}
                   onCommonAudienceSelect={(listId) => {
                     setHasPickedAudienceMode(true);
-                    updateCriteria((current) => ({
-                      ...current,
-                      initialFilter: "salesforce_lists",
-                      salesforceListIds: [listId],
-                      projectId: null,
-                      projectIds: [],
-                      statuses: [],
-                      contactIds: [],
-                      newsletterSubscriberIds: [],
-                    }));
+                    updateCriteria((current) => {
+                      if (
+                        current.initialFilter === "audience_list" &&
+                        current.audienceListId === listId
+                      ) {
+                        return buildCriteriaForMode({
+                          current: {
+                            ...current,
+                            audienceListId: undefined,
+                          },
+                          mode: defaultAudienceModeForSenderType(
+                            selectedSenderType,
+                          ),
+                          projectOptions: effectiveProjectOptions,
+                          projectSelectionMode,
+                        });
+                      }
+
+                      return {
+                        ...current,
+                        initialFilter: "audience_list",
+                        audienceListId: listId,
+                        salesforceListIds: [],
+                        projectId: null,
+                        projectIds: [],
+                        statuses: [],
+                        states: [],
+                        contactIds: [],
+                        newsletterSubscriberIds: [],
+                      };
+                    });
                   }}
                   onProjectChange={toggleProject}
                   onToggleAllStatuses={toggleAllStatuses}
@@ -1216,6 +1300,7 @@ export function NewCampaignWizard({
                   onVolunteerSearchQueryChange={setVolunteerSearchQuery}
                   onVolunteerToggle={toggleVolunteer}
                   onCsvUpload={handleCsvUpload}
+                  onAudienceListUpload={handleAudienceListUpload}
                   onBack={() => {
                     setCurrentStep(1);
                   }}

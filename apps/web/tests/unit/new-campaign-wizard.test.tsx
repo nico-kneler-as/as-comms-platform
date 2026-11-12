@@ -17,6 +17,7 @@ const loadAudienceStateCountsActionMock = vi.hoisted(() => vi.fn());
 const loadSmsCsvAudienceSummaryActionMock = vi.hoisted(() => vi.fn());
 const getVolunteerExclusionBroadcastsActionMock = vi.hoisted(() => vi.fn());
 const previewVolunteerExclusionsActionMock = vi.hoisted(() => vi.fn());
+const replaceAudienceListMembersActionMock = vi.hoisted(() => vi.fn());
 const searchNewsletterSubscribersActionMock = vi.hoisted(() => vi.fn());
 const searchProjectVolunteersActionMock = vi.hoisted(() => vi.fn());
 const previewSmsBroadcastMock = vi.hoisted(() => vi.fn());
@@ -36,6 +37,7 @@ vi.mock("../../app/broadcasts/_lib/audience-data-source", () => ({
   loadSmsCsvAudienceSummaryAction: loadSmsCsvAudienceSummaryActionMock,
   getVolunteerExclusionBroadcastsAction: getVolunteerExclusionBroadcastsActionMock,
   previewVolunteerExclusionsAction: previewVolunteerExclusionsActionMock,
+  replaceAudienceListMembersAction: replaceAudienceListMembersActionMock,
   previewAudienceAction: previewAudienceActionMock,
   resolveAudienceCountAction: resolveAudienceCountActionMock,
   saveCampaignWizardDraftAction: saveCampaignWizardDraftActionMock,
@@ -190,6 +192,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       | "specific"
       | "all_approved"
       | "all_available"
+      | "audience_list"
       | "salesforce_lists"
     )[];
     readonly criteria: {
@@ -198,8 +201,10 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
         | "specific"
         | "all_approved"
         | "all_available"
+        | "audience_list"
         | "salesforce_lists";
       readonly salesforceListIds?: readonly string[];
+      readonly audienceListId?: string;
     };
     readonly onBack: () => void;
     readonly onContinue: () => void;
@@ -230,7 +235,7 @@ vi.mock("../../app/broadcasts/new/_components/audience-builder-step", () => ({
       <div>AudienceBuilderStep</div>
       <div data-testid="audience-mode">{criteria.initialFilter ?? "unset"}</div>
       <div data-testid="audience-list-ids">
-        {(criteria.salesforceListIds ?? []).join(",")}
+        {criteria.audienceListId ?? ""}
       </div>
       <div data-testid="audience-available-modes">
         {availableModes.join(",")}
@@ -1437,6 +1442,14 @@ describe("NewCampaignWizard", () => {
 
   it("restores Insiders from a draft and clears it when choosing a mode or a project sender", async () => {
     const bootstrap = buildBootstrap({
+      commonAudiences: [
+        {
+          id: "insiders",
+          title: "Insiders",
+          memberCount: 436,
+          membersReplacedAt: "2026-11-12T12:00:00.000Z",
+        },
+      ],
       senderOptions: [
         {
           projectId: "project-1",
@@ -1472,15 +1485,15 @@ describe("NewCampaignWizard", () => {
         lastActivityWindow: "all_time",
         hasReplied: "either",
         hasClicked: "either",
-        initialFilter: "salesforce_lists",
-        salesforceListIds: ["insiders"],
+        initialFilter: "audience_list",
+        audienceListId: "insiders",
       },
     });
 
     await renderWizard({ bootstrap, draft });
     await goToStep(2);
 
-    expect(getByTestId("audience-mode").textContent).toBe("salesforce_lists");
+    expect(getByTestId("audience-mode").textContent).toBe("audience_list");
     expect(getByTestId("audience-list-ids").textContent).toBe("insiders");
 
     await click("mode-all-available");
@@ -1489,11 +1502,19 @@ describe("NewCampaignWizard", () => {
     expect(getByTestId("audience-list-ids").textContent).toBe("");
 
     await click("select-insiders");
+    expect(getByTestId("audience-mode").textContent).toBe("audience_list");
+    expect(getByTestId("audience-list-ids").textContent).toBe("insiders");
+
+    await click("select-insiders");
+    expect(getByTestId("audience-mode").textContent).toBe("specific");
+    expect(getByTestId("audience-list-ids").textContent).toBe("");
+
+    await click("select-insiders");
     await goToStep(1);
     await click("sender-forests@example.org");
     await goToStep(2);
 
-    expect(getByTestId("audience-mode").textContent).not.toBe("salesforce_lists");
+    expect(getByTestId("audience-mode").textContent).not.toBe("audience_list");
     expect(getByTestId("audience-list-ids").textContent).toBe("");
   });
 

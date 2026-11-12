@@ -28,6 +28,7 @@ import type {
 
 import type {
   AudienceCountData,
+  AudienceListUploadSummary,
   AudienceNewsletterSubscriberSearchRow,
   AudiencePreviewRow,
   AudienceStatusCounts,
@@ -52,9 +53,13 @@ export type AudienceInitialFilter =
   | "all_approved"
   | "all_available"
   | "csv_upload"
+  | "audience_list"
   | "salesforce_lists";
 
-type AudienceModeCard = Exclude<AudienceInitialFilter, "salesforce_lists">;
+type AudienceModeCard = Exclude<
+  AudienceInitialFilter,
+  "audience_list" | "salesforce_lists"
+>;
 
 export type CampaignAudienceCriteria = AudienceCriteria;
 
@@ -121,6 +126,9 @@ interface AudienceBuilderStepProps {
   readonly csvUploadSummary: CsvUploadSummary | null;
   readonly csvUploadPending: boolean;
   readonly csvUploadErrorMessage: string | null;
+  readonly audienceListUploadSummary?: AudienceListUploadSummary | null;
+  readonly audienceListUploadPending?: boolean;
+  readonly audienceListUploadErrorMessage?: string | null;
   readonly smsCsvAudienceSummary: SmsCsvAudienceSummary | null;
   readonly smsCsvAudienceSummaryLoading: boolean;
   readonly smsCsvAudienceSummaryErrorMessage: string | null;
@@ -144,6 +152,10 @@ interface AudienceBuilderStepProps {
   readonly onVolunteerSearchQueryChange: (value: string) => void;
   readonly onVolunteerToggle: (contactId: string) => void;
   readonly onCsvUpload: (csvText: string) => Promise<void>;
+  readonly onAudienceListUpload?: (
+    listId: string,
+    csvText: string,
+  ) => Promise<void>;
   readonly onBack: () => void;
   readonly onContinue: () => void;
 }
@@ -155,7 +167,6 @@ export function AudienceBuilderStep({
   criteria,
   selectedSenderType,
   commonAudiences = [],
-  commonAudiencesLastSyncedAt = null,
   countState,
   previewRows,
   countLoading,
@@ -168,6 +179,9 @@ export function AudienceBuilderStep({
   csvUploadSummary,
   csvUploadPending,
   csvUploadErrorMessage,
+  audienceListUploadSummary = null,
+  audienceListUploadPending = false,
+  audienceListUploadErrorMessage = null,
   smsCsvAudienceSummary,
   smsCsvAudienceSummaryLoading,
   smsCsvAudienceSummaryErrorMessage,
@@ -191,6 +205,7 @@ export function AudienceBuilderStep({
   onVolunteerSearchQueryChange,
   onVolunteerToggle,
   onCsvUpload,
+  onAudienceListUpload = () => Promise.resolve(),
   onBack,
   onContinue,
 }: AudienceBuilderStepProps) {
@@ -244,10 +259,13 @@ export function AudienceBuilderStep({
             <CommonAudienceCards
               show={launchType !== "sms" && selectedSenderType === "org"}
               audiences={commonAudiences}
-              lastSyncedAt={commonAudiencesLastSyncedAt}
-              selectedListIds={criteria.salesforceListIds ?? []}
-              selected={initialFilter === "salesforce_lists"}
+              selectedListId={criteria.audienceListId ?? null}
+              selected={initialFilter === "audience_list"}
+              uploadSummary={audienceListUploadSummary}
+              uploadPending={audienceListUploadPending}
+              uploadErrorMessage={audienceListUploadErrorMessage}
               onSelect={onCommonAudienceSelect}
+              onUpload={onAudienceListUpload}
             />
 
             {initialFilter === "project_status" ? (
@@ -424,12 +442,12 @@ export function AudienceBuilderStep({
               </>
             ) : null}
 
-            {initialFilter === "salesforce_lists" ? (
+            {initialFilter === "audience_list" ? (
               <>
                 <section className="rounded-lg border border-slate-200 bg-white px-4 py-4">
                   <p className="text-[13px] leading-relaxed text-slate-600">
-                    This broadcast goes to the selected common audience, minus
-                    opt-outs and suppressions.
+                    This broadcast goes to the selected audience list, minus
+                    list opt-outs and other required suppressions.
                   </p>
                 </section>
                 <AudienceFilterPanel
@@ -489,10 +507,13 @@ export function AudienceBuilderStep({
             <CommonAudienceCards
               show={launchType !== "sms" && selectedSenderType === "org"}
               audiences={commonAudiences}
-              lastSyncedAt={commonAudiencesLastSyncedAt}
-              selectedListIds={criteria.salesforceListIds ?? []}
+              selectedListId={criteria.audienceListId ?? null}
               selected={false}
+              uploadSummary={audienceListUploadSummary}
+              uploadPending={audienceListUploadPending}
+              uploadErrorMessage={audienceListUploadErrorMessage}
               onSelect={onCommonAudienceSelect}
+              onUpload={onAudienceListUpload}
             />
           </>
         )}
@@ -511,58 +532,112 @@ export function AudienceBuilderStep({
 function CommonAudienceCards({
   show,
   audiences,
-  lastSyncedAt,
-  selectedListIds,
+  selectedListId,
   selected,
+  uploadSummary,
+  uploadPending,
+  uploadErrorMessage,
   onSelect,
+  onUpload,
 }: {
   readonly show: boolean;
   readonly audiences: readonly CommonAudienceOption[];
-  readonly lastSyncedAt: string | null;
-  readonly selectedListIds: readonly string[];
+  readonly selectedListId: string | null;
   readonly selected: boolean;
+  readonly uploadSummary: AudienceListUploadSummary | null;
+  readonly uploadPending: boolean;
+  readonly uploadErrorMessage: string | null;
   readonly onSelect: (listId: string) => void;
+  readonly onUpload: (listId: string, csvText: string) => Promise<void>;
 }) {
   if (!show || audiences.length === 0) return null;
-  const syncLabel =
-    lastSyncedAt === null
-      ? "not yet synced"
-      : `synced ${String(Math.max(0, Math.round((Date.now() - new Date(lastSyncedAt).getTime()) / 60_000)))} min ago`;
   return (
     <section className="space-y-2">
       <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
         Common audiences
       </p>
       {audiences.map((audience) => {
-        const isSelected = selected && selectedListIds.includes(audience.id);
+        const isSelected = selected && selectedListId === audience.id;
+        const summary = isSelected ? uploadSummary : null;
+        const memberCount = summary?.memberCount ?? audience.memberCount;
+        const membersReplacedAt =
+          summary?.membersReplacedAt ?? audience.membersReplacedAt ?? null;
+        const updatedLabel =
+          membersReplacedAt === null
+            ? "No members yet"
+            : `Updated ${new Intl.DateTimeFormat("en-US", {
+                dateStyle: "medium",
+              }).format(new Date(membersReplacedAt))}`;
         return (
-          <button
+          <div
             key={audience.id}
-            type="button"
-            aria-pressed={isSelected}
-            onClick={() => {
-              onSelect(audience.id);
-            }}
             className={cn(
-              "w-full rounded-lg border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1",
+              "w-full rounded-lg border bg-white px-4 py-3",
               isSelected
                 ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
-                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                : "border-slate-200",
             )}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-medium text-slate-900">{audience.title}</p>
-                <p className="mt-0.5 text-[12px] text-slate-600">
-                  Salesforce contacts marked VIP?
+            <button
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => {
+                onSelect(audience.id);
+              }}
+              className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-slate-900">{audience.title}</p>
+                  <p className="mt-0.5 text-[12px] text-slate-600">
+                    {updatedLabel}
+                  </p>
+                </div>
+                <p className="shrink-0 text-[12px] text-slate-600">
+                  {memberCount.toLocaleString()} members
                 </p>
               </div>
-              <p className="shrink-0 text-[12px] text-slate-600">
-                {audience.memberCount.toLocaleString()} members
+            </button>
+            <div className="mt-3 border-t border-slate-200 pt-3">
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-[12px] font-medium text-slate-800 hover:bg-slate-50">
+                {uploadPending && isSelected
+                  ? "Updating…"
+                  : "Update list (CSV)"}
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  disabled={uploadPending}
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file === undefined) {
+                      return;
+                    }
+                    void file.text().then((csvText) =>
+                      onUpload(audience.id, csvText),
+                    );
+                  }}
+                />
+              </label>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate-600">
+                Uploading replaces the whole list. People who left this list
+                stay excluded even if they are in the file.
               </p>
+              {isSelected && summary !== null ? (
+                <p className="mt-2 text-[11px] text-emerald-700">
+                  Replaced with {summary.memberCount.toLocaleString()} members ·{" "}
+                  {summary.invalidSkippedCount.toLocaleString()} invalid skipped ·{" "}
+                  {summary.duplicatesRemovedCount.toLocaleString()} duplicates removed
+                </p>
+              ) : null}
+              {isSelected && uploadErrorMessage !== null ? (
+                <p className="mt-2 text-[11px] text-red-700">
+                  {uploadErrorMessage}
+                </p>
+              ) : null}
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">{syncLabel}</p>
-          </button>
+          </div>
         );
       })}
     </section>

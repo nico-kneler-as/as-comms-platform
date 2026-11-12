@@ -135,6 +135,9 @@ interface CampaignSendRepositories {
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
   };
+  readonly audienceLists?: {
+    findById(id: string): Promise<{ readonly name: string } | null>;
+  };
   readonly broadcastWebVersions: {
     ensure(
       runId: string,
@@ -353,6 +356,7 @@ function assertAudienceDependencies(
   deps: {
     readonly hasLoadAudienceSets: boolean;
     readonly hasResolveNewsletterAudience: boolean;
+    readonly hasResolveAudienceList: boolean;
     readonly hasResidenceStates: boolean;
   },
 ): void {
@@ -368,6 +372,14 @@ function assertAudienceDependencies(
         `Campaign run ${run.id} targets Salesforce campaigns but none are selected.`,
       );
     }
+  }
+  if (
+    criteria.initialFilter === "audience_list" &&
+    !deps.hasResolveAudienceList
+  ) {
+    throw new Error(
+      `Campaign run ${run.id} needs an audience list resolver but none is configured.`,
+    );
   }
   const exclusions = criteria.exclusions;
   const hasExclusions =
@@ -429,6 +441,10 @@ export function createCampaignSendOrchestrator(deps: {
     run: CampaignRunRecord,
     at: Date,
   ) => Promise<readonly AudienceMember[]>;
+  resolveAudienceList?: (
+    run: CampaignRunRecord,
+    at: Date,
+  ) => Promise<readonly AudienceMember[]>;
   resolveNewsletterAudience?: () => Promise<readonly AudienceMember[]>;
   /** Returns a base only for standing lists; campaign lists return null. */
   resolveStandingListAudience?: (
@@ -448,6 +464,7 @@ export function createCampaignSendOrchestrator(deps: {
   postmarkClient: PostmarkClientLike;
   appUrl: string;
   broadcastMessageStream?: string;
+  listMessageStream?: string;
   newsletterSubscribeUrl?: string | undefined;
   batchSize?: number;
   pacing?: CampaignSendPacingConfig;
@@ -466,6 +483,12 @@ export function createCampaignSendOrchestrator(deps: {
     trimmedBroadcastMessageStream.length === 0
       ? "broadcast"
       : trimmedBroadcastMessageStream;
+  const trimmedListMessageStream = deps.listMessageStream?.trim();
+  const listMessageStream =
+    trimmedListMessageStream === undefined ||
+    trimmedListMessageStream.length === 0
+      ? "lists"
+      : trimmedListMessageStream;
   const trimmedNewsletterSubscribeUrl = deps.newsletterSubscribeUrl?.trim();
   const newsletterSubscribeUrl =
     trimmedNewsletterSubscribeUrl === undefined ||
@@ -492,11 +515,15 @@ export function createCampaignSendOrchestrator(deps: {
     assertAudienceDependencies(run, {
       hasLoadAudienceSets: deps.loadAudienceSets !== undefined,
       hasResolveNewsletterAudience: deps.resolveNewsletterAudience !== undefined,
+      hasResolveAudienceList: deps.resolveAudienceList !== undefined,
       hasResidenceStates: deps.residenceStates !== undefined,
     });
     const criteria = run.audienceCriteria;
     if (criteria.initialFilter === "csv_upload") {
       return await deps.resolveUploadedAudience?.(run, at) ?? [];
+    }
+    if (criteria.initialFilter === "audience_list") {
+      return await deps.resolveAudienceList?.(run, at) ?? [];
     }
     const standingListMembers =
       criteria.initialFilter === "salesforce_lists"
@@ -716,6 +743,17 @@ export function createCampaignSendOrchestrator(deps: {
           ? null
           : await deps.repositories.settingsProjects.findById(run.projectId);
       const projectAlias = project?.projectAlias ?? null;
+      const listName =
+        run.audienceListId == null
+          ? null
+          : (await deps.repositories.audienceLists?.findById(
+              run.audienceListId,
+            ))?.name ?? null;
+      if (run.audienceListId != null && listName === null) {
+        throw new Error(
+          `Campaign run ${run.id} references audience list ${run.audienceListId}, but the list was not found.`,
+        );
+      }
 
       const allSnapshots = await deps.repositories.audienceSnapshots.listForRun(runId);
       const snapshots = allSnapshots.filter(
@@ -841,6 +879,7 @@ export function createCampaignSendOrchestrator(deps: {
             scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
             allUnsubscribeHref: unsubscribeUrls.allHref,
             senderEmail: sender,
+            ...(listName === null ? {} : { listName }),
             ...(pageUrl === null ? {} : { webVersionHref: pageUrl }),
           });
 
@@ -865,7 +904,10 @@ export function createCampaignSendOrchestrator(deps: {
               Subject: rendered.subject,
               HtmlBody: rendered.html,
               TextBody: rendered.text,
-              MessageStream: broadcastMessageStream,
+              MessageStream:
+                run.audienceListId == null
+                  ? broadcastMessageStream
+                  : listMessageStream,
               // Request open + link tracking so Postmark emits Open/Click
               // webhook events; without these the broadcast detail metrics
               // (and the link click map) can never populate.
