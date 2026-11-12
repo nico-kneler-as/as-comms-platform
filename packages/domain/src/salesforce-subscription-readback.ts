@@ -52,6 +52,11 @@ export type PlatformConsentState = Readonly<{
     Readonly<{ reason: string; updatedAt: string }>
   >;
   suppressionEmails: ReadonlySet<string>;
+  /**
+   * Active "all" rows in the email opt-out ledger (PRD #768), by email, with
+   * when they were recorded. Optional so older callers keep compiling.
+   */
+  emailOptOutAllByEmail?: ReadonlyMap<string, string>;
 }>;
 
 export type ReadbackAction =
@@ -63,6 +68,7 @@ export type ReadbackAction =
       optedOutAt: string;
     }>
   | Readonly<{ kind: "clear_consent"; consentIds: readonly string[] }>
+  | Readonly<{ kind: "clear_email_opt_out_all"; email: string }>
   | Readonly<{ kind: "insert_suppression"; email: string }>
   | Readonly<{ kind: "delete_suppression"; email: string }>
   | Readonly<{ kind: "upsert_subscriber"; email: string; changedAt: string }>;
@@ -377,25 +383,36 @@ export function planSubscriptionReadback(input: {
             : []),
         ];
         outcome = outcomeForActions(input.mode, actions);
-      } else if (contacts.length === 0) outcome = "skipped_no_contact";
-      else {
+      } else {
+        // Salesforce re-subscribed this person: clear the contacts' "all"
+        // consent and the email ledger's "all" row, unless the platform
+        // opt-out is newer than the Salesforce change.
+        const ledgerOptedOutAt =
+          input.platformState.emailOptOutAllByEmail?.get(record.email);
+        const ledgerActions: ReadbackAction[] =
+          ledgerOptedOutAt !== undefined && !newer(ledgerOptedOutAt, T)
+            ? [{ kind: "clear_email_opt_out_all", email: record.email }]
+            : [];
         const rows = contacts
           .flatMap((id) => input.platformState.consentsByContact.get(id) ?? [])
           .filter((row) => row.scopeType === "all");
-        if (rows.length === 0) outcome = "no_change";
-        else if (rows.every((row) => newer(row.optedOutAt, T)))
+        const clearable = rows.filter((row) => !newer(row.optedOutAt, T));
+        actions = [
+          ...(clearable.length > 0
+            ? [
+                {
+                  kind: "clear_consent" as const,
+                  consentIds: clearable.map((row) => row.id),
+                },
+              ]
+            : []),
+          ...ledgerActions,
+        ];
+        if (actions.length > 0) outcome = outcomeForActions(input.mode, actions);
+        else if (rows.length > 0 || ledgerOptedOutAt !== undefined)
           outcome = "skipped_platform_newer";
-        else {
-          actions = [
-            {
-              kind: "clear_consent",
-              consentIds: rows
-                .filter((row) => !newer(row.optedOutAt, T))
-                .map((row) => row.id),
-            },
-          ];
-          outcome = outcomeForActions(input.mode, actions);
-        }
+        else if (contacts.length === 0) outcome = "skipped_no_contact";
+        else outcome = "no_change";
       }
       events.push({ ...base, outcome, actions });
     }

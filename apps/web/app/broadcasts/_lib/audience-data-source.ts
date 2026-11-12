@@ -1391,11 +1391,9 @@ export async function previewComposedAudience(runId: string): Promise<{
       campaignRuns: runtime.campaigns.campaignRuns,
       contactConsent: runtime.campaigns.contactConsent,
       suppressionList: runtime.campaigns.suppressionList,
-      newsletterSuppressions: {
-        isSuppressed: async (email) =>
-          (await runtime.campaigns.newsletterSuppressions.findByEmail(email)) !== null,
-      },
+      newsletterSuppressions: runtime.campaigns.newsletterSuppressions,
       salesforceEmailOptOuts: runtime.campaigns.salesforceContactStates,
+      emailOptOuts: runtime.campaigns.emailOptOuts,
     },
   }).applyExclusions(composed.members, runId, at);
   return {

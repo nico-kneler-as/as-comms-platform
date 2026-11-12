@@ -568,7 +568,19 @@ async function processEvent(
       }
     }
 
-    if (isRecipientUnsubscribe(event)) {
+    const listId = run?.audienceListId ?? null;
+    if (isRecipientUnsubscribe(event) && run !== null && listId !== null) {
+      // A Houston list send (PRD #768): a one-click unsubscribe means leaving
+      // this list, whatever kind of recipient it is. It must not become a
+      // newsletter or project opt-out.
+      await runtime.campaigns.emailOptOuts.record({
+        email: snapshot.frozenEmail,
+        scope: { type: "list", listId },
+        source: "provider_event",
+        sourceRunId: run.id,
+        occurredAt: new Date(occurredAt),
+      });
+    } else if (isRecipientUnsubscribe(event)) {
       if (run !== null && snapshot.contactId !== null) {
         await runtime.campaigns.contactConsent.recordOptOut(
           snapshot.contactId,

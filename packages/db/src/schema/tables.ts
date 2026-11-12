@@ -1440,6 +1440,36 @@ export const projectAliases = pgTable(
   (table) => [index("project_aliases_project_idx").on(table.projectId)],
 );
 
+export const audienceLists = pgTable(
+  "audience_lists",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    updatedByUserId: text("updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    membersReplacedAt: timestamp("members_replaced_at", { mode: "date", withTimezone: true }),
+    membersReplacedByUserId: text("members_replaced_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAtColumn,
+    updatedAt: updatedAtColumn,
+  },
+);
+
+export const audienceListMembers = pgTable(
+  "audience_list_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    listId: text("list_id").notNull().references(() => audienceLists.id, { onDelete: "cascade" }),
+    normalizedEmail: text("normalized_email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    uniqueIndex("audience_list_members_list_email_unique").on(table.listId, table.normalizedEmail),
+    index("audience_list_members_normalized_email_idx").on(table.normalizedEmail),
+  ],
+);
+
 export const campaignRuns = pgTable(
   "campaign_runs",
   {
@@ -1452,6 +1482,9 @@ export const campaignRuns = pgTable(
     launchType: text("launch_type").$type<LaunchType>().notNull(),
     state: text("state").$type<RunState>().notNull(),
     projectId: text("project_id").references(() => projectDimensions.projectId, {
+      onDelete: "restrict",
+    }),
+    audienceListId: text("audience_list_id").references(() => audienceLists.id, {
       onDelete: "restrict",
     }),
     name: text("name"),
@@ -1538,6 +1571,34 @@ export const campaignRuns = pgTable(
       foreignColumns: [table.id],
       name: "campaign_runs_resend_of_run_id_campaign_runs_id_fk",
     }).onDelete("restrict"),
+  ],
+);
+
+export const emailOptOuts = pgTable(
+  "email_opt_outs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    normalizedEmail: text("normalized_email").notNull(),
+    scopeType: text("scope_type").notNull(),
+    scopeId: text("scope_id"),
+    source: text("source").notNull(),
+    sourceRunId: text("source_run_id").references(() => campaignRuns.id, { onDelete: "set null" }),
+    optedOutAt: timestamp("opted_out_at", { mode: "date", withTimezone: true }).notNull(),
+    // Set when Salesforce re-subscribes the person; the row stays for audit.
+    clearedAt: timestamp("cleared_at", { mode: "date", withTimezone: true }),
+    clearedBySource: text("cleared_by_source"),
+    createdAt: createdAtColumn,
+  },
+  (table) => [
+    check("email_opt_outs_scope_type_check", sql`${table.scopeType} IN ('all', 'list')`),
+    check("email_opt_outs_scope_shape_check", sql`(${table.scopeType} = 'list') = (${table.scopeId} IS NOT NULL)`),
+    check("email_opt_outs_cleared_shape_check", sql`(${table.clearedAt} IS NULL) = (${table.clearedBySource} IS NULL)`),
+    uniqueIndex("email_opt_outs_active_all_unique")
+      .on(table.normalizedEmail)
+      .where(sql`${table.scopeType} = 'all' AND ${table.clearedAt} IS NULL`),
+    uniqueIndex("email_opt_outs_active_list_unique")
+      .on(table.normalizedEmail, table.scopeId)
+      .where(sql`${table.scopeType} = 'list' AND ${table.clearedAt} IS NULL`),
   ],
 );
 

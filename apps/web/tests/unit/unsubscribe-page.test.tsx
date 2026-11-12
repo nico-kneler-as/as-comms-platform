@@ -583,6 +583,9 @@ describe("public unsubscribe page", () => {
         }),
       ]),
     );
+    expect(
+      await campaigns.emailOptOuts.listEmails({ type: "all" }, new Date()),
+    ).toContain("taylor@example.org");
     // Raw SQL: apps/web tests may not import @as-comms/db (boundary rule).
     const outboxResult = await runtime.context.db.execute(sql`
       select email, contact_id, event_kind from salesforce_subscription_outbox
@@ -633,6 +636,10 @@ describe("public unsubscribe page", () => {
       reason: "platform_optout",
       source: "recipient_click",
     });
+    // A newsletter-only unsubscribe is not "unsubscribe from all".
+    expect(
+      await campaigns.emailOptOuts.listEmails({ type: "all" }, new Date()),
+    ).not.toContain("taylor@example.org");
   });
 
   it("writes a newsletter suppression for a null-contact newsletter all click", async () => {
@@ -653,6 +660,11 @@ describe("public unsubscribe page", () => {
       reason: "platform_optout",
       source: "recipient_click",
     });
+    // A newsletter subscriber's "all" click must stop list sends too, which
+    // ignore newsletter suppressions (PRD #768).
+    expect(
+      await campaigns.emailOptOuts.listEmails({ type: "all" }, new Date()),
+    ).toContain("taylor@example.org");
   });
 
   it("records all consent for a platform contact owning a newsletter recipient email", async () => {
@@ -766,6 +778,43 @@ describe("public unsubscribe page", () => {
         new Date(),
       ),
     ).resolves.toBe(true);
+    await expect(
+      (await getStage1WebRuntime()).campaigns.emailOptOuts.listEmails(
+        { type: "all" },
+        new Date(),
+      ),
+    ).resolves.toContain(email);
+    // Nothing else reaches Salesforce for this recipient, so the "all" click
+    // queues exactly one all_opt_out (PRD #768).
+    const outboxResult = await runtime.context.db.execute(sql`
+      select email, contact_id, event_kind from salesforce_subscription_outbox
+      where email = ${email}
+    `);
+    expect(
+      (outboxResult as { rows?: readonly Record<string, unknown>[] }).rows ?? [],
+    ).toEqual([
+      { email, contact_id: null, event_kind: "all_opt_out" },
+    ]);
+  });
+
+  it("queues one Salesforce all_opt_out for a contact's all click", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+
+    await unsubscribeAllPost(
+      new Request("http://localhost/u/token-project/all", { method: "POST" }),
+      { params: Promise.resolve({ token: "token-project" }) },
+    );
+
+    const outboxResult = await runtime.context.db.execute(sql`
+      select event_kind from salesforce_subscription_outbox
+      where event_kind = 'all_opt_out'
+    `);
+    expect(
+      ((outboxResult as { rows?: readonly Record<string, unknown>[] }).rows ?? [])
+        .length,
+    ).toBe(1);
   });
 
   it("matches the project snapshot", () => {

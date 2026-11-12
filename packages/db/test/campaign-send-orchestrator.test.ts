@@ -303,12 +303,9 @@ function createOrchestrator(
           campaignRuns: campaigns.campaignRuns,
           contactConsent: campaigns.contactConsent,
           suppressionList: campaigns.suppressionList,
-          newsletterSuppressions: {
-            isSuppressed: async (email) =>
-              (await campaigns.newsletterSuppressions.findByEmail(email)) !==
-              null,
-          },
+          newsletterSuppressions: campaigns.newsletterSuppressions,
           salesforceEmailOptOuts: campaigns.salesforceContactStates,
+          emailOptOuts: campaigns.emailOptOuts,
         },
       }),
       mergeRenderer: createMergeRenderer(),
