@@ -20,6 +20,7 @@ export interface ExcludedMember extends AudienceMember {
     | "opted_out_project"
     | "opted_out_newsletter"
     | "opted_out_all"
+    | "opted_out_list"
     | "opted_out_salesforce";
 }
 

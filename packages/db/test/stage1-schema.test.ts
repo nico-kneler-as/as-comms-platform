@@ -13,6 +13,8 @@ import {
   aiKnowledgeEntries,
   automatedEmailSends,
   automatedEmailTemplates,
+  audienceListMembers,
+  audienceLists,
   audienceSnapshots,
   broadcastLinkClicks,
   broadcastWebVersions,
@@ -29,6 +31,7 @@ import {
   contactTimelineProjection,
   databaseSchema,
   dependencyAuditSummary,
+  emailOptOuts,
   internalNotes,
   messageAttachments,
   newsletterSubscribers,
@@ -58,6 +61,8 @@ describe("Stage 1 DB schema", () => {
       // Auth.js v5 + Stage 2 Settings tables (see D-025)
       "accounts",
       "aiKnowledgeEntries",
+      "audienceListMembers",
+      "audienceLists",
       "audienceSnapshots",
       "auditPolicyEvidence",
       "automatedEmailSends",
@@ -81,6 +86,7 @@ describe("Stage 1 DB schema", () => {
       "contactTimelineProjection",
       "contacts",
       "dependencyAuditSummary",
+      "emailOptOuts",
       "expeditionDimensions",
       "gmailMessageDetails",
       "identityResolutionQueue",
@@ -154,6 +160,9 @@ describe("Stage 1 DB schema", () => {
       "source_evidence_quarantine"
     );
     expect(getTableName(campaignRuns)).toBe("campaign_runs");
+    expect(getTableName(audienceLists)).toBe("audience_lists");
+    expect(getTableName(audienceListMembers)).toBe("audience_list_members");
+    expect(getTableName(emailOptOuts)).toBe("email_opt_outs");
     expect(getTableName(composerDrafts)).toBe("composer_drafts");
     expect(getTableName(audienceSnapshots)).toBe("audience_snapshots");
     expect(getTableName(broadcastLinkClicks)).toBe("broadcast_link_clicks");

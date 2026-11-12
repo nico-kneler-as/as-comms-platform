@@ -439,6 +439,71 @@ describe("Salesforce subscription readback planner", () => {
     ).toMatchObject({ consentIds: ["old"] });
   });
 
+  describe("email opt-out ledger (PRD #768)", () => {
+    const unticked = {
+      current: record(),
+      old: mirror(record({ unsubscribedFromAll: true })),
+    };
+
+    it("clears the ledger all row of a person with no contact", () => {
+      const result = event({
+        ...unticked,
+        contacts: [],
+        state: {
+          ...state,
+          emailOptOutAllByEmail: new Map([["person@example.org", T]]),
+        },
+      });
+      expect(result?.outcome).toBe("applied");
+      expect(result?.actions).toEqual([
+        { kind: "clear_email_opt_out_all", email: "person@example.org" },
+      ]);
+    });
+
+    it("clears both the contact consent and the ledger row", () => {
+      const result = event({
+        ...unticked,
+        state: {
+          ...state,
+          consentsByContact: new Map([
+            [
+              "contact-1",
+              [
+                {
+                  id: "consent-1",
+                  contactId: "contact-1",
+                  scopeType: "all" as const,
+                  scopeId: null,
+                  optedOutAt: T,
+                },
+              ],
+            ],
+          ]),
+          emailOptOutAllByEmail: new Map([["person@example.org", T]]),
+        },
+      });
+      expect(result?.actions.map((action) => action.kind)).toEqual([
+        "clear_consent",
+        "clear_email_opt_out_all",
+      ]);
+    });
+
+    it("keeps a ledger row newer than the Salesforce change", () => {
+      const result = event({
+        ...unticked,
+        contacts: [],
+        state: {
+          ...state,
+          emailOptOutAllByEmail: new Map([
+            ["person@example.org", "2026-11-07T13:00:00.000Z"],
+          ]),
+        },
+      });
+      expect(result?.outcome).toBe("skipped_platform_newer");
+      expect(result?.actions).toEqual([]);
+    });
+  });
+
   it("emits only true fields for a new record with null from values", () => {
     const result = plan({
       current: record({

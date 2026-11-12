@@ -42,6 +42,8 @@ import { tryNormalizePhoneE164 } from "@as-comms/domain/phone";
 import { aiKnowledgeSourcesSchema } from "@as-comms/contracts";
 import {
   audienceCriteriaSchema,
+  audienceListMemberRecordSchema,
+  audienceListRecordSchema,
   audienceSnapshotRecordSchema,
   campaignRunProjectionRowSchema,
   campaignRunRecordSchema,
@@ -49,6 +51,7 @@ import {
   createDraftInputSchema,
   dependencyAuditSummaryId,
   deliveryStatusSchema,
+  emailOptOutRecordSchema,
   newAudienceSnapshotSchema,
   orgSettingsRecordSchema,
   opsDigestWatermarkId,
@@ -58,6 +61,8 @@ import {
   updateDraftInputSchema,
   workspaceSchema,
   type AudienceSnapshotRecord,
+  type AudienceListMemberRecord,
+  type AudienceListRecord,
   type CampaignRunProjectionRow,
   type CampaignRunRecord,
   type ContactConsentRecord,
@@ -66,6 +71,7 @@ import {
   type CreateDraftInput,
   type DependencyAuditSummaryRecord,
   type DeliveryStatus,
+  type EmailOptOutRecord,
   type NewsletterSubscriberRecord,
   type NewAudienceSnapshot,
   type NewsletterSuppressionRecord,
@@ -167,6 +173,8 @@ import {
 } from "./mappers.js";
 import type { DatabaseSchema } from "./schema/index.js";
 import {
+  audienceListMembers,
+  audienceLists,
   audienceSnapshots,
   broadcastLinkClicks,
   broadcastOpens,
@@ -183,6 +191,7 @@ import {
   contactTimelineProjection,
   contacts,
   dependencyAuditSummary,
+  emailOptOuts,
   expeditionDimensions,
   gmailMessageDetails,
   integrationBackfillJobs,
@@ -195,6 +204,7 @@ import {
   opsAlertState,
   opsDigestWatermark,
   manualNoteDetails,
+  newsletterSuppressions,
   orgSettings,
   postmarkWebhookDeadLetter,
   pendingComposerOutbounds,
@@ -361,6 +371,55 @@ export class StaleCampaignRunDraftError extends Error {
 }
 
 export interface Stage5RepositoryBundle {
+  /** Houston-owned lists, e.g. Insiders (PRD #768). */
+  readonly audienceLists: {
+    findById(id: string): Promise<AudienceListRecord | null>;
+    listAll(): Promise<
+      readonly (AudienceListRecord & { readonly memberCount: number })[]
+    >;
+    create(input: {
+      readonly id?: string;
+      readonly name: string;
+      readonly actorUserId: string | null;
+    }): Promise<AudienceListRecord>;
+    /** Replaces every member in one transaction; returns the deduped count. */
+    replaceMembers(
+      listId: string,
+      rows: readonly {
+        readonly email: string;
+        readonly firstName?: string | null;
+        readonly lastName?: string | null;
+      }[],
+      actorUserId: string | null,
+    ): Promise<number>;
+    listMembers(listId: string): Promise<readonly AudienceListMemberRecord[]>;
+  };
+  /** Email-keyed opt-outs: "all", or one Houston list (PRD #768). */
+  readonly emailOptOuts: {
+    /** Idempotent: an existing opt-out is kept, so the earliest wins. */
+    record(input: {
+      readonly email: string;
+      readonly scope: EmailOptOutScope;
+      readonly source: string;
+      readonly sourceRunId?: string | null;
+      readonly occurredAt: Date;
+    }): Promise<EmailOptOutRecord>;
+    /**
+     * Records an "all" opt-out and, when `notifySalesforce` is true, queues the
+     * Salesforce all_opt_out event in the same transaction. Pass false when
+     * another write already queued it (a contact's consent, a subscriber's
+     * recordAllOptOut).
+     */
+    recordAll(input: {
+      readonly email: string;
+      readonly source: string;
+      readonly sourceRunId?: string | null;
+      readonly occurredAt: Date;
+      readonly notifySalesforce: boolean;
+    }): Promise<EmailOptOutRecord>;
+    /** Active (not cleared) opt-outs recorded at or before `at`. */
+    listEmails(scope: EmailOptOutScope, at: Date): Promise<ReadonlySet<string>>;
+  };
   readonly salesforceAudienceLists: SalesforceAudienceListsRepository;
   readonly salesforceContactStates: SalesforceContactStatesRepository;
   readonly audienceComposition: {
@@ -507,6 +566,15 @@ export interface Stage5RepositoryBundle {
       occurredAt: Date,
     ): Promise<NewsletterSuppressionRecord>;
     findByEmail(email: string): Promise<NewsletterSuppressionRecord | null>;
+    /** Every suppression, for the send-time consent rule (PRD #768). */
+    listForExclusion(): Promise<
+      readonly {
+        readonly email: string;
+        readonly reason: "unsubscribed" | "cleaned" | "platform_optout";
+        readonly source: string;
+        readonly createdAt: Date;
+      }[]
+    >;
   };
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
@@ -7390,6 +7458,9 @@ export function createStage2RepositoryBundleFromConnection(
 }
 
 type CampaignRunRow = typeof campaignRuns.$inferSelect;
+type AudienceListRow = typeof audienceLists.$inferSelect;
+type AudienceListMemberRow = typeof audienceListMembers.$inferSelect;
+type EmailOptOutRow = typeof emailOptOuts.$inferSelect;
 type AudienceSnapshotRow = typeof audienceSnapshots.$inferSelect;
 type ContactConsentRow = typeof contactConsent.$inferSelect;
 type SuppressionListRow = typeof suppressionList.$inferSelect;
@@ -7599,6 +7670,7 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     launchType: row.launchType,
     state: row.state,
     projectId: row.projectId,
+    audienceListId: row.audienceListId,
     name: row.name,
     fromEmail: row.fromEmail,
     fromName: row.fromName,
@@ -7625,6 +7697,112 @@ function mapCampaignRunRow(row: CampaignRunRow): CampaignRunRecord {
     createdAt: toIsoDate(row.createdAt),
     updatedAt: toIsoDate(row.updatedAt),
   });
+}
+
+type EmailOptOutScope =
+  | { readonly type: "all" }
+  | { readonly type: "list"; readonly listId: string };
+
+function mapAudienceListRow(row: AudienceListRow): AudienceListRecord {
+  return audienceListRecordSchema.parse({
+    id: row.id,
+    name: row.name,
+    createdByUserId: row.createdByUserId,
+    updatedByUserId: row.updatedByUserId,
+    membersReplacedAt: toNullableIsoDate(row.membersReplacedAt),
+    membersReplacedByUserId: row.membersReplacedByUserId,
+    createdAt: toIsoDate(row.createdAt),
+    updatedAt: toIsoDate(row.updatedAt),
+  });
+}
+
+function mapAudienceListMemberRow(
+  row: AudienceListMemberRow,
+): AudienceListMemberRecord {
+  return audienceListMemberRecordSchema.parse({
+    id: row.id,
+    listId: row.listId,
+    normalizedEmail: row.normalizedEmail,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    createdAt: toIsoDate(row.createdAt),
+  });
+}
+
+function mapEmailOptOutRow(row: EmailOptOutRow): EmailOptOutRecord {
+  return emailOptOutRecordSchema.parse({
+    id: row.id,
+    normalizedEmail: row.normalizedEmail,
+    scopeType: row.scopeType,
+    scopeId: row.scopeId,
+    source: row.source,
+    sourceRunId: row.sourceRunId,
+    optedOutAt: toIsoDate(row.optedOutAt),
+    clearedAt: toNullableIsoDate(row.clearedAt),
+    clearedBySource: row.clearedBySource,
+    createdAt: toIsoDate(row.createdAt),
+  });
+}
+
+/** Trims; an empty or missing value becomes null. */
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length === 0 ? null : trimmed;
+}
+
+/** The active (not cleared) opt-out rows for one scope. */
+function activeEmailOptOutCondition(scope: EmailOptOutScope) {
+  return and(
+    scope.type === "list"
+      ? and(eq(emailOptOuts.scopeType, "list"), eq(emailOptOuts.scopeId, scope.listId))
+      : and(eq(emailOptOuts.scopeType, "all"), isNull(emailOptOuts.scopeId)),
+    isNull(emailOptOuts.clearedAt),
+  );
+}
+
+async function insertEmailOptOut(
+  db: Stage1Database,
+  input: {
+    readonly email: string;
+    readonly scope: EmailOptOutScope;
+    readonly source: string;
+    readonly sourceRunId?: string | null;
+    readonly occurredAt: Date;
+  },
+): Promise<EmailOptOutRecord> {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  // A partial unique index allows one active row per email and scope, so an
+  // existing active opt-out is kept and the earliest wins.
+  const [row] = await db
+    .insert(emailOptOuts)
+    .values({
+      normalizedEmail,
+      scopeType: input.scope.type,
+      scopeId: input.scope.type === "list" ? input.scope.listId : null,
+      source: input.source,
+      sourceRunId: input.sourceRunId ?? null,
+      optedOutAt: input.occurredAt,
+      createdAt: new Date(),
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (row !== undefined) {
+    return mapEmailOptOutRow(row);
+  }
+
+  const [existing] = await db
+    .select()
+    .from(emailOptOuts)
+    .where(
+      and(
+        eq(emailOptOuts.normalizedEmail, normalizedEmail),
+        activeEmailOptOutCondition(input.scope),
+      ),
+    )
+    .limit(1);
+  return mapEmailOptOutRow(
+    requireRow(existing, "Expected existing email opt-out after idempotent record."),
+  );
 }
 
 function mapAudienceSnapshotRow(
@@ -7786,6 +7964,9 @@ function mapCampaignRunMutationFields(
   }
   if ("projectId" in input && input.projectId !== undefined) {
     values.projectId = input.projectId;
+  }
+  if ("audienceListId" in input && input.audienceListId !== undefined) {
+    values.audienceListId = input.audienceListId;
   }
   if ("name" in input && input.name !== undefined) {
     values.name = input.name;
@@ -8302,6 +8483,143 @@ export function createStage5RepositoryBundle(
   };
 
   return defineStage5RepositoryBundle({
+    audienceLists: {
+      async findById(id) {
+        const [row] = await db
+          .select()
+          .from(audienceLists)
+          .where(eq(audienceLists.id, id))
+          .limit(1);
+        return row === undefined ? null : mapAudienceListRow(row);
+      },
+      async listAll() {
+        const rows = await db
+          .select({
+            list: audienceLists,
+            memberCount: count(audienceListMembers.id),
+          })
+          .from(audienceLists)
+          .leftJoin(
+            audienceListMembers,
+            eq(audienceListMembers.listId, audienceLists.id),
+          )
+          .groupBy(audienceLists.id)
+          .orderBy(asc(audienceLists.name));
+        return rows.map(({ list, memberCount }) => ({
+          ...mapAudienceListRow(list),
+          memberCount,
+        }));
+      },
+      async create(input) {
+        const now = new Date();
+        const [row] = await db
+          .insert(audienceLists)
+          .values({
+            id: blankToNull(input.id) ?? crypto.randomUUID(),
+            name: input.name.trim(),
+            createdByUserId: input.actorUserId,
+            updatedByUserId: input.actorUserId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        return mapAudienceListRow(
+          requireRow(row, "Expected audience list row from create."),
+        );
+      },
+      async replaceMembers(listId, rows, actorUserId) {
+        // First row wins for a repeated address.
+        const deduped = new Map<
+          string,
+          {
+            readonly normalizedEmail: string;
+            readonly firstName: string | null;
+            readonly lastName: string | null;
+          }
+        >();
+        for (const row of rows) {
+          const normalizedEmail = row.email.trim().toLowerCase();
+          if (normalizedEmail.length === 0 || deduped.has(normalizedEmail)) {
+            continue;
+          }
+          deduped.set(normalizedEmail, {
+            normalizedEmail,
+            firstName: blankToNull(row.firstName),
+            lastName: blankToNull(row.lastName),
+          });
+        }
+
+        const now = new Date();
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(audienceListMembers)
+            .where(eq(audienceListMembers.listId, listId));
+          if (deduped.size > 0) {
+            await tx.insert(audienceListMembers).values(
+              [...deduped.values()].map((member) => ({
+                ...member,
+                listId,
+                createdAt: now,
+              })),
+            );
+          }
+          await tx
+            .update(audienceLists)
+            .set({
+              membersReplacedAt: now,
+              membersReplacedByUserId: actorUserId,
+              updatedByUserId: actorUserId,
+              updatedAt: now,
+            })
+            .where(eq(audienceLists.id, listId));
+        });
+        return deduped.size;
+      },
+      async listMembers(listId) {
+        const rows = await db
+          .select()
+          .from(audienceListMembers)
+          .where(eq(audienceListMembers.listId, listId))
+          .orderBy(asc(audienceListMembers.normalizedEmail));
+        return rows.map(mapAudienceListMemberRow);
+      },
+    },
+    emailOptOuts: {
+      async record(input) {
+        return insertEmailOptOut(db, input);
+      },
+      async recordAll(input) {
+        return db.transaction(async (tx) => {
+          const record = await insertEmailOptOut(tx as Stage1Database, {
+            email: input.email,
+            scope: { type: "all" },
+            source: input.source,
+            sourceRunId: input.sourceRunId ?? null,
+            occurredAt: input.occurredAt,
+          });
+          if (input.notifySalesforce) {
+            await enqueueSalesforceSubscriptionEvent(tx as Stage1Database, {
+              email: input.email,
+              eventKind: "all_opt_out",
+              occurredAt: input.occurredAt,
+            });
+          }
+          return record;
+        });
+      },
+      async listEmails(scope, at) {
+        const rows = await db
+          .select({ normalizedEmail: emailOptOuts.normalizedEmail })
+          .from(emailOptOuts)
+          .where(
+            and(
+              activeEmailOptOutCondition(scope),
+              lte(emailOptOuts.optedOutAt, at),
+            ),
+          );
+        return new Set(rows.map((row) => row.normalizedEmail));
+      },
+    },
     salesforceAudienceLists: createSalesforceAudienceListsRepository(db),
     salesforceContactStates: createSalesforceContactStatesRepository(db),
     audienceComposition: {
@@ -8351,6 +8669,7 @@ export function createStage5RepositoryBundle(
             launchType: parsed.launchType,
             state: "draft",
             projectId: parsed.projectId,
+            audienceListId: parsed.audienceListId,
             name: parsed.name,
             fromEmail: parsed.fromEmail,
             fromName: parsed.fromName,
@@ -9015,6 +9334,22 @@ export function createStage5RepositoryBundle(
 
       async findByEmail(email) {
         return getNewsletterSuppressionByEmail(db, email);
+      },
+      async listForExclusion() {
+        const rows = await db
+          .select({
+            email: newsletterSuppressions.email,
+            reason: newsletterSuppressions.reason,
+            source: newsletterSuppressions.source,
+            createdAt: newsletterSuppressions.createdAt,
+          })
+          .from(newsletterSuppressions);
+        return rows.map((row) => ({
+          email: row.email.trim().toLowerCase(),
+          reason: row.reason as "unsubscribed" | "cleaned" | "platform_optout",
+          source: row.source,
+          createdAt: row.createdAt,
+        }));
       },
     },
 

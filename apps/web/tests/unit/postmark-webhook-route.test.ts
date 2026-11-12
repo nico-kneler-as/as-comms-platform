@@ -111,6 +111,7 @@ async function seedRunAndSnapshot(
     projectId?: string;
     runKind?: "newsletter" | "project";
     newsletterSubscriberId?: string;
+    audienceListId?: string;
   } = {},
 ) {
   const projectId = overrides.projectId ?? "project-postmark";
@@ -157,6 +158,7 @@ async function seedRunAndSnapshot(
     kind: runKind,
     launchType: "normal_email",
     projectId: runKind === "project" ? projectId : null,
+    audienceListId: overrides.audienceListId ?? null,
     name: null,
     fromEmail: "postmark-test@adventurescientists.org",
     fromName: "AS Test",
@@ -763,6 +765,41 @@ describe("Postmark webhook route handler", () => {
     expect(consentRows).toHaveLength(1);
     expect(consentRows[0]?.scopeType).toBe("newsletter");
     expect(consentRows[0]?.scopeId).toBeNull();
+  });
+
+  it("records a one-click unsubscribe from a list send as leaving that list only", async () => {
+    if (runtime === null) {
+      throw new Error("Runtime not initialized.");
+    }
+    const campaigns = requireCampaigns();
+    await seedRunAndSnapshot(runtime, campaigns, {
+      runKind: "newsletter",
+      audienceListId: "insiders",
+    });
+
+    const response = await POST(
+      signRequest(loadFixture("subscription-change.json")),
+    );
+    expect(response.status).toBe(200);
+
+    await expect(
+      campaigns.emailOptOuts.listEmails(
+        { type: "list", listId: "insiders" },
+        new Date("2030-01-01T00:00:00.000Z"),
+      ),
+    ).resolves.toEqual(new Set(["john@example.com"]));
+    expect(
+      await campaigns.contactConsent.listForContact("contact-postmark"),
+    ).toHaveLength(0);
+    expect(
+      await campaigns.newsletterSuppressions.findByEmail("john@example.com"),
+    ).toBeNull();
+    await expect(
+      campaigns.suppressionList.isSuppressed(
+        "john@example.com",
+        new Date("2030-01-01T00:00:00.000Z"),
+      ),
+    ).resolves.toBe(false);
   });
 
   it("opts a newsletter subscriber out on a Postmark one-click unsubscribe", async () => {

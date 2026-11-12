@@ -439,8 +439,11 @@ export async function upsertNewsletterSuppression(
       target: newsletterSuppressions.email,
       set: {
         email: values.email,
-        reason: values.reason,
-        source: values.source,
+        // A bounced ("cleaned") address stays cleaned: a later opt-out must
+        // not turn a dead address into a plain unsubscribe, which Houston
+        // list sends ignore (PRD #768).
+        reason: sql`CASE WHEN ${newsletterSuppressions.reason} = 'cleaned' THEN ${newsletterSuppressions.reason} ELSE excluded.reason END`,
+        source: sql`CASE WHEN ${newsletterSuppressions.reason} = 'cleaned' THEN ${newsletterSuppressions.source} ELSE excluded.source END`,
         updatedAt: new Date(),
       },
     })

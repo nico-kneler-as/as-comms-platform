@@ -374,6 +374,7 @@ const campaignRunEditableFieldsSchema = z.object({
   kind: campaignKindSchema,
   launchType: launchTypeSchema,
   projectId: nullableStringSchema.default(null),
+  audienceListId: nullableStringSchema.default(null),
   name: nullableStringSchema.default(null),
   fromEmail: z.string().email().nullable().default(null),
   fromName: nullableStringSchema.default(null),
@@ -450,14 +451,62 @@ export const campaignRunRecordSchema = campaignRunEditableFieldsSchema
 type ParsedCampaignRunRecord = z.infer<typeof campaignRunRecordSchema>;
 export type CampaignRunRecord = Omit<
   ParsedCampaignRunRecord,
-  "audienceCriteria" | "resendOfRunId" | "resendDelayDays"
+  "audienceCriteria" | "audienceListId" | "resendOfRunId" | "resendDelayDays"
 > & {
   readonly audienceCriteria: AudienceCriteria;
   // Optional at the TS boundary for legacy callers; Zod normalizes omitted
   // wire fields to null on parsing.
+  /** The Houston list this send goes to (PRD #768); null for every other send. */
+  readonly audienceListId?: string | null;
   readonly resendOfRunId?: string | null;
   readonly resendDelayDays?: number | null;
 };
+
+export const audienceListRecordSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1),
+  createdByUserId: nullableStringSchema.default(null),
+  updatedByUserId: nullableStringSchema.default(null),
+  membersReplacedAt: nullableTimestampSchema.default(null),
+  membersReplacedByUserId: nullableStringSchema.default(null),
+  createdAt: timestampSchema,
+  updatedAt: timestampSchema,
+});
+export type AudienceListRecord = z.infer<typeof audienceListRecordSchema>;
+
+export const audienceListMemberRecordSchema = z.object({
+  id: z.string().uuid(),
+  listId: idSchema,
+  normalizedEmail: z.string().email(),
+  firstName: nullableStringSchema.default(null),
+  lastName: nullableStringSchema.default(null),
+  createdAt: timestampSchema,
+});
+export type AudienceListMemberRecord = z.infer<typeof audienceListMemberRecordSchema>;
+
+// Email-keyed opt-outs (PRD #768). normalizedEmail is not re-validated as an
+// address: backfilled rows keep whatever Salesforce received.
+export const emailOptOutRecordSchema = z.object({
+  id: z.string().uuid(),
+  normalizedEmail: z.string().min(1),
+  scopeType: z.enum(["all", "list"]),
+  scopeId: nullableStringSchema.default(null),
+  source: z.string().min(1),
+  sourceRunId: nullableStringSchema.default(null),
+  optedOutAt: timestampSchema,
+  clearedAt: nullableTimestampSchema.default(null),
+  clearedBySource: nullableStringSchema.default(null),
+  createdAt: timestampSchema,
+}).superRefine((value, context) => {
+  if ((value.scopeType === "list") !== (value.scopeId !== null)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["scopeId"],
+      message: "scopeId is required exactly for list opt-outs.",
+    });
+  }
+});
+export type EmailOptOutRecord = z.infer<typeof emailOptOutRecordSchema>;
 
 function validateAudienceSnapshotRecipient(
   value: {
@@ -648,6 +697,7 @@ export const createDraftInputSchema = campaignRunEditableFieldsSchema
     kind: true,
     launchType: true,
     projectId: true,
+    audienceListId: true,
     name: true,
     fromEmail: true,
     fromName: true,
@@ -709,6 +759,7 @@ export const updateDraftInputSchema = z.object({
   kind: campaignKindSchema.optional(),
   launchType: launchTypeSchema.optional(),
   projectId: nullableStringSchema.optional(),
+  audienceListId: nullableStringSchema.optional(),
   name: nullableStringSchema.optional(),
   fromEmail: z.string().email().nullable().optional(),
   fromName: nullableStringSchema.optional(),

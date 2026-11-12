@@ -4,7 +4,12 @@ import type { CampaignRunRecord } from "@as-comms/contracts";
 
 import {
   createExclusionFilter,
+  decideRecipientExclusion,
   type ExclusionFilter,
+  type RecipientExclusionFacts,
+  type NewsletterSuppressionRow,
+  type RecipientExclusionScope,
+  classifyNewsletterSuppression,
 } from "../src/exclusion-filter.js";
 import type { AudienceMember } from "../src/campaign-types.js";
 
@@ -14,6 +19,7 @@ function buildRun(
     readonly launchType?: CampaignRunRecord["launchType"];
     readonly projectId?: string | null;
     readonly initialFilter?: "csv_upload" | "salesforce_lists";
+    readonly audienceListId?: string | null;
   } = {},
 ): CampaignRunRecord {
   const projectId =
@@ -30,6 +36,7 @@ function buildRun(
     launchType: input.launchType ?? "normal_email",
     state: "scheduled",
     projectId,
+    audienceListId: input.audienceListId ?? null,
     name: null,
     fromEmail: null,
     fromName: null,
@@ -100,9 +107,29 @@ function createFilter(input: {
     at: Date,
   ) => Promise<ReadonlySet<string>>;
   listSalesforceAllOptedOutEmails?: () => Promise<ReadonlySet<string>>;
+  newsletterCleanedEmails?: readonly string[];
+  newsletterSuppressionRows?: readonly NewsletterSuppressionRow[];
+  ledgerAllEmails?: readonly string[];
+  ledgerListEmails?: Readonly<Record<string, readonly string[]>>;
 }): ExclusionFilter {
   const suppressed = new Set(input.suppressedEmails ?? []);
-  const newsletterSuppressed = new Set(input.newsletterSuppressedEmails ?? []);
+  // `newsletterSuppressedEmails` are Mailchimp newsletter unsubscribes.
+  const createdAt = new Date("2026-10-01T00:00:00.000Z");
+  const newsletterRows: NewsletterSuppressionRow[] = [
+    ...(input.newsletterSuppressedEmails ?? []).map((email) => ({
+      email,
+      reason: "unsubscribed" as const,
+      source: "mailchimp_import",
+      createdAt,
+    })),
+    ...(input.newsletterCleanedEmails ?? []).map((email) => ({
+      email,
+      reason: "cleaned" as const,
+      source: "mailchimp_import",
+      createdAt,
+    })),
+    ...(input.newsletterSuppressionRows ?? []),
+  ];
   const optedOutScopes = input.optedOutScopes ?? new Set<string>();
 
   return createExclusionFilter({
@@ -123,7 +150,7 @@ function createFilter(input: {
         isSuppressed: (email) => Promise.resolve(suppressed.has(email)),
       },
       newsletterSuppressions: {
-        isSuppressed: (email) => Promise.resolve(newsletterSuppressed.has(email)),
+        listForExclusion: () => Promise.resolve(newsletterRows),
       },
       salesforceEmailOptOuts: {
         listOptedOutEmails: input.listSalesforceOptedOutEmails ??
@@ -131,11 +158,212 @@ function createFilter(input: {
         listUnsubscribedFromAllEmails: input.listSalesforceAllOptedOutEmails ??
           (() => Promise.resolve(input.salesforceAllOptedOutEmails ?? new Set())),
       },
+      emailOptOuts: {
+        listEmails: (scope) =>
+          Promise.resolve(
+            new Set(
+              scope.type === "all"
+                ? (input.ledgerAllEmails ?? [])
+                : (input.ledgerListEmails?.[scope.listId] ?? []),
+            ),
+          ),
+      },
     },
   });
 }
 
 describe("createExclusionFilter", () => {
+  describe("decideRecipientExclusion", () => {
+    const none: RecipientExclusionFacts = {
+      suppressed: false,
+      salesforceEmailOptOut: false,
+      newsletterSuppression: null,
+      allOptOut: false,
+      projectOptOut: false,
+      newsletterOptOut: false,
+      listOptOut: false,
+    };
+    const list: RecipientExclusionScope = { type: "list", listId: "insiders" };
+    const newsletter: RecipientExclusionScope = {
+      type: "newsletter",
+      honoursNewsletterSuppressions: true,
+    };
+    const project: RecipientExclusionScope = {
+      type: "project",
+      honoursNewsletterSuppressions: false,
+    };
+
+    it.each([
+      ["a newsletter-only unsubscribe is ignored on a list send", { newsletterSuppression: "newsletter_only" }, list, null],
+      ["a broad newsletter suppression is excluded on a list send", { newsletterSuppression: "broad" }, list, "opted_out_newsletter"],
+      ["a newsletter-only unsubscribe is excluded on a newsletter send", { newsletterSuppression: "newsletter_only" }, newsletter, "opted_out_newsletter"],
+      ["a bounced address is excluded on a list send", { newsletterSuppression: "bounced" }, list, "suppressed"],
+      ["a bounced address is excluded on a newsletter send", { newsletterSuppression: "bounced" }, newsletter, "opted_out_newsletter"],
+      ["an all opt-out is excluded on a list send", { allOptOut: true }, list, "opted_out_all"],
+      ["an all opt-out is excluded on a project send", { allOptOut: true }, project, "opted_out_all"],
+      ["leaving the list is excluded on that list's send", { listOptOut: true }, list, "opted_out_list"],
+      ["a contact newsletter opt-out is ignored on a list send", { newsletterOptOut: true }, list, null],
+      ["a project opt-out is ignored on a list send", { projectOptOut: true }, list, null],
+      ["a Salesforce Email Opt Out is excluded on a list send", { salesforceEmailOptOut: true }, list, "opted_out_salesforce"],
+      ["a suppression-list match is excluded on a list send", { suppressed: true }, list, "suppressed"],
+      ["nothing known is sendable on a list send", {}, list, null],
+    ] as const)("%s", (_label, partial, scope, expected) => {
+      expect(
+        decideRecipientExclusion(
+          { ...none, ...(partial as Partial<RecipientExclusionFacts>) },
+          scope,
+        ),
+      ).toBe(expected);
+    });
+  });
+
+  describe("classifyNewsletterSuppression", () => {
+    const before = new Date("2026-11-09T12:00:00.000Z");
+    const after = new Date("2026-11-11T18:00:00.000Z");
+
+    it.each([
+      ["a Mailchimp unsubscribe", { reason: "unsubscribed", source: "mailchimp_import", createdAt: before }, "newsletter_only"],
+      ["a Mailchimp cleaned address", { reason: "cleaned", source: "mailchimp_import", createdAt: before }, "bounced"],
+      ["a newsletter page click after #763", { reason: "platform_optout", source: "recipient_click", createdAt: after }, "newsletter_only"],
+      ["a page click before #763, which may have been unsubscribe-from-all", { reason: "platform_optout", source: "recipient_click", createdAt: before }, "broad"],
+      ["a Postmark stream unsubscribe", { reason: "platform_optout", source: "provider_event", createdAt: after }, "broad"],
+      ["a Salesforce hard opt-out", { reason: "platform_optout", source: "salesforce_hard_optout", createdAt: after }, "broad"],
+    ] as const)("treats %s as %s", (_label, row, expected) => {
+      expect(classifyNewsletterSuppression(row)).toBe(expected);
+    });
+  });
+
+  describe("list sends (PRD #768)", () => {
+    const at = new Date("2026-11-12T12:00:00.000Z");
+    const listRun = buildRun("newsletter", { audienceListId: "insiders" });
+    const recipient = (email: string): AudienceMember => ({
+      ...buildMember(null),
+      frozenProjectId: null,
+      frozenEmail: email,
+    });
+
+    it("keeps newsletter-only unsubscribes and drops bounces, broad suppressions, list leavers and all opt-outs", async () => {
+      const filter = createFilter({
+        run: listRun,
+        newsletterSuppressedEmails: ["left-newsletter@example.org"],
+        newsletterCleanedEmails: ["bounced@example.org"],
+        newsletterSuppressionRows: [
+          {
+            email: "postmark-unsubscribe@example.org",
+            reason: "platform_optout",
+            source: "provider_event",
+            createdAt: new Date("2026-10-01T12:00:00.000Z"),
+          },
+        ],
+        ledgerListEmails: { insiders: ["left-insiders@example.org"] },
+        ledgerAllEmails: ["left-everything@example.org"],
+      });
+
+      const result = await filter.applyExclusions(
+        [
+          recipient("left-newsletter@example.org"),
+          recipient("bounced@example.org"),
+          recipient("postmark-unsubscribe@example.org"),
+          recipient("left-insiders@example.org"),
+          recipient("left-everything@example.org"),
+        ],
+        listRun.id,
+        at,
+      );
+
+      expect(result.eligible.map((member) => member.frozenEmail)).toEqual([
+        "left-newsletter@example.org",
+      ]);
+      expect(
+        result.excluded.map((member) => [member.frozenEmail, member.reason]),
+      ).toEqual([
+        ["bounced@example.org", "suppressed"],
+        ["postmark-unsubscribe@example.org", "opted_out_newsletter"],
+        ["left-insiders@example.org", "opted_out_list"],
+        ["left-everything@example.org", "opted_out_all"],
+      ]);
+    });
+
+    it("ignores another list's leavers", async () => {
+      const filter = createFilter({
+        run: listRun,
+        ledgerListEmails: { board: ["board-leaver@example.org"] },
+      });
+
+      await expect(
+        filter.applyExclusions([recipient("board-leaver@example.org")], listRun.id, at),
+      ).resolves.toMatchObject({ excluded: [] });
+    });
+
+    it("ignores a contact's newsletter opt-out", async () => {
+      const filter = createFilter({
+        run: listRun,
+        optedOutScopes: new Set(["contact-1:newsletter:*"]),
+        contactOptedOutEmails: { newsletter: new Set(["contact-1@example.org"]) },
+      });
+
+      await expect(
+        filter.applyExclusions([buildMember("contact-1")], listRun.id, at),
+      ).resolves.toMatchObject({ excluded: [] });
+    });
+  });
+
+  it("excludes a ledger all opt-out from a newsletter send", async () => {
+    const run = buildRun("newsletter");
+    const filter = createFilter({
+      run,
+      ledgerAllEmails: ["ledger@example.org"],
+    });
+
+    await expect(
+      filter.applyExclusions(
+        [{ ...buildMember(null), frozenEmail: "ledger@example.org" }],
+        run.id,
+        new Date("2026-11-12T12:00:00.000Z"),
+      ),
+    ).resolves.toMatchObject({ excluded: [{ reason: "opted_out_all" }] });
+  });
+
+  it("still applies contact all and project opt-outs to SMS runs", async () => {
+    const run = buildRun("project", { launchType: "sms" });
+    const filter = createFilter({
+      run,
+      optedOutScopes: new Set(["contact-1:all:*", "contact-2:project:project-a"]),
+    });
+
+    const result = await filter.applyExclusions(
+      [buildMember("contact-1"), buildMember("contact-2"), buildMember("contact-3")],
+      run.id,
+      new Date("2026-11-12T12:00:00.000Z"),
+    );
+
+    expect(result.excluded.map((member) => [member.contactId, member.reason])).toEqual([
+      ["contact-1", "opted_out_all"],
+      ["contact-2", "opted_out_project"],
+    ]);
+    expect(result.eligible.map((member) => member.contactId)).toEqual(["contact-3"]);
+  });
+
+  it("applies project opt-outs and newsletter suppressions to a project-less CSV email send", async () => {
+    const run = buildRun("project", { projectId: null, initialFilter: "csv_upload" });
+    const filter = createFilter({
+      run,
+      optedOutScopes: new Set(["contact-1:project:project-a"]),
+      newsletterSuppressedEmails: ["contact-2@example.org"],
+    });
+
+    const result = await filter.applyExclusions(
+      [buildMember("contact-1"), buildMember("contact-2"), buildMember("contact-3")],
+      run.id,
+      new Date("2026-11-12T12:00:00.000Z"),
+    );
+
+    expect(result.excluded.map((member) => [member.contactId, member.reason])).toEqual([
+      ["contact-1", "opted_out_project"],
+      ["contact-2", "opted_out_newsletter"],
+    ]);
+  });
+
   it("excludes suppression list matches", async () => {
     const filter = createFilter({
       run: buildRun("project"),

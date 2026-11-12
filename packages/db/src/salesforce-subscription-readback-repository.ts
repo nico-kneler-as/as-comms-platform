@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import {
   salesforceSubscriptionBoxValues,
@@ -17,6 +17,7 @@ import type { Stage1Database } from "./repositories.js";
 import {
   contactConsent,
   contactConsentClears,
+  emailOptOuts,
   contactIdentities,
   contacts,
   integrationHealth,
@@ -256,8 +257,13 @@ export function createSalesforceSubscriptionReadbackRepository(
         ...new Set(input.emails.map((email) => email.trim().toLowerCase())),
       ];
       const contactIds = [...new Set(input.contactIds)];
-      const [consents, subscribers, suppressions, hardSuppressions] =
-        await Promise.all([
+      const [
+        consents,
+        subscribers,
+        suppressions,
+        hardSuppressions,
+        ledgerAllRows,
+      ] = await Promise.all([
           contactIds.length === 0
             ? Promise.resolve([])
             : db
@@ -282,6 +288,21 @@ export function createSalesforceSubscriptionReadbackRepository(
                 .select({ email: suppressionList.normalizedEmail })
                 .from(suppressionList)
                 .where(inArray(suppressionList.normalizedEmail, emails)),
+          emails.length === 0
+            ? Promise.resolve([])
+            : db
+                .select({
+                  email: emailOptOuts.normalizedEmail,
+                  optedOutAt: emailOptOuts.optedOutAt,
+                })
+                .from(emailOptOuts)
+                .where(
+                  and(
+                    inArray(emailOptOuts.normalizedEmail, emails),
+                    eq(emailOptOuts.scopeType, "all"),
+                    isNull(emailOptOuts.clearedAt),
+                  ),
+                ),
         ]);
       const consentsByContact = new Map<string, ConsentState[]>();
       for (const row of consents) {
@@ -313,6 +334,9 @@ export function createSalesforceSubscriptionReadbackRepository(
           ]),
         ),
         suppressionEmails: new Set(hardSuppressions.map((row) => row.email)),
+        emailOptOutAllByEmail: new Map(
+          ledgerAllRows.map((row) => [row.email, row.optedOutAt.toISOString()]),
+        ),
       };
     },
     async persistBatch(input) {
@@ -394,6 +418,19 @@ export function createSalesforceSubscriptionReadbackRepository(
                   );
                   changed += rows.length;
                 }
+              } else if (action.kind === "clear_email_opt_out_all") {
+                const rows = await tx
+                  .update(emailOptOuts)
+                  .set({ clearedAt: new Date(), clearedBySource: "salesforce" })
+                  .where(
+                    and(
+                      eq(emailOptOuts.normalizedEmail, action.email),
+                      eq(emailOptOuts.scopeType, "all"),
+                      isNull(emailOptOuts.clearedAt),
+                    ),
+                  )
+                  .returning({ id: emailOptOuts.id });
+                changed += rows.length;
               } else if (action.kind === "insert_suppression") {
                 const rows = await tx
                   .insert(newsletterSuppressions)

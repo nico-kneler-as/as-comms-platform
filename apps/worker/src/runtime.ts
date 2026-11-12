@@ -449,12 +449,9 @@ function buildCampaignSendDependencies(input: {
       campaignRuns: input.campaigns.campaignRuns,
       contactConsent: input.campaigns.contactConsent,
       suppressionList: input.campaigns.suppressionList,
-      newsletterSuppressions: {
-        isSuppressed: async (email) =>
-          (await input.campaigns.newsletterSuppressions.findByEmail(email)) !==
-          null,
-      },
+      newsletterSuppressions: input.campaigns.newsletterSuppressions,
       salesforceEmailOptOuts: input.campaigns.salesforceContactStates,
+      emailOptOuts: input.campaigns.emailOptOuts,
     },
   });
   const mergeRenderer = createMergeRenderer();
