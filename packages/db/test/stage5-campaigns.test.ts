@@ -23,7 +23,9 @@ import { createTestStage1Context } from "./helpers.js";
 
 type Stage1Context = Awaited<ReturnType<typeof createTestStage1Context>>;
 
-function buildAudienceCriteria(): CreateDraftInput["audienceCriteria"] {
+function buildAudienceCriteria(): NonNullable<
+  CreateDraftInput["audienceCriteria"]
+> {
   return {
     projectId: "project-1",
     projectIds: ["project-1"],
@@ -963,6 +965,50 @@ describe("Stage 5 campaigns repositories", () => {
     expect(new Date(updated.updatedAt).getTime()).toBeGreaterThanOrEqual(
       new Date(created.updatedAt).getTime(),
     );
+  });
+
+  it("derives the durable audience list id from draft criteria on create and update", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    const campaigns = createStage5RepositoryBundle(context.db);
+    // Migration 0103 seeds the "insiders" list.
+
+    const created = await campaigns.campaignRuns.create(
+      buildDraftInput({
+        id: "run-audience-list-sync",
+        kind: "newsletter",
+        projectId: null,
+        audienceListId: null,
+        audienceCriteria: {
+          ...buildAudienceCriteria(),
+          projectId: null,
+          projectIds: [],
+          initialFilter: "audience_list",
+          audienceListId: "insiders",
+        },
+      }),
+    );
+    expect(created.audienceListId).toBe("insiders");
+
+    const cleared = await campaigns.campaignRuns.updateDraft(created.id, {
+      observedUpdatedAt: created.updatedAt,
+      audienceCriteria: {
+        ...created.audienceCriteria,
+        initialFilter: "all_available",
+        audienceListId: "insiders",
+      },
+    });
+    expect(cleared.audienceListId).toBeNull();
+
+    const restored = await campaigns.campaignRuns.updateDraft(cleared.id, {
+      observedUpdatedAt: cleared.updatedAt,
+      audienceCriteria: {
+        ...cleared.audienceCriteria,
+        initialFilter: "audience_list",
+        audienceListId: "insiders",
+      },
+    });
+    expect(restored.audienceListId).toBe("insiders");
   });
 
   it("saves a draft whose stored updated_at carries sub-millisecond precision", async () => {

@@ -8,7 +8,7 @@ import type { Stage1WebRuntime } from "@/src/server/stage1-runtime";
 export interface UnsubscribePageModel {
   readonly state: "pending" | "success" | "invalid";
   readonly token: string;
-  readonly variant: "project" | "newsletter";
+  readonly variant: "project" | "newsletter" | "list";
   readonly headline: string;
   readonly body: string;
   readonly email: string | null;
@@ -31,6 +31,7 @@ export interface UnsubscribeTarget {
   readonly runId: string;
   readonly kind: CampaignKind;
   readonly project: ResolvedProjectScope;
+  readonly list: ResolvedProjectScope;
 }
 
 const DIRECT_NEWSLETTER_TOKEN_PREFIX = "ns";
@@ -114,6 +115,7 @@ async function resolveDirectNewsletterUnsubscribeTarget(
     runId: `newsletter-subscriber:${subscriber.id}`,
     kind: "newsletter",
     project: { id: null, name: null },
+    list: { id: null, name: null },
   };
 }
 
@@ -184,6 +186,14 @@ export async function resolveUnsubscribeTarget(
     return null;
   }
 
+  const list =
+    run.audienceListId == null
+      ? null
+      : await runtime.campaigns.audienceLists.findById(run.audienceListId);
+  if (run.audienceListId != null && list === null) {
+    return null;
+  }
+
   return {
     contactId: snapshot.contactId,
     newsletterSubscriberId: snapshot.newsletterSubscriberId,
@@ -198,6 +208,10 @@ export async function resolveUnsubscribeTarget(
             snapshot.frozenProjectName,
           )
         : { id: null, name: null },
+    list:
+      list === null
+        ? { id: null, name: null }
+        : { id: list.id, name: list.name },
   };
 }
 
@@ -207,8 +221,11 @@ function hasAllOptOut(records: readonly ContactConsentRecord[]): boolean {
 
 function hasScopeOptOut(
   records: readonly ContactConsentRecord[],
-  scope: { readonly type: "project" | "newsletter"; readonly id?: string },
+  scope: UnsubscribeScope,
 ): boolean {
+  if (scope.type === "list") {
+    return false;
+  }
   if (scope.type === "newsletter") {
     return records.some((record) => record.scopeType === "newsletter");
   }
@@ -218,13 +235,16 @@ function hasScopeOptOut(
 }
 
 export interface UnsubscribeScope {
-  readonly type: "project" | "newsletter";
+  readonly type: "project" | "newsletter" | "list";
   readonly id?: string;
 }
 
 export function resolveUnsubscribeScope(
   target: UnsubscribeTarget,
 ): UnsubscribeScope | null {
+  if (target.list.id !== null) {
+    return { type: "list", id: target.list.id };
+  }
   if (target.kind === "newsletter") {
     return { type: "newsletter" };
   }
@@ -279,12 +299,55 @@ export async function loadUnsubscribePageModel(input: {
           target.email,
         )
       : null;
+  const listOptedOut =
+    scope.type === "list" && scope.id !== undefined
+      ? (
+          await input.runtime.campaigns.emailOptOuts.listEmails(
+            { type: "list", listId: scope.id },
+            new Date(),
+          )
+        ).has(target.email.trim().toLowerCase())
+      : false;
   const allOptedOut = hasAllOptOut(consentRows);
   const alreadyOptedOut =
-    target.kind === "newsletter" && target.contactId === null
+    scope.type === "list"
+      ? listOptedOut
+      : target.kind === "newsletter" && target.contactId === null
       ? newsletterSuppression !== null
       : allOptedOut || hasScopeOptOut(consentRows, scope);
   const isSuccess = input.confirmed || alreadyOptedOut;
+
+  if (scope.type === "list") {
+    const listName = target.list.name ?? "this list";
+    if (!isSuccess) {
+      return {
+        state: "pending",
+        token: input.token,
+        variant: "list",
+        headline: `Unsubscribe from ${listName} emails?`,
+        body: `Click confirm to stop receiving ${listName} emails. Other Adventure Scientists emails are not affected.`,
+        email: target.email,
+        ctaPrompt: null,
+        ctaLabel: null,
+        showAllBanner: false,
+        showAllCta: false,
+        footerAddress,
+      };
+    }
+    return {
+      state: "success",
+      token: input.token,
+      variant: "list",
+      headline: `You've been unsubscribed from ${listName} emails.`,
+      body: `You won't receive any more ${listName} emails. Other Adventure Scientists emails are not affected.`,
+      email: target.email,
+      ctaPrompt: "Want to unsubscribe from all Adventure Scientists emails instead?",
+      ctaLabel: "Unsubscribe from all AS emails →",
+      showAllBanner: input.requestedAllBanner && allOptedOut,
+      showAllCta: !allOptedOut,
+      footerAddress,
+    };
+  }
 
   if (target.kind === "newsletter") {
     if (!isSuccess) {

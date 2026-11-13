@@ -16,6 +16,7 @@ import {
   loadSmsCsvAudienceSummaryAction,
   loadMemberStatusCountsForProjects,
   previewAudienceAction,
+  replaceAudienceListMembersAction,
   resolveAudienceCountAction,
   resolveStoredCampaignAudience,
   searchNewsletterSubscribersAction,
@@ -620,17 +621,11 @@ describe("campaign audience data source", () => {
     ]);
   });
 
-  it("offers no common audiences while the synced insiders list is the Salesforce VIP? checkbox", async () => {
+  it("offers the Houston-owned Insiders list as a common audience", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");
     }
 
-    await runtime.runtime.campaigns.salesforceAudienceLists.replaceSnapshot({
-      campaigns: [],
-      members: [],
-      insiders: [{ id: "003-vip", email: "vip@example.org" }],
-      capturedAt: "2026-11-11T12:00:00.000Z",
-    });
     (
       runtime.runtime.connection as {
         sql: (strings: TemplateStringsArray, ...values: readonly unknown[]) => Promise<readonly unknown[]>;
@@ -639,10 +634,17 @@ describe("campaign audience data source", () => {
 
     const bootstrap = await getAudienceBuilderBootstrap();
 
-    expect(bootstrap.commonAudiences).toEqual([]);
+    expect(bootstrap.commonAudiences).toEqual([
+      expect.objectContaining({
+        id: "insiders",
+        title: "Insiders",
+        memberCount: 0,
+        membersReplacedAt: null,
+      }),
+    ]);
   });
 
-  it("counts and previews Insiders from the standing-list base instead of approved contacts or newsletter subscribers", async () => {
+  it("counts and previews Insiders from the Houston list base", async () => {
     if (runtime === null) {
       throw new Error("Expected runtime.");
     }
@@ -658,15 +660,17 @@ describe("campaign audience data source", () => {
       firstName: "Newsletter",
       status: "subscribed",
     });
-    await runtime.runtime.campaigns.salesforceAudienceLists.replaceSnapshot({
-      campaigns: [],
-      members: [],
-      insiders: [
-        { id: "003-insider", email: "insider@example.org" },
-        { id: "003-subscriber", email: "subscriber-insider@example.org" },
+    await runtime.runtime.campaigns.audienceLists.replaceMembers(
+      "insiders",
+      [
+        { email: "insider@example.org", firstName: "List Insider" },
+        {
+          email: "subscriber-insider@example.org",
+          firstName: "Subscriber Insider",
+        },
       ],
-      capturedAt: "2026-11-10T12:00:00.000Z",
-    });
+      "user:operator",
+    );
     await seedNewsletterSubscriber(runtime, {
       id: "11111111-1111-1111-1111-111111111200",
       email: "subscriber-insider@example.org",
@@ -683,8 +687,8 @@ describe("campaign audience data source", () => {
       lastActivityWindow: "all_time" as const,
       hasReplied: "either" as const,
       hasClicked: "either" as const,
-      initialFilter: "salesforce_lists" as const,
-      salesforceListIds: ["insiders"],
+      initialFilter: "audience_list" as const,
+      audienceListId: "insiders",
     };
 
     const [audience, count, preview] = await Promise.all([
@@ -717,7 +721,7 @@ describe("campaign audience data source", () => {
         }),
         expect.objectContaining({
           frozenEmail: "subscriber-insider@example.org",
-          newsletterSubscriberId: "11111111-1111-1111-1111-111111111200",
+          newsletterSubscriberId: null,
           frozenFirstName: "Subscriber Insider",
         }),
       ]),
@@ -730,6 +734,47 @@ describe("campaign audience data source", () => {
         expect.objectContaining({ email: "subscriber-insider@example.org" }),
       ],
     });
+  });
+
+  it("replaces an audience list from First Name-style CSV headers and returns counts", async () => {
+    if (runtime === null) {
+      throw new Error("Expected runtime.");
+    }
+
+    const result = await replaceAudienceListMembersAction({
+      listId: "insiders",
+      csvText: [
+        "First Name,Last Name,Email",
+        "Ada,Lovelace,ada@example.org",
+        "Grace,Hopper,grace@example.org",
+        "Duplicate,Person,ada@example.org",
+        "Bad,Address,not-an-email",
+      ].join("\n"),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        importedCount: 2,
+        invalidSkippedCount: 1,
+        duplicatesRemovedCount: 1,
+        memberCount: 2,
+      },
+    });
+    await expect(
+      runtime.runtime.campaigns.audienceLists.listMembers("insiders"),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        normalizedEmail: "ada@example.org",
+        firstName: "Ada",
+        lastName: "Lovelace",
+      }),
+      expect.objectContaining({
+        normalizedEmail: "grace@example.org",
+        firstName: "Grace",
+        lastName: "Hopper",
+      }),
+    ]);
   });
 
   it("resolves specific newsletter subscriber picks as non-contact audience members and excludes suppressed picks", async () => {

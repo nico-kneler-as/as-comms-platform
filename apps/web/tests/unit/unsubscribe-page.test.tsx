@@ -27,6 +27,7 @@ async function seedTarget(
     readonly contactId?: string | null;
     readonly newsletterSubscriberId?: string | null;
     readonly email?: string;
+    readonly audienceListId?: string;
   },
 ) {
   const campaigns = (await getStage1WebRuntime()).campaigns;
@@ -162,6 +163,12 @@ async function seedTarget(
       lastActivityWindow: "all_time",
       hasReplied: "either",
       hasClicked: "either",
+      ...(input.audienceListId === undefined
+        ? {}
+        : {
+            initialFilter: "audience_list" as const,
+            audienceListId: input.audienceListId,
+          }),
     },
     audienceSize: 1,
     createdByUserId: null,
@@ -224,6 +231,13 @@ describe("public unsubscribe page", () => {
       token: "token-org-csv",
       contactId: null,
       newsletterSubscriberId: null,
+    });
+    await seedTarget(runtime, {
+      kind: "newsletter",
+      token: "token-insiders",
+      contactId: "contact-insiders",
+      newsletterSubscriberId: null,
+      audienceListId: "insiders",
     });
   });
 
@@ -372,6 +386,62 @@ describe("public unsubscribe page", () => {
     expect(
       await campaigns.newsletterSuppressions.findByEmail("taylor@example.org"),
     ).toBeNull();
+  });
+
+  it("POST records only a list opt-out for an audience-list recipient", async () => {
+    if (!runtime) {
+      throw new Error("runtime not initialized");
+    }
+    const campaigns = (await getStage1WebRuntime()).campaigns;
+
+    const response = await unsubscribePost(
+      new Request("http://localhost/u/token-insiders/confirm", {
+        method: "POST",
+      }),
+      { params: Promise.resolve({ token: "token-insiders" }) },
+    );
+
+    expect(response.status).toBe(303);
+    expect(
+      await campaigns.emailOptOuts.listEmails(
+        { type: "list", listId: "insiders" },
+        new Date(),
+      ),
+    ).toEqual(new Set(["taylor@example.org"]));
+    await expect(
+      campaigns.contactConsent.listForContact("contact-insiders"),
+    ).resolves.toEqual([]);
+    await expect(
+      campaigns.newsletterSuppressions.findByEmail("taylor@example.org"),
+    ).resolves.toBeNull();
+    await expect(
+      campaigns.suppressionList.isSuppressed(
+        "taylor@example.org",
+        new Date(),
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("renders list-specific pending and success copy", async () => {
+    const pendingPage = await UnsubscribeTokenPage({
+      params: Promise.resolve({ token: "token-insiders" }),
+      searchParams: Promise.resolve({}),
+    });
+    const successPage = await UnsubscribeTokenPage({
+      params: Promise.resolve({ token: "token-insiders" }),
+      searchParams: Promise.resolve({ confirmed: "1" }),
+    });
+    const pendingHtml = renderToStaticMarkup(pendingPage);
+    const successHtml = renderToStaticMarkup(successPage);
+
+    expect(pendingHtml).toContain("Unsubscribe from Insiders emails?");
+    expect(successHtml).toContain(
+      "You&#x27;ve been unsubscribed from Insiders emails.",
+    );
+    expect(successHtml).toContain(
+      "You won&#x27;t receive any more Insiders emails. Other Adventure Scientists emails are not affected.",
+    );
+    expect(successHtml).toContain("Unsubscribe from all AS emails");
   });
 
   it("loads a valid newsletter page model for a null-contact recipient", async () => {

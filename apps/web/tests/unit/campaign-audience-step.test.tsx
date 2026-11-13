@@ -207,13 +207,17 @@ describe("AudienceBuilderStep initial filter gate", () => {
       hasPickedMode: true,
       selectedSenderType: "org" as const,
       commonAudiences: [
-        { id: "insiders", title: "Insiders", memberCount: 206 },
+        {
+          id: "insiders",
+          title: "Insiders",
+          memberCount: 206,
+          membersReplacedAt: "2026-11-10T12:00:00.000Z",
+        },
       ],
-      commonAudiencesLastSyncedAt: "2026-11-10T12:00:00.000Z",
       criteria: {
         ...baseProps.criteria,
-        initialFilter: "salesforce_lists" as const,
-        salesforceListIds: ["insiders"],
+        initialFilter: "audience_list" as const,
+        audienceListId: "insiders",
       },
     };
 
@@ -227,6 +231,8 @@ describe("AudienceBuilderStep initial filter gate", () => {
 
     expect(orgMarkup).toContain("Common audiences");
     expect(orgMarkup).toContain("Insiders");
+    expect(orgMarkup).toContain("Update list (CSV)");
+    expect(orgMarkup).toContain("Uploading replaces the whole list");
     expect(orgMarkup).toContain('aria-pressed="true"');
     expect(projectMarkup).not.toContain("Common audiences");
     expect(smsMarkup).not.toContain("Common audiences");

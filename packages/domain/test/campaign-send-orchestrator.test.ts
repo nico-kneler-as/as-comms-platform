@@ -150,4 +150,227 @@ describe("campaign send orchestrator standing-list base", () => {
       expect.objectContaining({ frozenEmail: "newsletter@example.org" }),
     ]);
   });
+
+  it("freezes an audience list after applying a previous-run exclusion", async () => {
+    const run: CampaignRunRecord = {
+      ...buildRun("insiders"),
+      audienceListId: "insiders",
+      audienceCriteria: {
+        ...buildRun("insiders").audienceCriteria,
+        initialFilter: "audience_list",
+        audienceListId: "insiders",
+        salesforceListIds: [],
+        exclusions: {
+          salesforceListIds: [],
+          useUploadedExclusions: false,
+          previousRuns: [
+            { runId: "previous-run", audience: "recipients" },
+          ],
+        },
+      },
+    };
+    const snapshots: unknown[][] = [];
+    const orchestrator = createCampaignSendOrchestrator({
+      repositories: {
+        campaignRuns: {
+          findById: () => Promise.resolve(run),
+          transitionState: () => Promise.resolve(run),
+          update: () => Promise.resolve(run),
+        },
+        audienceSnapshots: {
+          bulkInsert: (_runId: string, members: readonly unknown[]) => {
+            snapshots.push([...members]);
+            return Promise.resolve();
+          },
+          listForRun: () => Promise.resolve([]),
+          update: () => Promise.reject(new Error("not used by freeze")),
+        },
+        settingsProjects: { findById: () => Promise.resolve(null) },
+        settingsAliases: { findByAlias: () => Promise.resolve(null) },
+        orgSettings: { read: () => Promise.resolve({}) },
+        broadcastWebVersions: {
+          ensure: () =>
+            Promise.resolve({ publicToken: "token", renderedHtml: null }),
+          storeRendered: () => Promise.resolve(),
+        },
+      },
+      audienceResolver: { resolveAudience: () => Promise.resolve([]) },
+      resolveAudienceList: () =>
+        Promise.resolve([
+          {
+            contactId: "contact-kept",
+            newsletterSubscriberId: null,
+            frozenEmail: "kept@example.org",
+            frozenFirstName: "Kept",
+            frozenProjectName: null,
+            frozenProjectId: null,
+            frozenAliasEmail: "info@example.org",
+          },
+          {
+            contactId: "contact-previous",
+            newsletterSubscriberId: null,
+            frozenEmail: "previous@example.org",
+            frozenFirstName: "Previous",
+            frozenProjectName: null,
+            frozenProjectId: null,
+            frozenAliasEmail: "info@example.org",
+          },
+        ]),
+      loadAudienceSets: () =>
+        Promise.resolve({
+          includeEmails: null,
+          exclusions: [
+            {
+              reason: "previous_run_recipients",
+              emails: new Set(["previous@example.org"]),
+            },
+          ],
+        }),
+      exclusionFilter: {
+        applyExclusions: (members: readonly unknown[]) =>
+          Promise.resolve({ eligible: members, excluded: [] }),
+      },
+      mergeRenderer: { render: () => ({ subject: "", html: "", text: "" }) },
+      postmarkClient: { sendBatch: () => Promise.resolve({ results: [] }) },
+      appUrl: "https://app.example.org",
+    } as never);
+
+    const result = await orchestrator.freeze(run.id, new Date());
+
+    expect(result.excludedByReason).toEqual({
+      previous_run_recipients: 1,
+    });
+    expect(snapshots[0]).toEqual([
+      expect.objectContaining({ frozenEmail: "kept@example.org" }),
+    ]);
+  });
+
+  it("uses the lists stream only for list runs", async () => {
+    async function sendForRun(run: CampaignRunRecord) {
+      let snapshot = {
+        id: `snapshot-${run.id}`,
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "recipient@example.org",
+        frozenFirstName: "Recipient",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: "info@example.org",
+        unsubscribeToken: "token",
+        subjectVariant: null,
+        deliveryStatus: "pending",
+        providerMessageId: null,
+        sentAt: null,
+        deliveredAt: null,
+        bouncedAt: null,
+        openedAt: null,
+        clickedAt: null,
+        complainedAt: null,
+        unsubscribedAt: null,
+        lastEventAt: null,
+        createdAt: "2026-11-12T12:00:00.000Z",
+      };
+      const sendBatch = vi.fn((input: {
+        readonly messages: readonly {
+          readonly MessageStream: string;
+        }[];
+      }) => {
+        void input;
+        return Promise.resolve({
+          results: [
+            {
+              ErrorCode: 0,
+              Message: "OK",
+              MessageID: "message-1",
+              SubmittedAt: "2026-11-12T12:01:00.000Z",
+              To: snapshot.frozenEmail,
+            },
+          ],
+        });
+      });
+      const orchestrator = createCampaignSendOrchestrator({
+        repositories: {
+          campaignRuns: {
+            findById: () => Promise.resolve(run),
+            transitionState: () => Promise.resolve(run),
+            update: () => Promise.resolve(run),
+          },
+          audienceSnapshots: {
+            bulkInsert: () => Promise.resolve(),
+            listForRun: () => Promise.resolve([snapshot]),
+            update: (_id: string, fields: Record<string, unknown>) => {
+              snapshot = { ...snapshot, ...fields } as typeof snapshot;
+              return Promise.resolve(snapshot);
+            },
+          },
+          settingsProjects: { findById: () => Promise.resolve(null) },
+          settingsAliases: { findByAlias: () => Promise.resolve(null) },
+          audienceLists: {
+            findById: () =>
+              Promise.resolve({ id: "insiders", name: "Insiders" }),
+          },
+          orgSettings: {
+            read: () =>
+              Promise.resolve({
+                physicalAddressLine1: "Adventure Scientists",
+                physicalAddressLine2: "",
+                physicalCity: "Bozeman",
+                physicalState: "MT",
+                physicalZip: "59715",
+                physicalCountry: "USA",
+              }),
+          },
+          broadcastWebVersions: {
+            ensure: () =>
+              Promise.resolve({ publicToken: "token", renderedHtml: null }),
+            storeRendered: () => Promise.resolve(),
+          },
+        },
+        audienceResolver: { resolveAudience: () => Promise.resolve([]) },
+        exclusionFilter: {
+          applyExclusions: (members: readonly unknown[]) =>
+            Promise.resolve({ eligible: members, excluded: [] }),
+        },
+        mergeRenderer: {
+          render: (message: { subject: string; bodyHtml: string; bodyText: string }) => ({
+            subject: message.subject,
+            html: message.bodyHtml,
+            text: message.bodyText,
+          }),
+        },
+        postmarkClient: { sendBatch },
+        appUrl: "https://app.example.org",
+        broadcastMessageStream: "broadcast",
+        listMessageStream: "lists",
+      } as never);
+
+      await orchestrator.processSendRequest(run.id);
+      return sendBatch.mock.calls[0]?.[0].messages[0]?.MessageStream;
+    }
+
+    const ordinaryRun: CampaignRunRecord = {
+      ...buildRun("ordinary"),
+      state: "sending",
+      audienceListId: null,
+      audienceCriteria: {
+        ...buildRun("ordinary").audienceCriteria,
+        initialFilter: "all_available",
+        salesforceListIds: [],
+      },
+    };
+    const listRun: CampaignRunRecord = {
+      ...ordinaryRun,
+      id: "run-list",
+      audienceListId: "insiders",
+      audienceCriteria: {
+        ...ordinaryRun.audienceCriteria,
+        initialFilter: "audience_list",
+        audienceListId: "insiders",
+      },
+    };
+
+    await expect(sendForRun(listRun)).resolves.toBe("lists");
+    await expect(sendForRun(ordinaryRun)).resolves.toBe("broadcast");
+  });
 });

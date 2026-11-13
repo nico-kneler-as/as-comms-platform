@@ -158,7 +158,6 @@ async function seedRunAndSnapshot(
     kind: runKind,
     launchType: "normal_email",
     projectId: runKind === "project" ? projectId : null,
-    audienceListId: overrides.audienceListId ?? null,
     name: null,
     fromEmail: "postmark-test@adventurescientists.org",
     fromName: "AS Test",
@@ -177,6 +176,15 @@ async function seedRunAndSnapshot(
       lastActivityWindow: "all_time",
       hasReplied: "either",
       hasClicked: "either",
+      // The run's audience_list_id is derived from these criteria.
+      ...(overrides.audienceListId === undefined
+        ? {}
+        : {
+            initialFilter: "audience_list" as const,
+            audienceListId: overrides.audienceListId,
+            projectId: null,
+            projectIds: [],
+          }),
     },
     audienceSize: 1,
     createdByUserId: null,

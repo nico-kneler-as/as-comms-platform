@@ -7965,9 +7965,6 @@ function mapCampaignRunMutationFields(
   if ("projectId" in input && input.projectId !== undefined) {
     values.projectId = input.projectId;
   }
-  if ("audienceListId" in input && input.audienceListId !== undefined) {
-    values.audienceListId = input.audienceListId;
-  }
   if ("name" in input && input.name !== undefined) {
     values.name = input.name;
   }
@@ -8002,9 +7999,11 @@ function mapCampaignRunMutationFields(
     values.preheader = input.preheader;
   }
   if ("audienceCriteria" in input && input.audienceCriteria !== undefined) {
-    values.audienceCriteria = audienceCriteriaSchema.parse(
+    const audienceCriteria = audienceCriteriaSchema.parse(
       input.audienceCriteria,
     );
+    values.audienceCriteria = audienceCriteria;
+    values.audienceListId = deriveCampaignAudienceListId(audienceCriteria);
   }
   if ("audienceSize" in input && input.audienceSize !== undefined) {
     values.audienceSize = input.audienceSize;
@@ -8041,6 +8040,14 @@ function mapCampaignRunMutationFields(
   }
 
   return values;
+}
+
+function deriveCampaignAudienceListId(
+  criteria: CampaignRunRecord["audienceCriteria"],
+): string | null {
+  return criteria.initialFilter === "audience_list"
+    ? criteria.audienceListId?.trim() ?? null
+    : null;
 }
 
 // Postgres caps one statement at 65,534 bind parameters and each snapshot row
@@ -8659,6 +8666,9 @@ export function createStage5RepositoryBundle(
     campaignRuns: {
       async create(input) {
         const parsed = createDraftInputSchema.parse(input);
+        const audienceCriteria = audienceCriteriaSchema.parse(
+          parsed.audienceCriteria,
+        );
         const now = new Date();
         const [row] = await db
           .insert(campaignRuns)
@@ -8669,7 +8679,7 @@ export function createStage5RepositoryBundle(
             launchType: parsed.launchType,
             state: "draft",
             projectId: parsed.projectId,
-            audienceListId: parsed.audienceListId,
+            audienceListId: deriveCampaignAudienceListId(audienceCriteria),
             name: parsed.name,
             fromEmail: parsed.fromEmail,
             fromName: parsed.fromName,
@@ -8681,9 +8691,7 @@ export function createStage5RepositoryBundle(
             bodyDesignJson: parsed.bodyDesignJson,
             bodyTextTemplate: parsed.bodyTextTemplate,
             preheader: parsed.preheader,
-            audienceCriteria: audienceCriteriaSchema.parse(
-              parsed.audienceCriteria,
-            ),
+            audienceCriteria,
             audienceSize: parsed.audienceSize,
             resendOfRunId: parsed.resendOfRunId,
             resendDelayDays: parsed.resendDelayDays,
@@ -8791,7 +8799,7 @@ export function createStage5RepositoryBundle(
           throw new Error(`Campaign run ${id} is not editable outside draft.`);
         }
 
-        campaignRunRecordSchema.parse({
+        const validated = campaignRunRecordSchema.parse({
           ...existing,
           ...parsed,
         });
@@ -8806,6 +8814,9 @@ export function createStage5RepositoryBundle(
           .update(campaignRuns)
           .set({
             ...mapCampaignRunMutationFields(parsed),
+            audienceListId: deriveCampaignAudienceListId(
+              validated.audienceCriteria,
+            ),
             updatedAt: new Date(),
           })
           .where(

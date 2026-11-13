@@ -1,4 +1,5 @@
 export * from "./audience-resolver.js";
+export * from "./audience-list-audience.js";
 export * from "./automated-email-merge.js";
 export * from "./automated-email-render.js";
 export * from "./expedition-withdraw-token.js";

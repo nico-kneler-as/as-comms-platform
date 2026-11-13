@@ -36,6 +36,7 @@ import {
   renderSmsBroadcast,
   renderBroadcastWebVersion,
   resolveUploadedAudienceForRun,
+  resolveAudienceListForRun,
   renderBroadcastEmail,
   type SmsBroadcastAudienceMember,
   type SmsBroadcastDropReason,
@@ -262,6 +263,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
       settingsProjects: input.settings.projects,
       settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
+      audienceLists: input.campaigns.audienceLists,
       broadcastWebVersions: {
         ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
         async storeRendered(runId, rendered) {
@@ -290,6 +292,24 @@ function createCampaignSendOrchestratorForRepositories(input: {
           runId: run.id,
           fromEmail: run.fromEmail,
           projectId: run.projectId,
+        },
+      );
+    },
+    resolveAudienceList: (run, at) => {
+      void at;
+      if (run.audienceListId == null) {
+        throw new Error(
+          `Campaign run ${run.id} is missing its audience list id.`,
+        );
+      }
+      return resolveAudienceListForRun(
+        {
+          audienceLists: input.campaigns.audienceLists,
+          contacts: input.repositories.contacts,
+        },
+        {
+          listId: run.audienceListId,
+          fromEmail: run.fromEmail,
         },
       );
     },
@@ -327,6 +347,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
     postmarkClient: buildPostmarkClientForActions(),
     appUrl,
     broadcastMessageStream: env.POSTMARK_BROADCAST_STREAM_ID,
+    listMessageStream: env.POSTMARK_LISTS_STREAM_ID,
   });
 }
 
@@ -1642,6 +1663,17 @@ export async function testSend(
         ? null
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
             ?.signature ?? null);
+    const listName =
+      run.audienceListId == null
+        ? null
+        : (await runtime.campaigns.audienceLists.findById(run.audienceListId))
+            ?.name ?? null;
+    if (run.audienceListId != null && listName === null) {
+      return errorResult(
+        "campaign_audience_list_not_found",
+        "The selected audience list was not found.",
+      );
+    }
     const unsubscribeUrls = buildBroadcastUnsubscribeUrls({
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
@@ -1667,6 +1699,7 @@ export async function testSend(
       scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail: fromEmail,
+      ...(listName === null ? {} : { listName }),
       ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });
     const mergeRenderer = createMergeRenderer();
@@ -1698,7 +1731,10 @@ export async function testSend(
           Subject: rendered.subject,
           HtmlBody: rendered.html,
           TextBody: rendered.text,
-          MessageStream: "broadcast",
+          MessageStream:
+            run.audienceListId == null
+              ? readWebEnv().POSTMARK_BROADCAST_STREAM_ID
+              : readWebEnv().POSTMARK_LISTS_STREAM_ID,
           Metadata: {
             campaignRunId: run.id,
             campaignType: "test",
