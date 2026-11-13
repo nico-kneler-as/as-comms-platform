@@ -63,6 +63,31 @@ type AudienceModeCard = Exclude<
 
 export type CampaignAudienceCriteria = AudienceCriteria;
 
+// For org email senders the newsletter mode is shown as "Common audiences":
+// a tab holding the standing audiences (all newsletter subscribers, Houston
+// lists such as Insiders). Selecting a list keeps that tab active.
+const COMMON_AUDIENCES_META = {
+  title: "Common audiences",
+  hint: "All newsletter subscribers, Insiders, and other standing lists.",
+} as const;
+
+function readModeMeta(mode: AudienceModeCard, commonAudiencesTab: boolean) {
+  return commonAudiencesTab && mode === "all_available"
+    ? { ...MODE_META[mode], ...COMMON_AUDIENCES_META }
+    : MODE_META[mode];
+}
+
+function isModeSelected(
+  mode: AudienceModeCard,
+  value: AudienceInitialFilter | undefined,
+  commonAudiencesTab: boolean,
+): boolean {
+  return (
+    value === mode ||
+    (commonAudiencesTab && mode === "all_available" && value === "audience_list")
+  );
+}
+
 const MODE_META: Record<
   AudienceModeCard,
   {
@@ -210,6 +235,11 @@ export function AudienceBuilderStep({
   onContinue,
 }: AudienceBuilderStepProps) {
   const initialFilter = criteria.initialFilter;
+  const commonAudiencesTab =
+    launchType !== "sms" && selectedSenderType === "org";
+  const commonAudienceSelected =
+    commonAudiencesTab &&
+    (initialFilter === "all_available" || initialFilter === "audience_list");
   const selectedProjectIds = [
     ...(criteria.projectId == null ? [] : [criteria.projectId]),
     ...criteria.projectIds,
@@ -253,20 +283,29 @@ export function AudienceBuilderStep({
             <ModeSegmentedControl
               modes={availableModes}
               value={initialFilter}
+              commonAudiencesTab={commonAudiencesTab}
               onChange={onInitialFilterChange}
             />
 
-            <CommonAudienceCards
-              show={launchType !== "sms" && selectedSenderType === "org"}
-              audiences={commonAudiences}
-              selectedListId={criteria.audienceListId ?? null}
-              selected={initialFilter === "audience_list"}
-              uploadSummary={audienceListUploadSummary}
-              uploadPending={audienceListUploadPending}
-              uploadErrorMessage={audienceListUploadErrorMessage}
-              onSelect={onCommonAudienceSelect}
-              onUpload={onAudienceListUpload}
-            />
+            {commonAudienceSelected ? (
+              <CommonAudienceCards
+                audiences={commonAudiences}
+                newsletterSelected={initialFilter === "all_available"}
+                selectedListId={
+                  initialFilter === "audience_list"
+                    ? (criteria.audienceListId ?? null)
+                    : null
+                }
+                uploadSummary={audienceListUploadSummary}
+                uploadPending={audienceListUploadPending}
+                uploadErrorMessage={audienceListUploadErrorMessage}
+                onSelectNewsletter={() => {
+                  onInitialFilterChange("all_available");
+                }}
+                onSelectList={onCommonAudienceSelect}
+                onUpload={onAudienceListUpload}
+              />
+            ) : null}
 
             {initialFilter === "project_status" ? (
               <>
@@ -488,18 +527,8 @@ export function AudienceBuilderStep({
             <InitialFilterSelector
               modes={availableModes}
               value={undefined}
+              commonAudiencesTab={commonAudiencesTab}
               onChange={onInitialFilterChange}
-            />
-            <CommonAudienceCards
-              show={launchType !== "sms" && selectedSenderType === "org"}
-              audiences={commonAudiences}
-              selectedListId={criteria.audienceListId ?? null}
-              selected={false}
-              uploadSummary={audienceListUploadSummary}
-              uploadPending={audienceListUploadPending}
-              uploadErrorMessage={audienceListUploadErrorMessage}
-              onSelect={onCommonAudienceSelect}
-              onUpload={onAudienceListUpload}
             />
           </>
         )}
@@ -515,35 +544,65 @@ export function AudienceBuilderStep({
   );
 }
 
+const AUDIENCE_CARD_CLASS = "w-full rounded-lg border bg-white px-4 py-3";
+const AUDIENCE_CARD_SELECTED_CLASS =
+  "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10";
+const AUDIENCE_CARD_BUTTON_CLASS =
+  "w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2";
+
+/** The cards inside the "Common audiences" tab; exactly one is selected. */
 function CommonAudienceCards({
-  show,
   audiences,
+  newsletterSelected,
   selectedListId,
-  selected,
   uploadSummary,
   uploadPending,
   uploadErrorMessage,
-  onSelect,
+  onSelectNewsletter,
+  onSelectList,
   onUpload,
 }: {
-  readonly show: boolean;
   readonly audiences: readonly CommonAudienceOption[];
+  readonly newsletterSelected: boolean;
   readonly selectedListId: string | null;
-  readonly selected: boolean;
   readonly uploadSummary: AudienceListUploadSummary | null;
   readonly uploadPending: boolean;
   readonly uploadErrorMessage: string | null;
-  readonly onSelect: (listId: string) => void;
+  readonly onSelectNewsletter: () => void;
+  readonly onSelectList: (listId: string) => void;
   readonly onUpload: (listId: string, csvText: string) => Promise<void>;
 }) {
-  if (!show || audiences.length === 0) return null;
   return (
     <section className="space-y-2">
-      <p className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-        Common audiences
-      </p>
+      <div
+        className={cn(
+          AUDIENCE_CARD_CLASS,
+          newsletterSelected
+            ? AUDIENCE_CARD_SELECTED_CLASS
+            : "border-slate-200",
+        )}
+      >
+        <button
+          type="button"
+          aria-pressed={newsletterSelected}
+          onClick={() => {
+            if (!newsletterSelected) {
+              onSelectNewsletter();
+            }
+          }}
+          className={AUDIENCE_CARD_BUTTON_CLASS}
+        >
+          <p className="font-medium text-slate-900">
+            All newsletter subscribers
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-600">
+            Everyone subscribed to the newsletter, minus suppressions.
+            Optionally narrow by state.
+          </p>
+        </button>
+      </div>
       {audiences.map((audience) => {
-        const isSelected = selected && selectedListId === audience.id;
+        const isSelected = selectedListId === audience.id;
         const summary = isSelected ? uploadSummary : null;
         const memberCount = summary?.memberCount ?? audience.memberCount;
         const membersReplacedAt =
@@ -558,19 +617,19 @@ function CommonAudienceCards({
           <div
             key={audience.id}
             className={cn(
-              "w-full rounded-lg border bg-white px-4 py-3",
-              isSelected
-                ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900/10"
-                : "border-slate-200",
+              AUDIENCE_CARD_CLASS,
+              isSelected ? AUDIENCE_CARD_SELECTED_CLASS : "border-slate-200",
             )}
           >
             <button
               type="button"
               aria-pressed={isSelected}
               onClick={() => {
-                onSelect(audience.id);
+                if (!isSelected) {
+                  onSelectList(audience.id);
+                }
               }}
-              className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+              className={AUDIENCE_CARD_BUTTON_CLASS}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -869,10 +928,12 @@ function SummaryCard({
 function InitialFilterSelector({
   modes,
   value,
+  commonAudiencesTab = false,
   onChange,
 }: {
   readonly modes: readonly AudienceModeCard[];
   readonly value: AudienceInitialFilter | undefined;
+  readonly commonAudiencesTab?: boolean;
   readonly onChange: (value: AudienceModeCard) => void;
 }) {
   return (
@@ -888,8 +949,8 @@ function InitialFilterSelector({
         className="grid gap-3 px-4 py-4 lg:grid-cols-3"
       >
         {modes.map((mode) => {
-          const selected = value === mode;
-          const meta = MODE_META[mode];
+          const selected = isModeSelected(mode, value, commonAudiencesTab);
+          const meta = readModeMeta(mode, commonAudiencesTab);
 
           return (
             <button
@@ -937,10 +998,12 @@ function InitialFilterSelector({
 function ModeSegmentedControl({
   modes,
   value,
+  commonAudiencesTab = false,
   onChange,
 }: {
   readonly modes: readonly AudienceModeCard[];
   readonly value: AudienceInitialFilter | undefined;
+  readonly commonAudiencesTab?: boolean;
   readonly onChange: (value: AudienceModeCard) => void;
 }) {
   return (
@@ -950,8 +1013,9 @@ function ModeSegmentedControl({
       className="inline-flex rounded-md bg-slate-100 p-0.5 text-[12.5px]"
     >
       {modes.map((mode) => {
-        const selected = value === mode;
-        const Icon = MODE_META[mode].Icon;
+        const selected = isModeSelected(mode, value, commonAudiencesTab);
+        const meta = readModeMeta(mode, commonAudiencesTab);
+        const Icon = meta.Icon;
         return (
           <button
             key={mode}
@@ -959,7 +1023,11 @@ function ModeSegmentedControl({
             role="tab"
             aria-selected={selected}
             onClick={() => {
-              onChange(mode);
+              // Re-clicking the active tab keeps the current pick (e.g. a
+              // selected Insiders list inside Common audiences).
+              if (!selected) {
+                onChange(mode);
+              }
             }}
             className={cn(
               `inline-flex items-center gap-1.5 rounded px-2.5 py-1 font-medium ${TRANSITION.fast} ${FOCUS_RING} ${TRANSITION.reduceMotion}`,
@@ -969,7 +1037,7 @@ function ModeSegmentedControl({
             )}
           >
             <Icon className="size-3.5" aria-hidden="true" />
-            {MODE_META[mode].title}
+            {meta.title}
           </button>
         );
       })}

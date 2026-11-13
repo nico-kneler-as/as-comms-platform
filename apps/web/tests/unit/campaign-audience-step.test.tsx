@@ -206,6 +206,7 @@ describe("AudienceBuilderStep initial filter gate", () => {
       ...baseProps,
       hasPickedMode: true,
       selectedSenderType: "org" as const,
+      availableModes: ["specific", "all_available", "csv_upload"] as const,
       commonAudiences: [
         {
           id: "insiders",
@@ -236,6 +237,44 @@ describe("AudienceBuilderStep initial filter gate", () => {
     expect(orgMarkup).toContain('aria-pressed="true"');
     expect(projectMarkup).not.toContain("Common audiences");
     expect(smsMarkup).not.toContain("Common audiences");
+  });
+
+  it("shows standing audiences as one Common audiences tab with a card per audience", () => {
+    const props = {
+      ...baseProps,
+      hasPickedMode: true,
+      selectedSenderType: "org" as const,
+      availableModes: ["specific", "all_available", "csv_upload"] as const,
+      commonAudiences: [
+        { id: "insiders", title: "Insiders", memberCount: 436, membersReplacedAt: null },
+      ],
+    };
+
+    const newsletterMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...props}
+        criteria={{ ...baseProps.criteria, initialFilter: "all_available" as const }}
+      />,
+    );
+    const csvMarkup = renderToStaticMarkup(
+      <AudienceBuilderStep
+        {...props}
+        criteria={{ ...baseProps.criteria, initialFilter: "csv_upload" as const }}
+      />,
+    );
+
+    // The tab replaces the "All newsletter subscribers" mode for org senders.
+    expect(newsletterMarkup).toContain("Common audiences");
+    expect(newsletterMarkup).toMatch(
+      /role="tab" aria-selected="true"[^>]*>.*?Common audiences/,
+    );
+    // Inside it: the newsletter card (selected) and the Insiders card.
+    expect(newsletterMarkup).toContain("All newsletter subscribers");
+    expect(newsletterMarkup).toContain("Insiders");
+    expect(newsletterMarkup).toContain("Update list (CSV)");
+    // Another tab hides the cards.
+    expect(csvMarkup).toContain("Common audiences");
+    expect(csvMarkup).not.toContain("Update list (CSV)");
   });
 
   it("renders the newsletter all-available surface without project filters", () => {
