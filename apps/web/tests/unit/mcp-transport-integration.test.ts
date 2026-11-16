@@ -281,7 +281,9 @@ describe("mcp transport (real mcp-handler)", () => {
         "get_contact_timeline",
         "get_inbox_queue",
         "get_workload_summary",
-        "get_sync_freshness"
+        "get_sync_freshness",
+        "list_broadcasts",
+        "get_broadcast_results"
       ])
     )
   })
@@ -388,7 +390,7 @@ describe("mcp transport (real mcp-handler)", () => {
 
     expect(payload.result?.isError).not.toBe(true)
     expect(payload.result?.structuredContent?.connectorVersion).toBe("0.1.0")
-    expect(payload.result?.structuredContent?.registeredToolCount).toBe(7)
+    expect(payload.result?.structuredContent?.registeredToolCount).toBe(9)
   })
 
   it("executes search_contacts through tools/call with a real token", async () => {

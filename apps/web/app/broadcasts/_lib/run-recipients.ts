@@ -335,7 +335,7 @@ function filterSnapshots(input: {
   });
 }
 
-function buildRecipientWhere(input: {
+export function buildRecipientWhere(input: {
   readonly runId: string;
   readonly filter: RecipientFilter;
   readonly query: string;

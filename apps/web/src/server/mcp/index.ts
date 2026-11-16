@@ -1,9 +1,11 @@
+import { createGetBroadcastResultsTool } from "./tools/get-broadcast-results"
 import { createGetConnectorInfoTool } from "./tools/get-connector-info"
 import { createGetContactSummaryTool } from "./tools/get-contact-summary"
 import { createGetContactTimelineTool } from "./tools/get-contact-timeline"
 import { createGetInboxQueueTool } from "./tools/get-inbox-queue"
 import { createGetSyncFreshnessTool } from "./tools/get-sync-freshness"
 import { createGetWorkloadSummaryTool } from "./tools/get-workload-summary"
+import { createListBroadcastsTool } from "./tools/list-broadcasts"
 import { createSearchContactsTool } from "./tools/search-contacts"
 import type { McpToolEntry, McpToolRegistrar } from "./tool-registry"
 import { createMcpToolRegistry } from "./tool-registry"
@@ -58,6 +60,8 @@ function createConnectorTools(
   tools.push(createGetInboxQueueTool())
   tools.push(createGetWorkloadSummaryTool())
   tools.push(createGetSyncFreshnessTool())
+  tools.push(createListBroadcastsTool())
+  tools.push(createGetBroadcastResultsTool())
 
   return tools
 }

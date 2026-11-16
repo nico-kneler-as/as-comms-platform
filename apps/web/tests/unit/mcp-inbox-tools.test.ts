@@ -227,7 +227,9 @@ describe("mcp inbox tools", () => {
     ["get_contact_timeline", { contactId: "contact:any" }],
     ["get_inbox_queue", { folder: "inbox" }],
     ["get_workload_summary", {}],
-    ["get_sync_freshness", {}]
+    ["get_sync_freshness", {}],
+    ["list_broadcasts", {}],
+    ["get_broadcast_results", { runId: "run:any" }]
   ])(
     "fails closed when the authenticated operator is missing for %s",
     async (toolName, input) => {

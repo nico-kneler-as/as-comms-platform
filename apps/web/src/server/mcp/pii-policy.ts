@@ -25,7 +25,11 @@ export const MCP_TOOL_CONTACT_PII_ALLOWLISTS: ContactPiiAllowlistMap = {
   get_contact_timeline: [],
   get_inbox_queue: ["id", "displayName"],
   get_workload_summary: ["id", "displayName"],
-  get_sync_freshness: []
+  get_sync_freshness: [],
+  // Broadcast tools return send recipients (name, email), not contact records;
+  // operators already see the same rows on the broadcast page.
+  list_broadcasts: [],
+  get_broadcast_results: []
 }
 
 export function applyContactPiiPolicy<T extends ContactPiiRecord>(
