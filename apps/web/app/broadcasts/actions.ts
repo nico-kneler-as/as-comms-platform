@@ -55,6 +55,7 @@ import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
+  readOrgSenderDisplayName,
   listBroadcastUploadedRecipients,
   listSendableNewsletterSubscribers,
   withStage1WebTransaction,
@@ -263,6 +264,9 @@ function createCampaignSendOrchestratorForRepositories(input: {
       settingsProjects: input.settings.projects,
       settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
+      orgSenders: {
+        findDisplayNameByEmail: (email) => readOrgSenderDisplayName(email),
+      },
       audienceLists: input.campaigns.audienceLists,
       broadcastWebVersions: {
         ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),
@@ -529,14 +533,34 @@ async function validateVerifiedSender(input: {
   return null;
 }
 
+/** Preview/test From name: the run's typed name, else the org sender's. */
+async function readTestSendSenderName(
+  typedName: string | null,
+  fromEmail: string,
+): Promise<string | null> {
+  const orgSenderName = await readOrgSenderDisplayName(fromEmail);
+  if (orgSenderName === null) {
+    return null;
+  }
+  const trimmed = typedName?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : orgSenderName;
+}
+
 async function resolveSenderFieldsForRun(
   transaction: Stage1WebTransaction,
   run: CampaignRunRecord,
 ): Promise<Pick<CampaignRunRecord, "fromEmail" | "fromName" | "replyToEmail">> {
   if (run.projectId === null) {
+    // A name typed on the run (Donors) wins; else the org sender's name.
+    const typedName = run.fromName?.trim() ?? "";
+    const orgSenderName =
+      typedName.length > 0 ? null : await readOrgSenderDisplayName(run.fromEmail);
     return {
       fromEmail: run.fromEmail,
-      fromName: run.fromName ?? "Adventure Scientists",
+      fromName:
+        typedName.length > 0
+          ? typedName
+          : (orgSenderName ?? "Adventure Scientists"),
       replyToEmail: run.replyToEmail ?? run.fromEmail,
     };
   }
@@ -1699,6 +1723,7 @@ export async function testSend(
       scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail: fromEmail,
+      senderDisplayName: await readTestSendSenderName(run.fromName, fromEmail),
       ...(listName === null ? {} : { listName }),
       ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });

@@ -19,6 +19,7 @@ import {
   createSubscriptionBoxAudienceSource,
   createDatabaseConnection,
   createStage1RepositoryBundleFromConnection,
+  getOrgSenderByEmail,
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   listBroadcastUploadedRecipientsForRun,
@@ -479,6 +480,15 @@ function buildCampaignSendDependencies(input: {
         settingsProjects: input.settings.projects,
         settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
+        orgSenders: {
+          findDisplayNameByEmail: async (email) =>
+            (
+              await getOrgSenderByEmail(
+                input.connection.db,
+                email.trim().toLowerCase(),
+              )
+            )?.displayName ?? null,
+        },
         audienceLists: input.campaigns.audienceLists,
         broadcastWebVersions: {
           ensure: (runId) => input.campaigns.broadcastWebVersions.ensure(runId),

@@ -27,6 +27,7 @@ function toOrgSenderRow(row: typeof orgSenders.$inferSelect): OrgSenderRow {
     id: row.id,
     email: row.email,
     label: row.label,
+    display_name: row.displayName,
     enabled: row.enabled,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -98,7 +99,11 @@ export async function updateOrgSender(
 ): Promise<OrgSenderRecord | null> {
   const parsed = updateOrgSenderInputSchema.parse(input);
 
-  if (parsed.label === undefined && parsed.enabled === undefined) {
+  if (
+    parsed.label === undefined &&
+    parsed.displayName === undefined &&
+    parsed.enabled === undefined
+  ) {
     return getOrgSenderById(db, id);
   }
 
@@ -106,6 +111,7 @@ export async function updateOrgSender(
     .update(orgSenders)
     .set({
       label: parsed.label,
+      displayName: parsed.displayName,
       enabled: parsed.enabled,
       updatedAt: new Date(),
     })

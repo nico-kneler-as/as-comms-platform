@@ -374,3 +374,192 @@ describe("campaign send orchestrator standing-list base", () => {
     await expect(sendForRun(ordinaryRun)).resolves.toBe("broadcast");
   });
 });
+
+describe("campaign send orchestrator: cross-org sender name", () => {
+  const orgSenders = {
+    findDisplayNameByEmail: (email: string) =>
+      Promise.resolve(
+        email === "gtreinish@example.org" ? "Gregg Treinish" : null,
+      ),
+  };
+
+  function baseRepositories(run: CampaignRunRecord) {
+    return {
+      campaignRuns: {
+        findById: () => Promise.resolve(run),
+        transitionState: vi.fn(() => Promise.resolve(run)),
+        update: vi.fn(() => Promise.resolve(run)),
+      },
+      settingsProjects: { findById: () => Promise.resolve(null) },
+      settingsAliases: { findByAlias: () => Promise.resolve(null) },
+      orgSettings: {
+        read: () =>
+          Promise.resolve({
+            physicalAddressLine1: "Adventure Scientists",
+            physicalAddressLine2: "",
+            physicalCity: "Bozeman",
+            physicalState: "MT",
+            physicalZip: "59718",
+            physicalCountry: "USA",
+          }),
+      },
+      orgSenders,
+      broadcastWebVersions: {
+        ensure: () =>
+          Promise.resolve({ publicToken: "token", renderedHtml: null }),
+        storeRendered: () => Promise.resolve(),
+      },
+    };
+  }
+
+  function senderRun(overrides: Partial<CampaignRunRecord>): CampaignRunRecord {
+    const run = buildRun("sender");
+    return {
+      ...run,
+      audienceListId: null,
+      audienceCriteria: {
+        ...run.audienceCriteria,
+        initialFilter: "all_available",
+        salesforceListIds: [],
+      },
+      ...overrides,
+    };
+  }
+
+  it("stores the org sender's display name on the run when the audience freezes", async () => {
+    const run = senderRun({
+      fromEmail: "gtreinish@example.org",
+      fromName: null,
+      replyToEmail: null,
+    });
+    const repositories = {
+      ...baseRepositories(run),
+      audienceSnapshots: {
+        bulkInsert: () => Promise.resolve(),
+        listForRun: () => Promise.resolve([]),
+        update: () => Promise.reject(new Error("not used by freeze")),
+      },
+    };
+    const orchestrator = createCampaignSendOrchestrator({
+      repositories,
+      audienceResolver: { resolveAudience: () => Promise.resolve([]) },
+      resolveNewsletterAudience: () => Promise.resolve([]),
+      loadAudienceSets: () =>
+        Promise.resolve({ includeEmails: null, exclusions: [] }),
+      exclusionFilter: {
+        applyExclusions: (members: readonly unknown[]) =>
+          Promise.resolve({ eligible: members, excluded: [] }),
+      },
+      mergeRenderer: { render: () => ({ subject: "", html: "", text: "" }) },
+      postmarkClient: { sendBatch: () => Promise.resolve({ results: [] }) },
+      appUrl: "https://app.example.org",
+    } as never);
+
+    await orchestrator.freeze(run.id, new Date());
+
+    expect(repositories.campaignRuns.transitionState).toHaveBeenCalledWith(
+      run.id,
+      "draft",
+      "scheduled",
+      expect.objectContaining({
+        fromName: "Gregg Treinish",
+        replyToEmail: "gtreinish@example.org",
+      }),
+    );
+  });
+
+  it("sends From the org sender's name, and keeps the org name for other addresses", async () => {
+    async function fromHeaderFor(run: CampaignRunRecord) {
+      let snapshot = {
+        id: `snapshot-${run.id}`,
+        campaignRunId: run.id,
+        contactId: null,
+        newsletterSubscriberId: null,
+        frozenEmail: "recipient@example.org",
+        frozenFirstName: "Recipient",
+        frozenProjectName: null,
+        frozenProjectId: null,
+        frozenAliasEmail: run.fromEmail,
+        unsubscribeToken: "token",
+        subjectVariant: null,
+        deliveryStatus: "pending",
+        providerMessageId: null,
+        sentAt: null,
+        deliveredAt: null,
+        bouncedAt: null,
+        openedAt: null,
+        clickedAt: null,
+        complainedAt: null,
+        unsubscribedAt: null,
+        lastEventAt: null,
+        createdAt: "2026-11-16T12:00:00.000Z",
+      };
+      const sendBatch = vi.fn(
+        (input: { readonly messages: readonly { readonly From: string }[] }) => {
+          void input;
+          return Promise.resolve({
+            results: [
+              {
+                ErrorCode: 0,
+                Message: "OK",
+                MessageID: "message-1",
+                SubmittedAt: "2026-11-16T12:01:00.000Z",
+                To: snapshot.frozenEmail,
+              },
+            ],
+          });
+        },
+      );
+      const orchestrator = createCampaignSendOrchestrator({
+        repositories: {
+          ...baseRepositories(run),
+          audienceSnapshots: {
+            bulkInsert: () => Promise.resolve(),
+            listForRun: () => Promise.resolve([snapshot]),
+            update: (_id: string, fields: Record<string, unknown>) => {
+              snapshot = { ...snapshot, ...fields } as typeof snapshot;
+              return Promise.resolve(snapshot);
+            },
+          },
+        },
+        audienceResolver: { resolveAudience: () => Promise.resolve([]) },
+        exclusionFilter: {
+          applyExclusions: (members: readonly unknown[]) =>
+            Promise.resolve({ eligible: members, excluded: [] }),
+        },
+        mergeRenderer: {
+          render: (message: { subject: string; bodyHtml: string; bodyText: string }) => ({
+            subject: message.subject,
+            html: message.bodyHtml,
+            text: message.bodyText,
+          }),
+        },
+        postmarkClient: { sendBatch },
+        appUrl: "https://app.example.org",
+      } as never);
+
+      await orchestrator.processSendRequest(run.id);
+      return sendBatch.mock.calls[0]?.[0].messages[0]?.From;
+    }
+
+    await expect(
+      fromHeaderFor(
+        senderRun({
+          state: "sending",
+          fromEmail: "gtreinish@example.org",
+          fromName: "Gregg Treinish",
+        }),
+      ),
+    ).resolves.toBe('"Gregg Treinish" <gtreinish@example.org>');
+    // Not an org sender (e.g. a project alias on a CSV send): unchanged.
+    await expect(
+      fromHeaderFor(
+        senderRun({
+          state: "sending",
+          fromEmail: "pnwbio@example.org",
+          fromName: "Adventure Scientists",
+        }),
+      ),
+    ).resolves.toBe('"Adventure Scientists" <pnwbio@example.org>');
+  });
+});

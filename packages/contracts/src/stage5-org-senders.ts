@@ -3,12 +3,14 @@ import { z } from "zod";
 const orgSenderIdValueSchema = z.string().uuid();
 const orgSenderEmailSchema = z.string().trim().email();
 const orgSenderLabelSchema = z.string().min(1);
+const orgSenderDisplayNameSchema = z.string().trim().min(1).max(100);
 const timestampSchema = z.string().datetime();
 
 export const orgSenderRecordSchema = z.object({
   id: orgSenderIdValueSchema,
   email: orgSenderEmailSchema,
   label: orgSenderLabelSchema,
+  displayName: orgSenderDisplayNameSchema,
   enabled: z.boolean(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -17,10 +19,12 @@ export const orgSenderRecordSchema = z.object({
 export const createOrgSenderInputSchema = z.object({
   email: orgSenderEmailSchema,
   label: orgSenderLabelSchema,
+  displayName: orgSenderDisplayNameSchema,
 });
 
 export const updateOrgSenderInputSchema = z.object({
   label: orgSenderLabelSchema.optional(),
+  displayName: orgSenderDisplayNameSchema.optional(),
   enabled: z.boolean().optional(),
 });
 

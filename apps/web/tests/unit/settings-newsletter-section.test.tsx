@@ -141,6 +141,7 @@ function buildViewModel(
         id: "11111111-1111-1111-1111-111111111111",
         email: "info@adventurescientists.org",
         label: "Adventure Scientists",
+        displayName: "Adventure Scientists",
         enabled: true,
         createdAt: "2026-06-30T12:00:00.000Z",
         updatedAt: "2026-06-30T12:00:00.000Z"

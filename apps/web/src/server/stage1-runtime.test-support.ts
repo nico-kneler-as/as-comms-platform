@@ -94,9 +94,13 @@ export async function createOrgSenderForTests(
   input: {
     readonly email: string;
     readonly label: string;
+    readonly displayName?: string;
   },
 ): Promise<OrgSenderRecord> {
-  return createOrgSender(runtime.context.db, input);
+  return createOrgSender(runtime.context.db, {
+    ...input,
+    displayName: input.displayName ?? "Adventure Scientists",
+  });
 }
 
 export async function setOrgSenderEnabledForTests(

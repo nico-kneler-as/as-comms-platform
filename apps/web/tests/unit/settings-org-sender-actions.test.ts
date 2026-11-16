@@ -69,7 +69,8 @@ describe("org sender settings actions", () => {
 
     const result = await createOrgSenderAction({
       email: "info@adventurescientists.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     expect(result).toMatchObject({
@@ -83,7 +84,8 @@ describe("org sender settings actions", () => {
   it("rejects sender emails outside the verified domain", async () => {
     const result = await createOrgSenderAction({
       email: "info@example.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     expect(result).toMatchObject({
@@ -99,7 +101,8 @@ describe("org sender settings actions", () => {
   it("accepts sender emails on verified subdomains", async () => {
     const result = await createOrgSenderAction({
       email: "newsletter@news.adventurescientists.org",
-      label: "Adventure Scientists Newsletter"
+      label: "Adventure Scientists Newsletter",
+      displayName: "Adventure Scientists"
     });
 
     expect(result).toMatchObject({
@@ -107,6 +110,7 @@ describe("org sender settings actions", () => {
       data: {
         email: "newsletter@news.adventurescientists.org",
         label: "Adventure Scientists Newsletter",
+        displayName: "Adventure Scientists",
         enabled: true
       }
     });
@@ -117,12 +121,14 @@ describe("org sender settings actions", () => {
 
     await createOrgSenderForTests(runtime, {
       email: "info@adventurescientists.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     const result = await createOrgSenderAction({
       email: "info@adventurescientists.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     expect(result).toMatchObject({
@@ -139,7 +145,8 @@ describe("org sender settings actions", () => {
 
     const result = await createOrgSenderAction({
       email: "info@adventurescientists.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     expect(result).toMatchObject({
@@ -147,6 +154,7 @@ describe("org sender settings actions", () => {
       data: {
         email: "info@adventurescientists.org",
         label: "Adventure Scientists",
+        displayName: "Adventure Scientists",
         enabled: true
       }
     });
@@ -174,7 +182,8 @@ describe("org sender settings actions", () => {
 
     const sender = await createOrgSenderForTests(runtime, {
       email: "info@adventurescientists.org",
-      label: "Adventure Scientists"
+      label: "Adventure Scientists",
+      displayName: "Adventure Scientists"
     });
 
     const result = await setOrgSenderEnabledAction(sender.id, false);
