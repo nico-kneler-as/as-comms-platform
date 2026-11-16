@@ -89,6 +89,18 @@ function RecipientStateChip({ state }: { readonly state: RecipientLatestState })
   );
 }
 
+export function buildRecipientsCsvHref(input: {
+  readonly runId: string;
+  readonly provider: "postmark" | "mailchimp" | "sms";
+  readonly filter: RecipientFilter;
+  readonly query: string;
+}): string {
+  const params = new URLSearchParams({ provider: input.provider });
+  if (input.filter !== "all") params.set("filter", input.filter);
+  if (input.query.trim().length > 0) params.set("q", input.query.trim());
+  return `/broadcasts/${encodeURIComponent(input.runId)}/recipients.csv?${params.toString()}`;
+}
+
 export function RecipientsTable({
   runId,
   provider,
@@ -217,14 +229,24 @@ export function RecipientsTable({
             {pending ? " · Updating…" : ""}
           </span>
         </div>
-        <Input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          placeholder={isSms ? "Search name or phone" : "Search name, email, or project"}
-          className="h-8 w-full max-w-[260px] text-[12px]"
-        />
+        <div className="flex w-full max-w-[400px] items-center gap-2">
+          <Input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            placeholder={isSms ? "Search name or phone" : "Search name, email, or project"}
+            className="h-8 w-full text-[12px]"
+          />
+          {/* Downloads every recipient matching the current filter and search. */}
+          <a
+            href={buildRecipientsCsvHref({ runId, provider, filter, query })}
+            download
+            className="inline-flex h-8 shrink-0 items-center rounded-md border border-slate-300 bg-white px-3 text-[12px] font-medium text-slate-800 hover:bg-slate-50"
+          >
+            Download CSV
+          </a>
+        </div>
       </div>
 
       {errorMessage ? (
