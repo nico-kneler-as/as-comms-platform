@@ -135,6 +135,10 @@ interface CampaignSendRepositories {
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
   };
+  /** Cross-org senders; their display name becomes the From name. */
+  readonly orgSenders?: {
+    findDisplayNameByEmail(email: string): Promise<string | null>;
+  };
   readonly audienceLists?: {
     findById(id: string): Promise<{ readonly name: string } | null>;
   };
@@ -188,9 +192,21 @@ async function resolveSenderFields(
   run: CampaignRunRecord,
 ): Promise<Pick<CampaignRunRecord, "fromEmail" | "fromName" | "replyToEmail">> {
   if (run.projectId === null) {
+    // A name typed on the run (Donors) wins; else the org sender's name.
+    const typedName = run.fromName?.trim() ?? "";
+    const orgSenderName =
+      typedName.length > 0 || run.fromEmail === null
+        ? null
+        : ((await repositories.orgSenders?.findDisplayNameByEmail(
+            run.fromEmail,
+          )) ?? null);
+    const senderName =
+      typedName.length > 0
+        ? typedName
+        : (orgSenderName ?? "Adventure Scientists");
     return {
       fromEmail: run.fromEmail,
-      fromName: run.fromName ?? "Adventure Scientists",
+      fromName: senderName,
       replyToEmail: run.replyToEmail ?? run.fromEmail,
     };
   }
@@ -743,6 +759,16 @@ export function createCampaignSendOrchestrator(deps: {
           ? null
           : await deps.repositories.settingsProjects.findById(run.projectId);
       const projectAlias = project?.projectAlias ?? null;
+      // Only a cross-org sender (gtreinish@, info@, donate@) shows its own
+      // name; a project alias keeps "Adventure Scientists – {alias}". The
+      // freeze stored the name on the run (typed name first, then the
+      // sender's display name).
+      const isOrgSender =
+        run.fromEmail !== null &&
+        ((await deps.repositories.orgSenders?.findDisplayNameByEmail(
+          run.fromEmail,
+        )) ?? null) !== null;
+      const senderDisplayName = isOrgSender ? run.fromName : null;
       const listName =
         run.audienceListId == null
           ? null
@@ -879,6 +905,7 @@ export function createCampaignSendOrchestrator(deps: {
             scopedUnsubscribeHref: unsubscribeUrls.scopedHref,
             allUnsubscribeHref: unsubscribeUrls.allHref,
             senderEmail: sender,
+            senderDisplayName,
             ...(listName === null ? {} : { listName }),
             ...(pageUrl === null ? {} : { webVersionHref: pageUrl }),
           });

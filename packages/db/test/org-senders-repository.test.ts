@@ -8,6 +8,7 @@ import {
   getOrgSenderById,
   listOrgSenders,
   setOrgSenderEnabled,
+  updateOrgSender,
 } from "../src/org-senders-repository.js";
 import { createTestStage1Context, type TestStage1Context } from "./helpers.js";
 
@@ -26,6 +27,7 @@ describe("org senders repository", () => {
     const created = await createOrgSender(context.db, {
       email: "info@adventurescientists.org",
       label: "Adventure Scientists Newsletter",
+      displayName: "Adventure Scientists",
     });
 
     const byId = await getOrgSenderById(context.db, created.id);
@@ -45,10 +47,12 @@ describe("org senders repository", () => {
     const older = await createOrgSender(context.db, {
       email: "older@adventurescientists.org",
       label: "Older Sender",
+      displayName: "Adventure Scientists",
     });
     const newer = await createOrgSender(context.db, {
       email: "newer@adventurescientists.org",
       label: "Newer Sender",
+      displayName: "Adventure Scientists",
     });
 
     await context.db
@@ -72,6 +76,7 @@ describe("org senders repository", () => {
     const created = await createOrgSender(context.db, {
       email: "newsletter@adventurescientists.org",
       label: "Newsletter",
+      displayName: "Adventure Scientists",
     });
 
     await setOrgSenderEnabled(context.db, created.id, false);
@@ -87,13 +92,28 @@ describe("org senders repository", () => {
     await createOrgSender(context.db, {
       email: "info@adventurescientists.org",
       label: "Primary",
+      displayName: "Adventure Scientists",
     });
 
     await expect(
       createOrgSender(context.db, {
         email: "info@adventurescientists.org",
         label: "Duplicate",
+        displayName: "Adventure Scientists",
       }),
     ).rejects.toThrow();
+  });
+  it("stores the From display name and lets it be edited", async () => {
+    const created = await createOrgSender(context.db, {
+      email: "gtreinish@adventurescientists.org",
+      label: "Gregg",
+      displayName: " Gregg Treinish ",
+    });
+    expect(created.displayName).toBe("Gregg Treinish");
+
+    const updated = await updateOrgSender(context.db, created.id, {
+      displayName: "Gregg T.",
+    });
+    expect(updated?.displayName).toBe("Gregg T.");
   });
 });

@@ -36,6 +36,7 @@ import {
   createStage5RepositoryBundleFromConnection,
   createStage2RepositoryBundleFromConnection,
   setOrgSenderEnabled,
+  updateOrgSender,
   setTemplateActive,
   deleteTemplate,
   sessions,
@@ -407,6 +408,20 @@ export async function createOrgSenderRecord(input: CreateOrgSenderInput) {
   return createOrgSender(runtime.connection.db, input);
 }
 
+export async function setOrgSenderDisplayNameState(
+  id: string,
+  displayName: string,
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
+  }
+
+  return updateOrgSender(runtime.connection.db, id, { displayName });
+}
+
 export async function setOrgSenderEnabledState(id: string, enabled: boolean) {
   const runtime = await getStage1WebRuntime();
   if (runtime.connection === null) {
@@ -427,6 +442,17 @@ export async function getOrgSenderByEmailRecord(email: string) {
   }
 
   return getOrgSenderByEmail(runtime.connection.db, email);
+}
+
+/** A cross-org sender's From display name, or null for any other address. */
+export async function readOrgSenderDisplayName(
+  email: string | null,
+): Promise<string | null> {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  if (normalized.length === 0) {
+    return null;
+  }
+  return (await getOrgSenderByEmailRecord(normalized))?.displayName ?? null;
 }
 
 export async function listSendableNewsletterSubscribers() {

@@ -60,6 +60,7 @@ import {
   getSettingsRepositories,
   getStage1WebRuntime,
   listAllOrgSenders,
+  setOrgSenderDisplayNameState,
   setOrgSenderEnabledState
 } from "@/src/server/stage1-runtime";
 import type { UiError, UiResult } from "@/src/server/ui-result";
@@ -3276,11 +3277,12 @@ export async function createOrgSenderAction(
 
   const normalizedInput = {
     email: normalizeIncomingEmail(input.email),
-    label: input.label.trim()
+    label: input.label.trim(),
+    displayName: input.displayName.trim()
   };
   const parsed = createOrgSenderInputSchema.safeParse(normalizedInput);
   if (!parsed.success) {
-    return errorResult("validation_error", "Enter a valid sender email and label.", {
+    return errorResult("validation_error", "Enter a valid sender email, label and sender name.", {
       fieldErrors: flattenZodFieldErrors(parsed.error)
     });
   }
@@ -3328,6 +3330,7 @@ export async function createOrgSenderAction(
       metadataJson: {
         email: sender.email,
         label: sender.label,
+        displayName: sender.displayName,
         enabled: sender.enabled
       }
     });
@@ -3403,6 +3406,67 @@ export async function setOrgSenderEnabledAction(
     data: {
       id: parsed.data.id,
       enabled: parsed.data.enabled
+    },
+    requestId: newRequestId()
+  };
+}
+
+const setOrgSenderDisplayNameSchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().trim().min(1).max(100)
+});
+
+export interface OrgSenderDisplayNameMutationData {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+/** Changes how a cross-org sender appears in the From header. */
+export async function setOrgSenderDisplayNameAction(
+  id: string,
+  displayName: string
+): Promise<UiResult<OrgSenderDisplayNameMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update an org sender.",
+    forbiddenMessage: "Only admins can update org senders."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = setOrgSenderDisplayNameSchema.safeParse({ id, displayName });
+  if (!parsed.success) {
+    return errorResult("validation_error", "Enter a sender name.", {
+      fieldErrors: { displayName: "Enter a sender name." }
+    });
+  }
+
+  const existingSender =
+    (await listAllOrgSenders()).find((sender) => sender.id === parsed.data.id) ?? null;
+  if (existingSender === null) {
+    return errorResult("not_found", "That sender no longer exists.");
+  }
+
+  await setOrgSenderDisplayNameState(parsed.data.id, parsed.data.displayName);
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.org_sender.display_name_changed",
+    entityType: "org_sender",
+    entityId: parsed.data.id,
+    metadataJson: {
+      before: { displayName: existingSender.displayName },
+      after: { displayName: parsed.data.displayName }
+    }
+  });
+
+  revalidateNewsletterSettings();
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id,
+      displayName: parsed.data.displayName
     },
     requestId: newRequestId()
   };

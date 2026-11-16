@@ -13,15 +13,23 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+/**
+ * The From header. A cross-org sender's own display name wins (e.g. "Gregg
+ * Treinish"); otherwise the org name, with the project alias for project sends.
+ */
 export function formatBroadcastFromHeader(
   senderEmail: string,
   projectAlias: string | null,
+  senderDisplayName: string | null = null,
 ): string {
+  const trimmedSenderName = senderDisplayName?.trim().replaceAll('"', "") ?? "";
   const trimmedAlias = projectAlias?.trim() ?? "";
   const displayName =
-    trimmedAlias.length > 0
-      ? `Adventure Scientists – ${trimmedAlias}`
-      : "Adventure Scientists";
+    trimmedSenderName.length > 0
+      ? trimmedSenderName
+      : trimmedAlias.length > 0
+        ? `Adventure Scientists – ${trimmedAlias}`
+        : "Adventure Scientists";
   return `"${displayName}" <${senderEmail}>`;
 }
 
@@ -154,6 +162,8 @@ export interface BroadcastEmailRenderInput {
   readonly scopedUnsubscribeHref: string;
   readonly allUnsubscribeHref: string;
   readonly senderEmail: string;
+  /** A cross-org sender's display name; null for project sends. */
+  readonly senderDisplayName?: string | null;
   readonly webVersionHref?: string | null;
 }
 
@@ -185,6 +195,7 @@ export function renderBroadcastEmail(
   const fromHeader = formatBroadcastFromHeader(
     input.senderEmail,
     input.projectAlias,
+    input.senderDisplayName ?? null,
   );
   const preheaderHtml = buildBroadcastPreheaderHtml(input.preheader);
   const signatureBlock =

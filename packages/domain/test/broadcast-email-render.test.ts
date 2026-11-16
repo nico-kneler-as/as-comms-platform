@@ -45,6 +45,19 @@ describe("broadcast-email-render helpers", () => {
     ).toBe("Adventure Scientists • Bozeman, 59718 • USA");
   });
 
+  it("uses a cross-org sender's display name ahead of the org and alias names", () => {
+    expect(
+      formatBroadcastFromHeader(
+        "gtreinish@adventurescientists.org",
+        null,
+        "Gregg Treinish",
+      ),
+    ).toBe('"Gregg Treinish" <gtreinish@adventurescientists.org>');
+    expect(
+      formatBroadcastFromHeader("pnwbio@adventurescientists.org", "PNW Biodiversity", null),
+    ).toBe('"Adventure Scientists – PNW Biodiversity" <pnwbio@adventurescientists.org>');
+  });
+
   it("falls back to the org name when no project alias exists", () => {
     expect(
       formatBroadcastFromHeader("news@adventurescientists.org", null),

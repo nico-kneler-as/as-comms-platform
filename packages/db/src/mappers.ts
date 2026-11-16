@@ -578,6 +578,7 @@ export type OrgSenderRow = Readonly<{
   id: string;
   email: string;
   label: string;
+  display_name: string;
   enabled: boolean;
   created_at: Date;
   updated_at: Date;
@@ -1071,6 +1072,7 @@ export function mapOrgSenderRow(row: OrgSenderRow): OrgSenderRecord {
     id: row.id,
     email: row.email,
     label: row.label,
+    displayName: row.display_name,
     enabled: row.enabled,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -1083,6 +1085,7 @@ export function mapOrgSenderInsert(record: OrgSenderInsert): OrgSenderRowInsert 
   return {
     email: parsed.email,
     label: parsed.label,
+    displayName: parsed.displayName,
   };
 }
 

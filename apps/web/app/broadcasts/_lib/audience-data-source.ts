@@ -58,6 +58,7 @@ import {
   listBroadcastUploadedRecipients,
   listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
+  readOrgSenderDisplayName,
   replaceBroadcastUploadedRecipients,
   clearBroadcastUploadedExclusions,
   upsertBroadcastUploadedExclusions,
@@ -2083,6 +2084,7 @@ export async function loadComposePreviewAction(input: {
         input.fromEmail ??
         sample?.frozenAliasEmail ??
         "preview@example.invalid",
+      senderDisplayName: await readOrgSenderDisplayName(input.fromEmail),
       ...(listName === null ? {} : { listName }),
       ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });

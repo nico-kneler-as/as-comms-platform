@@ -2085,6 +2085,8 @@ export const orgSenders = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     email: text("email").notNull(),
     label: text("label").notNull(),
+    // How the sender appears in the From header (e.g. "Gregg Treinish").
+    displayName: text("display_name").notNull().default("Adventure Scientists"),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,
