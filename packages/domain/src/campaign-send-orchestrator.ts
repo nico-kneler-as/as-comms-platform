@@ -135,9 +135,17 @@ interface CampaignSendRepositories {
   readonly orgSettings: {
     read(): Promise<OrgSettingsRecord>;
   };
-  /** Cross-org senders; their display name becomes the From name. */
+  /**
+   * Cross-org senders: their display name becomes the From name, their
+   * signature closes plain emails, and a minimal footer drops everything but
+   * the "Unsubscribe" link.
+   */
   readonly orgSenders?: {
-    findDisplayNameByEmail(email: string): Promise<string | null>;
+    findByEmail(email: string): Promise<{
+      readonly displayName: string;
+      readonly signature: string;
+      readonly minimalFooter: boolean;
+    } | null>;
   };
   readonly audienceLists?: {
     findById(id: string): Promise<{ readonly name: string } | null>;
@@ -197,9 +205,8 @@ async function resolveSenderFields(
     const orgSenderName =
       typedName.length > 0 || run.fromEmail === null
         ? null
-        : ((await repositories.orgSenders?.findDisplayNameByEmail(
-            run.fromEmail,
-          )) ?? null);
+        : ((await repositories.orgSenders?.findByEmail(run.fromEmail))
+            ?.displayName ?? null);
     const senderName =
       typedName.length > 0
         ? typedName
@@ -763,12 +770,13 @@ export function createCampaignSendOrchestrator(deps: {
       // name; a project alias keeps "Adventure Scientists – {alias}". The
       // freeze stored the name on the run (typed name first, then the
       // sender's display name).
-      const isOrgSender =
-        run.fromEmail !== null &&
-        ((await deps.repositories.orgSenders?.findDisplayNameByEmail(
-          run.fromEmail,
-        )) ?? null) !== null;
-      const senderDisplayName = isOrgSender ? run.fromName : null;
+      const orgSender =
+        run.fromEmail === null
+          ? null
+          : ((await deps.repositories.orgSenders?.findByEmail(run.fromEmail)) ??
+            null);
+      const senderDisplayName = orgSender === null ? null : run.fromName;
+      const minimalFooter = orgSender?.minimalFooter === true;
       const listName =
         run.audienceListId == null
           ? null
@@ -795,7 +803,7 @@ export function createCampaignSendOrchestrator(deps: {
       const senderAliasEmail = normalizeAliasEmail(
         run.fromEmail ?? snapshots[0]?.frozenAliasEmail ?? null,
       );
-      const signature =
+      const aliasSignature =
         senderAliasEmail === null
           ? null
           : (
@@ -803,9 +811,14 @@ export function createCampaignSendOrchestrator(deps: {
                 senderAliasEmail,
               )
             )?.signature ?? null;
-      // Plain typed emails get no public page and no browser link at all.
+      const orgSenderSignature = orgSender?.signature.trim() ?? "";
+      const signature =
+        aliasSignature ??
+        (orgSenderSignature.length > 0 ? orgSenderSignature : null);
+      // Plain typed emails get no public page and no browser link at all, and
+      // neither does a sender with a minimal footer.
       let pageUrl: string | null = null;
-      if (isBroadcastWebVersionEligible(run)) {
+      if (isBroadcastWebVersionEligible(run) && !minimalFooter) {
         const webVersion = await deps.repositories.broadcastWebVersions.ensure(
           runId,
         );
@@ -906,6 +919,7 @@ export function createCampaignSendOrchestrator(deps: {
             allUnsubscribeHref: unsubscribeUrls.allHref,
             senderEmail: sender,
             senderDisplayName,
+            minimalFooter,
             ...(listName === null ? {} : { listName }),
             ...(pageUrl === null ? {} : { webVersionHref: pageUrl }),
           });

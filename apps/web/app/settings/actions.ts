@@ -61,6 +61,7 @@ import {
   getStage1WebRuntime,
   listAllOrgSenders,
   setOrgSenderDisplayNameState,
+  setOrgSenderPresentationState,
   setOrgSenderEnabledState
 } from "@/src/server/stage1-runtime";
 import type { UiError, UiResult } from "@/src/server/ui-result";
@@ -3467,6 +3468,82 @@ export async function setOrgSenderDisplayNameAction(
     data: {
       id: parsed.data.id,
       displayName: parsed.data.displayName
+    },
+    requestId: newRequestId()
+  };
+}
+
+const setOrgSenderPresentationSchema = z.object({
+  id: z.string().uuid(),
+  signature: z.string().max(2000).optional(),
+  minimalFooter: z.boolean().optional()
+});
+
+export interface OrgSenderPresentationMutationData {
+  readonly id: string;
+  readonly signature: string;
+  readonly minimalFooter: boolean;
+}
+
+/**
+ * A cross-org sender's signature (appended to plain emails) and whether its
+ * footer is just an "Unsubscribe" link.
+ */
+export async function setOrgSenderPresentationAction(
+  id: string,
+  input: { readonly signature?: string; readonly minimalFooter?: boolean }
+): Promise<UiResult<OrgSenderPresentationMutationData>> {
+  const admin = await resolveSettingsAdmin({
+    unauthorizedMessage: "You must be signed in to update an org sender.",
+    forbiddenMessage: "Only admins can update org senders."
+  });
+  if (!admin.ok) {
+    return admin.error;
+  }
+
+  const parsed = setOrgSenderPresentationSchema.safeParse({ id, ...input });
+  if (!parsed.success) {
+    return errorResult("validation_error", "The signature can be at most 2,000 characters.", {
+      fieldErrors: flattenZodFieldErrors(parsed.error)
+    });
+  }
+
+  const existingSender =
+    (await listAllOrgSenders()).find((sender) => sender.id === parsed.data.id) ?? null;
+  if (existingSender === null) {
+    return errorResult("not_found", "That sender no longer exists.");
+  }
+
+  const updated = await setOrgSenderPresentationState(parsed.data.id, {
+    ...(parsed.data.signature === undefined ? {} : { signature: parsed.data.signature.trim() }),
+    ...(parsed.data.minimalFooter === undefined ? {} : { minimalFooter: parsed.data.minimalFooter })
+  });
+
+  await appendSettingsAudit({
+    actorId: admin.userId,
+    action: "settings.org_sender.presentation_changed",
+    entityType: "org_sender",
+    entityId: parsed.data.id,
+    metadataJson: {
+      before: {
+        signature: existingSender.signature,
+        minimalFooter: existingSender.minimalFooter
+      },
+      after: {
+        signature: updated?.signature ?? existingSender.signature,
+        minimalFooter: updated?.minimalFooter ?? existingSender.minimalFooter
+      }
+    }
+  });
+
+  revalidateNewsletterSettings();
+
+  return {
+    ok: true,
+    data: {
+      id: parsed.data.id,
+      signature: updated?.signature ?? existingSender.signature,
+      minimalFooter: updated?.minimalFooter ?? existingSender.minimalFooter
     },
     requestId: newRequestId()
   };

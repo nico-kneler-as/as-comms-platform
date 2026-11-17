@@ -2087,6 +2087,10 @@ export const orgSenders = pgTable(
     label: text("label").notNull(),
     // How the sender appears in the From header (e.g. "Gregg Treinish").
     displayName: text("display_name").notNull().default("Adventure Scientists"),
+    // Appended to plain (Normal) emails from this sender.
+    signature: text("signature").notNull().default(""),
+    // A single "Unsubscribe" link instead of the standard footer.
+    minimalFooter: boolean("minimal_footer").notNull().default(false),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: createdAtColumn,
     updatedAt: updatedAtColumn,

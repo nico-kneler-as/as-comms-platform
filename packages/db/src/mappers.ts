@@ -579,6 +579,8 @@ export type OrgSenderRow = Readonly<{
   email: string;
   label: string;
   display_name: string;
+  signature: string;
+  minimal_footer: boolean;
   enabled: boolean;
   created_at: Date;
   updated_at: Date;
@@ -1073,6 +1075,8 @@ export function mapOrgSenderRow(row: OrgSenderRow): OrgSenderRecord {
     email: row.email,
     label: row.label,
     displayName: row.display_name,
+    signature: row.signature,
+    minimalFooter: row.minimal_footer,
     enabled: row.enabled,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
