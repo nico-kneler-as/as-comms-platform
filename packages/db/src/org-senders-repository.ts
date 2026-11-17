@@ -28,6 +28,8 @@ function toOrgSenderRow(row: typeof orgSenders.$inferSelect): OrgSenderRow {
     email: row.email,
     label: row.label,
     display_name: row.displayName,
+    signature: row.signature,
+    minimal_footer: row.minimalFooter,
     enabled: row.enabled,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -102,6 +104,8 @@ export async function updateOrgSender(
   if (
     parsed.label === undefined &&
     parsed.displayName === undefined &&
+    parsed.signature === undefined &&
+    parsed.minimalFooter === undefined &&
     parsed.enabled === undefined
   ) {
     return getOrgSenderById(db, id);
@@ -112,6 +116,8 @@ export async function updateOrgSender(
     .set({
       label: parsed.label,
       displayName: parsed.displayName,
+      signature: parsed.signature,
+      minimalFooter: parsed.minimalFooter,
       enabled: parsed.enabled,
       updatedAt: new Date(),
     })

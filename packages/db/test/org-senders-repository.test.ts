@@ -116,4 +116,21 @@ describe("org senders repository", () => {
     });
     expect(updated?.displayName).toBe("Gregg T.");
   });
+  it("stores a signature and a minimal footer, off by default", async () => {
+    const created = await createOrgSender(context.db, {
+      email: "gtreinish@adventurescientists.org",
+      label: "Gregg",
+      displayName: "Gregg Treinish",
+    });
+    expect(created).toMatchObject({ signature: "", minimalFooter: false });
+
+    const updated = await updateOrgSender(context.db, created.id, {
+      signature: "Gregg Treinish\nFounder",
+      minimalFooter: true,
+    });
+    expect(updated).toMatchObject({
+      signature: "Gregg Treinish\nFounder",
+      minimalFooter: true,
+    });
+  });
 });

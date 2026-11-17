@@ -6,6 +6,7 @@ import { RADIUS, SHADOW, TYPE } from "@/app/_lib/design-tokens-v2";
 import {
   createOrgSenderAction,
   setOrgSenderDisplayNameAction,
+  setOrgSenderPresentationAction,
   setOrgSenderEnabledAction
 } from "@/app/settings/actions";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,8 @@ export function NewsletterSection({
   const [displayName, setDisplayName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [signatureEditingId, setSignatureEditingId] = useState<string | null>(null);
+  const [signatureDraft, setSignatureDraft] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
@@ -108,6 +111,48 @@ export function NewsletterSection({
         );
         setEditingId(null);
         announce("Sender name updated.");
+      } catch {
+        announce("Unable to update that sender right now.", "error");
+      } finally {
+        setPendingToggleId(null);
+      }
+    });
+  }
+
+  function handlePresentation(
+    id: string,
+    input: { readonly signature?: string; readonly minimalFooter?: boolean }
+  ) {
+    setPendingToggleId(id);
+
+    startTransition(async () => {
+      try {
+        const result = await setOrgSenderPresentationAction(id, input);
+
+        if (!result.ok) {
+          announce(result.message, "error");
+          return;
+        }
+
+        setOrgSenders((current) =>
+          current.map((sender) =>
+            sender.id === result.data.id
+              ? {
+                  ...sender,
+                  signature: result.data.signature,
+                  minimalFooter: result.data.minimalFooter
+                }
+              : sender
+          )
+        );
+        setSignatureEditingId(null);
+        announce(
+          input.minimalFooter === undefined
+            ? "Signature updated."
+            : input.minimalFooter
+              ? "Footer set to Unsubscribe only."
+              : "Standard footer restored."
+        );
       } catch {
         announce("Unable to update that sender right now.", "error");
       } finally {
@@ -239,6 +284,72 @@ export function NewsletterSection({
                         ) : null}
                       </p>
                     )}
+                    {signatureEditingId === sender.id ? (
+                      <form
+                        className="mt-2 grid max-w-md gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          handlePresentation(sender.id, { signature: signatureDraft });
+                        }}
+                      >
+                        <textarea
+                          aria-label={`Signature for ${sender.email}`}
+                          value={signatureDraft}
+                          onChange={(event) => {
+                            setSignatureDraft(event.target.value);
+                          }}
+                          rows={4}
+                          maxLength={2000}
+                          disabled={rowPending}
+                          className="rounded-md border border-slate-300 px-3 py-2 text-[13px] text-slate-900"
+                        />
+                        <div className="flex gap-2">
+                          <Button type="submit" disabled={rowPending}>
+                            Save signature
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setSignatureEditingId(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    ) : (
+                      <p className={cn("mt-0.5 text-slate-500", TYPE.caption)}>
+                        {sender.signature.trim().length > 0
+                          ? "Signature set for plain emails"
+                          : "No signature"}
+                        {viewModel.isAdmin ? (
+                          <button
+                            type="button"
+                            className="ml-2 text-slate-500 underline underline-offset-2 hover:text-slate-800"
+                            onClick={() => {
+                              setSignatureEditingId(sender.id);
+                              setSignatureDraft(sender.signature);
+                            }}
+                          >
+                            {sender.signature.trim().length > 0 ? "Edit" : "Add"}
+                          </button>
+                        ) : null}
+                      </p>
+                    )}
+                    <label className={cn("mt-1 inline-flex items-center gap-2 text-slate-600", TYPE.caption)}>
+                      <input
+                        type="checkbox"
+                        checked={sender.minimalFooter}
+                        disabled={!viewModel.isAdmin || rowPending}
+                        onChange={(event) => {
+                          handlePresentation(sender.id, {
+                            minimalFooter: event.target.checked
+                          });
+                        }}
+                      />
+                      Footer: Unsubscribe link only (no address, no &quot;view in browser&quot;)
+                    </label>
                   </div>
                   <StatusBadge
                     label={statusMeta.label}

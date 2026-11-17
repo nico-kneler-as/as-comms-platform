@@ -11,6 +11,8 @@ export const orgSenderRecordSchema = z.object({
   email: orgSenderEmailSchema,
   label: orgSenderLabelSchema,
   displayName: orgSenderDisplayNameSchema,
+  signature: z.string().max(2000).default(""),
+  minimalFooter: z.boolean().default(false),
   enabled: z.boolean(),
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
@@ -25,6 +27,8 @@ export const createOrgSenderInputSchema = z.object({
 export const updateOrgSenderInputSchema = z.object({
   label: orgSenderLabelSchema.optional(),
   displayName: orgSenderDisplayNameSchema.optional(),
+  signature: z.string().max(2000).optional(),
+  minimalFooter: z.boolean().optional(),
   enabled: z.boolean().optional(),
 });
 

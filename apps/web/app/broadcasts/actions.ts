@@ -55,6 +55,7 @@ import { estimateSmsCostUsd } from "@/src/lib/sms-pricing";
 import {
   getStage1WebRuntime,
   listEnabledOrgSenders,
+  readOrgSender,
   readOrgSenderDisplayName,
   listBroadcastUploadedRecipients,
   listSendableNewsletterSubscribers,
@@ -265,7 +266,7 @@ function createCampaignSendOrchestratorForRepositories(input: {
       settingsAliases: input.settings.aliases,
       orgSettings: input.campaigns.orgSettings,
       orgSenders: {
-        findDisplayNameByEmail: (email) => readOrgSenderDisplayName(email),
+        findByEmail: (email) => readOrgSender(email),
       },
       audienceLists: input.campaigns.audienceLists,
       broadcastWebVersions: {
@@ -531,6 +532,14 @@ async function validateVerifiedSender(input: {
   }
 
   return null;
+}
+
+/** An org sender's signature, or null when it has none. */
+function readOrgSenderSignature(
+  orgSender: { readonly signature: string } | null,
+): string | null {
+  const trimmed = orgSender?.signature.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /** Preview/test From name: the run's typed name, else the org sender's. */
@@ -1682,11 +1691,14 @@ export async function testSend(
         : ((await runtime.settings.projects.findById(run.projectId))
             ?.projectAlias ?? null);
     const normalizedSenderAlias = normalizeAliasEmail(fromEmail);
-    const signature =
+    const orgSender = await readOrgSender(fromEmail);
+    const aliasSignature =
       normalizedSenderAlias === null
         ? null
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
             ?.signature ?? null);
+    const signature = aliasSignature ?? readOrgSenderSignature(orgSender);
+    const minimalFooter = orgSender?.minimalFooter === true;
     const listName =
       run.audienceListId == null
         ? null
@@ -1702,14 +1714,15 @@ export async function testSend(
       appUrl: origin,
       unsubscribeToken: `preview-${run.kind}`,
     });
-    const webVersionUrl = isBroadcastWebVersionEligible(run)
-      ? buildBroadcastWebVersionUrl({
-          appUrl: origin,
-          token: (
-            await runtime.campaigns.broadcastWebVersions.ensure(run.id)
-          ).publicToken,
-        })
-      : null;
+    const webVersionUrl =
+      isBroadcastWebVersionEligible(run) && !minimalFooter
+        ? buildBroadcastWebVersionUrl({
+            appUrl: origin,
+            token: (
+              await runtime.campaigns.broadcastWebVersions.ensure(run.id)
+            ).publicToken,
+          })
+        : null;
     const composed = renderBroadcastEmail({
       launchType: run.launchType,
       kind: run.kind,
@@ -1724,6 +1737,7 @@ export async function testSend(
       allUnsubscribeHref: unsubscribeUrls.allHref,
       senderEmail: fromEmail,
       senderDisplayName: await readTestSendSenderName(run.fromName, fromEmail),
+      minimalFooter,
       ...(listName === null ? {} : { listName }),
       ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
     });

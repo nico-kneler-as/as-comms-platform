@@ -81,3 +81,39 @@ describe("migration 0104: org sender display name", () => {
     ]);
   });
 });
+
+describe("migration 0105: org sender signature and minimal footer", () => {
+  it("turns on the minimal footer for Gregg's sender only", async () => {
+    const context = await createTestStage1Context();
+    contexts.push(context);
+    await context.db.execute(sql`
+      insert into org_senders (email, label) values
+        ('info@adventurescientists.org', 'Adventure Scientists'),
+        ('gtreinish@adventurescientists.org', 'Gregg Treinish')
+    `);
+    const migration = await readFile(
+      new URL("../drizzle/0105_org_sender_signature_minimal_footer.sql", import.meta.url),
+      "utf8",
+    );
+    const update = migration
+      .split("--> statement-breakpoint")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("UPDATE"));
+    if (update === undefined) {
+      throw new Error("UPDATE statement not found in migration 0105.");
+    }
+
+    await context.client.exec(update);
+
+    expect(
+      rows(
+        await context.db.execute(
+          sql`select email, minimal_footer, signature from org_senders order by email`,
+        ),
+      ),
+    ).toEqual([
+      { email: "gtreinish@adventurescientists.org", minimal_footer: true, signature: "" },
+      { email: "info@adventurescientists.org", minimal_footer: false, signature: "" },
+    ]);
+  });
+});

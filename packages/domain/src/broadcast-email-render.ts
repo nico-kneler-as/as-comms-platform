@@ -105,10 +105,26 @@ export function buildBroadcastUnsubscribeFooter(input: {
   readonly footerAddress: string | null;
   readonly scopedHref: string;
   readonly allHref: string;
+  /**
+   * A single "Unsubscribe" link and nothing else (no address), for a sender
+   * whose emails read as a personal letter. The link's page still offers
+   * "unsubscribe from all".
+   */
+  readonly minimal?: boolean;
 }): {
   readonly html: string;
   readonly text: string;
 } {
+  if (input.minimal === true) {
+    return {
+      html: [
+        `<div style="text-align:center;color:#64748b;font-size:12px;line-height:1.6;margin-top:32px;"><a href="${escapeHtml(input.scopedHref)}" target="_blank" rel="noreferrer noopener" style="color:#64748b;">Unsubscribe</a></div>`,
+        buildPostmarkUnsubscribePlaceholderHtml(),
+      ].join(""),
+      text: `Unsubscribe: ${input.scopedHref}`,
+    };
+  }
+
   const listName = input.listName?.trim() ?? "";
   const scopedLabel =
     listName.length > 0
@@ -164,6 +180,8 @@ export interface BroadcastEmailRenderInput {
   readonly senderEmail: string;
   /** A cross-org sender's display name; null for project sends. */
   readonly senderDisplayName?: string | null;
+  /** The sender wants only an "Unsubscribe" link in the footer. */
+  readonly minimalFooter?: boolean;
   readonly webVersionHref?: string | null;
 }
 
@@ -210,6 +228,7 @@ export function renderBroadcastEmail(
     footerAddress: input.footerAddress,
     scopedHref: input.scopedUnsubscribeHref,
     allHref: input.allUnsubscribeHref,
+    minimal: input.minimalFooter === true,
   });
   const sanitizedBodyHtml = stripLockedFooterBlock(input.bodyHtmlTemplate);
   const webVersionHref = input.webVersionHref?.trim() ?? "";
