@@ -1,9 +1,10 @@
 "use client";
 
+import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useCallback, useEffect, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, type KeyboardEvent } from "react";
 
 import {
   FOCUS_RING,
@@ -178,8 +179,14 @@ export interface RichTextComposerCommandState {
   readonly insertText: (value: string) => void;
 }
 
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/gu, " ");
+}
+
 export function RichTextComposerEditor({
   bodyPlaintext,
+  initialHtml,
+  allowImages = false,
   errorMessage,
   topSlot,
   bottomSlot,
@@ -193,6 +200,13 @@ export function RichTextComposerEditor({
   onClearErrors,
 }: {
   readonly bodyPlaintext: string;
+  /**
+   * Saved HTML to open with (broadcast drafts). Without it the editor rebuilds
+   * from plain text, which would drop photos and formatting.
+   */
+  readonly initialHtml?: string;
+  /** Broadcast emails only: allow hosted photos in the body. */
+  readonly allowImages?: boolean;
   readonly errorMessage: string | undefined;
   readonly topSlot?: React.ReactNode;
   readonly bottomSlot?: React.ReactNode;
@@ -204,6 +218,7 @@ export function RichTextComposerEditor({
     readonly activeCommands: ReadonlySet<ComposerToolbarCommand>;
     readonly onCommand: (command: ComposerToolbarCommand) => void;
     readonly insertText: (value: string) => void;
+    readonly insertImage: (input: { readonly src: string; readonly alt: string }) => void;
   }) => React.ReactNode;
   readonly className?: string;
   readonly frameClassName?: string;
@@ -231,6 +246,15 @@ export function RichTextComposerEditor({
           target: "_blank",
         },
       }),
+      ...(allowImages
+        ? [
+            Image.configure({
+              inline: false,
+              allowBase64: false,
+              HTMLAttributes: { style: "max-width:100%;height:auto;" },
+            }),
+          ]
+        : []),
     ],
     content: "",
     immediatelyRender: false,
@@ -249,7 +273,7 @@ export function RichTextComposerEditor({
     onUpdate: ({ editor: instance }) => {
       onChange({
         bodyPlaintext: instance.getText().trim(),
-        bodyHtml: sanitizeComposerHtml(instance.getHTML()),
+        bodyHtml: sanitizeComposerHtml(instance.getHTML(), { allowImages }),
       });
       onClearErrors();
     },
@@ -304,6 +328,17 @@ export function RichTextComposerEditor({
     [editor],
   );
 
+  const insertImage = useCallback(
+    (input: { readonly src: string; readonly alt: string }) => {
+      if (editor === null || !allowImages) {
+        return;
+      }
+
+      editor.chain().focus().setImage({ src: input.src, alt: input.alt }).run();
+    },
+    [allowImages, editor],
+  );
+
   const insertText = useCallback(
     (value: string) => {
       if (editor === null) {
@@ -314,6 +349,22 @@ export function RichTextComposerEditor({
     },
     [editor],
   );
+
+  // Open a saved broadcast draft from its HTML once, so photos and formatting
+  // survive; after that the plain-text sync below behaves as before.
+  const seededFromHtmlRef = useRef(false);
+  useEffect(() => {
+    if (editor === null || seededFromHtmlRef.current) {
+      return;
+    }
+    seededFromHtmlRef.current = true;
+    const html = initialHtml?.trim() ?? "";
+    if (html.length > 0 && editor.getText().trim().length === 0) {
+      editor.commands.setContent(sanitizeComposerHtml(html, { allowImages }), {
+        emitUpdate: false,
+      });
+    }
+  }, [allowImages, editor, initialHtml]);
 
   useEffect(() => {
     if (editor === null) {
@@ -328,9 +379,13 @@ export function RichTextComposerEditor({
       return;
     }
 
+    // Compare ignoring whitespace: a photo between paragraphs changes only
+    // the line breaks in getText(), and rebuilding from plain text would
+    // drop the photo.
     if (
       trimmedBodyPlaintext.length > 0 &&
-      trimmedBodyPlaintext !== trimmedEditorText
+      collapseWhitespace(trimmedBodyPlaintext) !==
+        collapseWhitespace(trimmedEditorText)
     ) {
       editor.commands.setContent(plaintextToComposerHtml(bodyPlaintext), {
         emitUpdate: false,
@@ -394,6 +449,7 @@ export function RichTextComposerEditor({
             activeCommands,
             onCommand: runCommand,
             insertText,
+            insertImage,
           })
         : null}
     </div>

@@ -54,6 +54,10 @@ const STRIP_WITH_CONTENT_TAGS = new Set([
 const TAG_PATTERN = /<\/?[^>]+>/gu;
 const TAG_NAME_PATTERN = /^<\/?\s*([a-zA-Z0-9:-]+)/u;
 const HREF_PATTERN = /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
+const SRC_PATTERN = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
+const ALT_PATTERN = /\salt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/iu;
+// Broadcast photos: full width on phones, never wider than the email.
+const SAFE_IMAGE_STYLE = "max-width:100%;height:auto;display:block;margin:12px 0;";
 const SAFE_LINK_ATTRIBUTES =
   'class="text-sky-700 hover:underline" target="_blank" rel="noopener noreferrer"';
 
@@ -81,7 +85,30 @@ function readHref(rawTag: string): string | null {
   return value === null ? null : sanitizeHref(value);
 }
 
-export function sanitizeComposerHtml(input: string): string {
+function readAttribute(rawTag: string, pattern: RegExp): string | null {
+  const match = pattern.exec(rawTag);
+  return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
+/** Only hosted https images (the broadcast Media library); never data: URIs. */
+function sanitizeImageTag(rawTag: string): string | null {
+  const src = readAttribute(rawTag, SRC_PATTERN)?.trim() ?? "";
+  if (!/^https:\/\/[^\s]+$/iu.test(src)) {
+    return null;
+  }
+  const alt = readAttribute(rawTag, ALT_PATTERN) ?? "";
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" style="${SAFE_IMAGE_STYLE}">`;
+}
+
+export interface SanitizeComposerHtmlOptions {
+  /** Keep hosted https <img> tags (broadcast emails only, never the inbox). */
+  readonly allowImages?: boolean;
+}
+
+export function sanitizeComposerHtml(
+  input: string,
+  options: SanitizeComposerHtmlOptions = {},
+): string {
   let output = "";
   let cursor = 0;
   let strippedContentTag: string | null = null;
@@ -104,6 +131,14 @@ export function sanitizeComposerHtml(input: string): string {
     cursor = tagStart + rawTag.length;
 
     if (tagName === null) {
+      continue;
+    }
+
+    if (tagName === "img" && options.allowImages === true) {
+      const image = sanitizeImageTag(rawTag);
+      if (image !== null) {
+        output += image;
+      }
       continue;
     }
 
