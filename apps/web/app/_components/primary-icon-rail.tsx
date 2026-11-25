@@ -9,7 +9,8 @@ import {
   Inbox as InboxIcon,
   LogOut as LogOutIcon,
   Megaphone as MegaphoneIcon,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  TreePine as TreePineIcon
 } from "lucide-react";
 
 import {
@@ -44,6 +45,8 @@ interface RailItem {
   readonly href: string | null;
   readonly activePrefixes: readonly string[];
   readonly visibility: "volunteers" | "donors" | "admin";
+  /** Another app (opens in a new tab), not a Houston route. */
+  readonly external?: boolean;
 }
 
 export interface PrimaryRailOperator {
@@ -82,6 +85,18 @@ const ITEMS: readonly RailItem[] = [
     href: "/donors",
     activePrefixes: ["/donors"],
     visibility: "donors"
+  },
+  {
+    // Endurance, the volunteer hub (Tracking Whitebark Pine): its staff
+    // admin (appeals, volunteers, automatic messages) lives in that app for
+    // now; staff sign in there with the same Google account (Nico, 2026-11-25).
+    id: "endurance",
+    label: "Endurance admin",
+    Icon: TreePineIcon,
+    href: "https://volunteer.adventurescientists.org/admin",
+    activePrefixes: [],
+    visibility: "volunteers",
+    external: true
   },
   {
     id: "settings",
@@ -146,6 +161,16 @@ export function PrimaryIconRail({
                     >
                       <Icon className="size-5" />
                     </button>
+                  ) : item.external === true ? (
+                    <a
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${item.label} (opens in a new tab)`}
+                      className={baseClass}
+                    >
+                      <Icon className="size-5" />
+                    </a>
                   ) : (
                     <Link
                       href={item.href}
