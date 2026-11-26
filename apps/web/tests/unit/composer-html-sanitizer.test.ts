@@ -102,3 +102,29 @@ describe("composer html sanitizer", () => {
     );
   });
 });
+
+describe("sanitizeComposerHtml with broadcast photos", () => {
+  it("keeps hosted https images only when allowed, with a safe fixed style", () => {
+    const html =
+      '<p>Hi</p><img src="https://pub-abc.r2.dev/images/coral.jpg" alt="Coral" onerror="alert(1)" width="900">';
+
+    expect(sanitizeComposerHtml(html, { allowImages: true })).toBe(
+      '<p>Hi</p><img src="https://pub-abc.r2.dev/images/coral.jpg" alt="Coral" style="max-width:100%;height:auto;display:block;margin:12px 0;">',
+    );
+    // The inbox composer (default) still drops images.
+    expect(sanitizeComposerHtml(html)).toBe("<p>Hi</p>");
+  });
+
+  it("drops images that are not hosted over https", () => {
+    for (const src of [
+      "data:image/png;base64,AAAA",
+      "http://example.org/a.png",
+      "javascript:alert(1)",
+      "",
+    ]) {
+      expect(
+        sanitizeComposerHtml(`<p>x</p><img src="${src}">`, { allowImages: true }),
+      ).toBe("<p>x</p>");
+    }
+  });
+});

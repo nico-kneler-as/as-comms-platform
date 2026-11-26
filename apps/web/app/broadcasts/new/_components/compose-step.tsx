@@ -9,7 +9,7 @@ import {
   type ComponentType,
   type RefAttributes,
 } from "react";
-import { Braces, Info } from "lucide-react";
+import { Braces, ImagePlus, Info } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { RichTextComposerEditor } from "@/app/inbox/_components/composer-editor-surface";
 import { ComposerToolbar } from "@/app/inbox/_components/composer-toolbar";
 
@@ -150,6 +151,81 @@ function EditorLoadingSkeleton() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Uploads a photo to the broadcast Media library (resized and compressed by
+ * /api/broadcasts/images) and drops it into the plain email body as a hosted
+ * image, so the email stays small and lands better than an attachment.
+ */
+function InsertPhotoButton({
+  disabled,
+  onInserted,
+}: {
+  readonly disabled: boolean;
+  readonly onInserted: (input: { readonly src: string; readonly alt: string }) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  async function upload(file: File) {
+    setUploading(true);
+    setErrorMessage(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/broadcasts/images", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { readonly url?: string; readonly error?: string; readonly message?: string }
+        | null;
+      if (!response.ok || typeof payload?.url !== "string") {
+        setErrorMessage(
+          payload?.message ?? payload?.error ?? "Couldn't upload that photo.",
+        );
+        return;
+      }
+      onInserted({ src: payload.url, alt: file.name.replace(/\.[^.]+$/u, "") });
+    } catch {
+      setErrorMessage("Couldn't upload that photo.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <label
+        className={cn(
+          "inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-[12px] font-medium text-slate-700 hover:bg-slate-100",
+          (disabled || uploading) && "pointer-events-none opacity-50",
+        )}
+      >
+        <ImagePlus className="size-3.5" aria-hidden="true" />
+        {uploading ? "Uploading…" : "Insert photo"}
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          className="sr-only"
+          disabled={disabled || uploading}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file !== undefined) {
+              void upload(file);
+            }
+          }}
+        />
+      </label>
+      {errorMessage === null ? null : (
+        <span role="alert" className="text-[11px] text-rose-700">
+          {errorMessage}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -667,6 +743,8 @@ export function ComposeStep({
 
             <RichTextComposerEditor
               bodyPlaintext={bodyPlaintext}
+              initialHtml={bodyHtml}
+              allowImages
               errorMessage={undefined}
               showToolbar={false}
               onChange={(value) => {
@@ -686,13 +764,17 @@ export function ComposeStep({
                   </div>
                 ) : undefined
               }
-              toolbarFooter={({ activeCommands, onCommand, insertText }) => (
+              toolbarFooter={({ activeCommands, onCommand, insertText, insertImage }) => (
                 <div className="border-t border-slate-200 bg-slate-50/70">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-1.5">
                     <div className="flex flex-wrap items-center gap-1">
                       <ComposerToolbar
                         activeCommands={activeCommands}
                         onCommand={onCommand}
+                      />
+                      <InsertPhotoButton
+                        disabled={frozen}
+                        onInserted={insertImage}
                       />
                       {showMergeTags ? <DropdownMenu>
                         <DropdownMenuTrigger asChild>
