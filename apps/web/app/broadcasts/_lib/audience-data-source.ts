@@ -58,7 +58,7 @@ import {
   listBroadcastUploadedRecipients,
   listSendableNewsletterSubscribers,
   listEnabledOrgSenders,
-  readOrgSenderDisplayName,
+  readOrgSender,
   replaceBroadcastUploadedRecipients,
   clearBroadcastUploadedExclusions,
   upsertBroadcastUploadedExclusions,
@@ -2063,11 +2063,15 @@ export async function loadComposePreviewAction(input: {
       unsubscribeToken: `preview-${input.kind}`,
     });
     const normalizedSenderAlias = normalizeAliasEmail(input.fromEmail);
+    const orgSender = await readOrgSender(input.fromEmail);
+    const orgSenderSignature = orgSender?.signature.trim() ?? "";
     const signature =
-      normalizedSenderAlias === null
+      (normalizedSenderAlias === null
         ? null
         : ((await runtime.settings.aliases.findByAlias(normalizedSenderAlias))
-            ?.signature ?? null);
+            ?.signature ?? null)) ??
+      (orgSenderSignature.length > 0 ? orgSenderSignature : null);
+    const minimalFooter = orgSender?.minimalFooter === true;
     const composed = renderBroadcastEmail({
       launchType: input.launchType,
       kind: input.kind,
@@ -2084,9 +2088,12 @@ export async function loadComposePreviewAction(input: {
         input.fromEmail ??
         sample?.frozenAliasEmail ??
         "preview@example.invalid",
-      senderDisplayName: await readOrgSenderDisplayName(input.fromEmail),
+      senderDisplayName: orgSender?.displayName ?? null,
+      minimalFooter,
       ...(listName === null ? {} : { listName }),
-      ...(webVersionUrl === null ? {} : { webVersionHref: webVersionUrl }),
+      ...(webVersionUrl === null || minimalFooter
+        ? {}
+        : { webVersionHref: webVersionUrl }),
     });
     const rendered = mergeRenderer.render(
       {

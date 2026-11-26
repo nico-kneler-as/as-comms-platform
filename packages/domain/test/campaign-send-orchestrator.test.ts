@@ -377,9 +377,15 @@ describe("campaign send orchestrator standing-list base", () => {
 
 describe("campaign send orchestrator: cross-org sender name", () => {
   const orgSenders = {
-    findDisplayNameByEmail: (email: string) =>
+    findByEmail: (email: string) =>
       Promise.resolve(
-        email === "gtreinish@example.org" ? "Gregg Treinish" : null,
+        email === "gtreinish@example.org"
+          ? {
+              displayName: "Gregg Treinish",
+              signature: "Gregg Treinish\nFounder/Executive Chairman",
+              minimalFooter: true,
+            }
+          : null,
       ),
   };
 
@@ -495,7 +501,13 @@ describe("campaign send orchestrator: cross-org sender name", () => {
         createdAt: "2026-11-16T12:00:00.000Z",
       };
       const sendBatch = vi.fn(
-        (input: { readonly messages: readonly { readonly From: string }[] }) => {
+        (input: {
+          readonly messages: readonly {
+            readonly From: string
+            readonly HtmlBody: string
+            readonly TextBody: string
+          }[]
+        }) => {
           void input;
           return Promise.resolve({
             results: [
@@ -539,8 +551,34 @@ describe("campaign send orchestrator: cross-org sender name", () => {
       } as never);
 
       await orchestrator.processSendRequest(run.id);
-      return sendBatch.mock.calls[0]?.[0].messages[0]?.From;
+      return sendBatch.mock.calls[0]?.[0].messages[0];
     }
+
+    const gregg = await fromHeaderFor(
+      senderRun({
+        state: "sending",
+        kind: "newsletter",
+        fromEmail: "gtreinish@example.org",
+        fromName: "Gregg Treinish",
+      }),
+    );
+    // Minimal footer: one Unsubscribe link, no address, no browser link, and
+    // the sender's own signature closes the plain email.
+    expect(gregg?.HtmlBody).toContain(">Unsubscribe</a>");
+    expect(gregg?.HtmlBody).not.toContain("Bozeman");
+    expect(gregg?.HtmlBody).not.toContain("View it in your browser");
+    expect(gregg?.HtmlBody).not.toContain("Unsubscribe from all");
+    expect(gregg?.TextBody).toContain("Founder/Executive Chairman");
+    expect(gregg?.TextBody).toContain("Unsubscribe: ");
+    const standard = await fromHeaderFor(
+      senderRun({
+        state: "sending",
+        kind: "newsletter",
+        fromEmail: "pnwbio@example.org",
+        fromName: "Adventure Scientists",
+      }),
+    );
+    expect(standard?.HtmlBody).toContain("Bozeman");
 
     await expect(
       fromHeaderFor(
@@ -549,7 +587,7 @@ describe("campaign send orchestrator: cross-org sender name", () => {
           fromEmail: "gtreinish@example.org",
           fromName: "Gregg Treinish",
         }),
-      ),
+      ).then((message) => message?.From),
     ).resolves.toBe('"Gregg Treinish" <gtreinish@example.org>');
     // Not an org sender (e.g. a project alias on a CSV send): unchanged.
     await expect(
@@ -559,7 +597,7 @@ describe("campaign send orchestrator: cross-org sender name", () => {
           fromEmail: "pnwbio@example.org",
           fromName: "Adventure Scientists",
         }),
-      ),
+      ).then((message) => message?.From),
     ).resolves.toBe('"Adventure Scientists" <pnwbio@example.org>');
   });
 });

@@ -481,13 +481,8 @@ function buildCampaignSendDependencies(input: {
         settingsAliases: input.settings.aliases,
         orgSettings: input.campaigns.orgSettings,
         orgSenders: {
-          findDisplayNameByEmail: async (email) =>
-            (
-              await getOrgSenderByEmail(
-                input.connection.db,
-                email.trim().toLowerCase(),
-              )
-            )?.displayName ?? null,
+          findByEmail: (email) =>
+            getOrgSenderByEmail(input.connection.db, email.trim().toLowerCase()),
         },
         audienceLists: input.campaigns.audienceLists,
         broadcastWebVersions: {

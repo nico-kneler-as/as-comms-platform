@@ -58,6 +58,27 @@ describe("broadcast-email-render helpers", () => {
     ).toBe('"Adventure Scientists – PNW Biodiversity" <pnwbio@adventurescientists.org>');
   });
 
+  it("renders a minimal footer as a single Unsubscribe link with no address", () => {
+    const footer = buildBroadcastUnsubscribeFooter({
+      kind: "newsletter",
+      projectName: null,
+      projectAlias: null,
+      listName: "Insiders",
+      footerAddress: "Adventure Scientists • Bozeman, Montana 59718",
+      scopedHref: "https://app.example.com/u/abc",
+      allHref: "https://app.example.com/u/abc/all",
+      minimal: true,
+    });
+
+    expect(footer.html).toContain(
+      '<a href="https://app.example.com/u/abc" target="_blank" rel="noreferrer noopener" style="color:#64748b;">Unsubscribe</a>',
+    );
+    expect(footer.html).not.toContain("Bozeman");
+    expect(footer.html).not.toContain("Insiders");
+    expect(footer.html).toContain("pm:unsubscribe");
+    expect(footer.text).toBe("Unsubscribe: https://app.example.com/u/abc");
+  });
+
   it("falls back to the org name when no project alias exists", () => {
     expect(
       formatBroadcastFromHeader("news@adventurescientists.org", null),

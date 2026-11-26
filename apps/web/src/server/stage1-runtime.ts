@@ -408,6 +408,20 @@ export async function createOrgSenderRecord(input: CreateOrgSenderInput) {
   return createOrgSender(runtime.connection.db, input);
 }
 
+export async function setOrgSenderPresentationState(
+  id: string,
+  input: { readonly signature?: string; readonly minimalFooter?: boolean },
+) {
+  const runtime = await getStage1WebRuntime();
+  if (runtime.connection === null) {
+    throw new Error(
+      "DATABASE_URL must be set before using the Stage 1 web runtime.",
+    );
+  }
+
+  return updateOrgSender(runtime.connection.db, id, input);
+}
+
 export async function setOrgSenderDisplayNameState(
   id: string,
   displayName: string,
@@ -444,15 +458,20 @@ export async function getOrgSenderByEmailRecord(email: string) {
   return getOrgSenderByEmail(runtime.connection.db, email);
 }
 
-/** A cross-org sender's From display name, or null for any other address. */
-export async function readOrgSenderDisplayName(
-  email: string | null,
-): Promise<string | null> {
+/** The cross-org sender behind an address, or null for any other address. */
+export async function readOrgSender(email: string | null) {
   const normalized = email?.trim().toLowerCase() ?? "";
   if (normalized.length === 0) {
     return null;
   }
-  return (await getOrgSenderByEmailRecord(normalized))?.displayName ?? null;
+  return getOrgSenderByEmailRecord(normalized);
+}
+
+/** A cross-org sender's From display name, or null for any other address. */
+export async function readOrgSenderDisplayName(
+  email: string | null,
+): Promise<string | null> {
+  return (await readOrgSender(email))?.displayName ?? null;
 }
 
 export async function listSendableNewsletterSubscribers() {
